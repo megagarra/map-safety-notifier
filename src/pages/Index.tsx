@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useMapData } from '@/hooks/useMapData';
 import Map from '@/components/Map';
@@ -11,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
 
 const Index = () => {
   const { pins, loading, addPin, filterPins } = useMapData();
@@ -24,7 +24,6 @@ const Index = () => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
-  // Filtered pins based on selected types
   const filteredPins = selectedPinTypes ? filterPins(selectedPinTypes) : pins;
   
   const handleMapClick = (lat: number, lng: number) => {
@@ -91,7 +90,6 @@ const Index = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <NavBar onNewReport={handleNewReport} />
       
-      {/* API Key Input (temporary until properly set up) */}
       {!mapboxApiKey && (
         <div className="container mx-auto px-4 animate-fadeIn mt-20 mb-4">
           <div className="glass-panel p-6 max-w-md mx-auto">
@@ -116,7 +114,6 @@ const Index = () => {
       
       <main className="flex-1 container mx-auto p-4 pt-20">
         <div className="flex flex-col h-[calc(100vh-8rem)] md:flex-row gap-4">
-          {/* Sidebar toggle button (mobile only) */}
           {isMobile && (
             <Button 
               variant="outline" 
@@ -128,7 +125,6 @@ const Index = () => {
             </Button>
           )}
           
-          {/* Map section */}
           <div className="flex-1 relative">
             <div className="absolute top-4 left-0 right-0 z-10 px-4">
               <FilterBar
@@ -157,7 +153,6 @@ const Index = () => {
             </div>
           </div>
           
-          {/* Sidebar */}
           <div 
             className={cn(
               "w-full md:w-80 lg:w-96 bg-card rounded-lg border overflow-hidden shadow-sm transition-all duration-300 ease-in-out",
@@ -184,7 +179,6 @@ const Index = () => {
         </div>
       </main>
       
-      {/* Report modal */}
       <ReportModal 
         isOpen={reportModalOpen}
         onClose={() => setReportModalOpen(false)}
