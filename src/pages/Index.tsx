@@ -15,8 +15,6 @@ import { cn } from '@/lib/utils';
 
 const Index = () => {
   const { pins, loading, addPin, filterPins } = useMapData();
-  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>('');
-  const [apiKeyInput, setApiKeyInput] = useState<string>('');
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
@@ -45,16 +43,7 @@ const Index = () => {
     }
   };
 
-  const handleNewReport = () => {
-    if (!googleMapsApiKey) {
-      toast({
-        title: "API do Google Maps necessária",
-        description: "Por favor, forneça uma chave de API do Google Maps antes de reportar problemas",
-        variant: "destructive"
-      });
-      return;
-    }
-    
+  const handleNewReport = () => {    
     if (!selectedLocation) {
       toast({
         title: "Selecione uma localização",
@@ -66,23 +55,6 @@ const Index = () => {
     setReportModalOpen(true);
   };
 
-  const saveApiKey = () => {
-    if (!apiKeyInput.trim()) {
-      toast({
-        title: "Chave de API inválida",
-        description: "Por favor, forneça uma chave de API válida",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    setGoogleMapsApiKey(apiKeyInput);
-    toast({
-      title: "Chave de API salva",
-      description: "O mapa agora está disponível para uso",
-    });
-  };
-
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
@@ -90,28 +62,6 @@ const Index = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <NavBar onNewReport={handleNewReport} />
-      
-      {!googleMapsApiKey && (
-        <div className="container mx-auto px-4 animate-fadeIn mt-20 mb-4">
-          <div className="glass-panel p-6 max-w-md mx-auto">
-            <h3 className="text-xl font-semibold mb-2">API do Google Maps necessária</h3>
-            <p className="mb-4">Para usar este aplicativo, forneça sua chave de API do Google Maps:</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="Chave de API do Google Maps"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-              <Button onClick={saveApiKey}>Salvar</Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Obtenha sua chave em <a href="https://console.cloud.google.com/google/maps-apis/overview" target="_blank" rel="noopener noreferrer" className="underline">Google Cloud Console</a>
-            </p>
-          </div>
-        </div>
-      )}
       
       <main className="flex-1 container mx-auto p-4 pt-20">
         <div className="flex flex-col h-[calc(100vh-8rem)] md:flex-row gap-4">
@@ -148,7 +98,6 @@ const Index = () => {
                   onPinClick={handlePinClick} 
                   onMapClick={handleMapClick}
                   selectedPinTypes={selectedPinTypes}
-                  apiKey={googleMapsApiKey}
                 />
               )}
             </div>

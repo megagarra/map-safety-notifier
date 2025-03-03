@@ -1,189 +1,128 @@
 
-import React, { useState, useCallback, useRef } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
+import React, { useState } from 'react';
 import { Pin, PinType } from '@/types';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertCircle, CheckCircle, MapPin } from 'lucide-react';
+import { AlertCircle, MapPin } from 'lucide-react';
 
 interface MapProps {
   pins: Pin[];
   onPinClick: (pin: Pin) => void;
   onMapClick: (lat: number, lng: number) => void;
   selectedPinTypes: PinType[] | null;
-  apiKey: string;
+  apiKey?: string; // Mantemos este prop para compatibilidade, mas não usaremos
 }
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '100%',
-  borderRadius: '0.5rem',
-};
-
-const defaultCenter = {
-  lat: -23.5489,
-  lng: -46.6388, // São Paulo
-};
 
 const Map: React.FC<MapProps> = ({ 
   pins, 
   onPinClick, 
   onMapClick, 
-  selectedPinTypes,
-  apiKey 
+  selectedPinTypes
 }) => {
   const { toast } = useToast();
   const [selectedMarker, setSelectedMarker] = useState<Pin | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: apiKey || '',
-  });
-
-  const onLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-  }, []);
-
-  const onUnmount = useCallback(() => {
-    mapRef.current = null;
-  }, []);
-
-  const handleMapClick = (e: google.maps.MapMouseEvent) => {
-    if (e.latLng) {
-      onMapClick(e.latLng.lat(), e.latLng.lng());
-    }
-  };
-
-  if (loadError) {
-    toast({
-      title: "Erro ao carregar o mapa",
-      description: "Houve um problema ao inicializar o mapa do Google",
-      variant: "destructive"
-    });
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-muted/20 rounded-lg">
-        <div className="text-center p-4">
-          <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-2" />
-          <p className="text-lg font-medium">Erro ao carregar o mapa</p>
-          <p className="text-sm text-muted-foreground">Verifique sua chave de API do Google Maps</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-muted/20 rounded-lg">
-        <div className="text-center p-4">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
-          <p className="text-lg font-medium">Carregando mapa...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Filter pins if needed
+  // Filtra pins se necessário
   const filteredPins = selectedPinTypes?.length 
     ? pins.filter(pin => selectedPinTypes.includes(pin.type))
     : pins;
 
+  // Função para converter lat/lng para posição no mapa
+  const getPositionFromLatLng = (lat: number, lng: number) => {
+    // Normaliza lat/lng para uma posição relativa no mapa
+    // Estamos considerando o centro de São Paulo como referência
+    const centerLat = -23.5489;
+    const centerLng = -46.6388;
+    
+    // Calcula a posição relativa (distância do centro)
+    // Multiplicando por 3000 para aumentar o efeito de distanciamento
+    const x = (lng - centerLng) * 3000;  
+    const y = (lat - centerLat) * -3000; // Invertido porque o CSS cresce para baixo
+    
+    return { x, y };
+  };
+
+  const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Converte a posição do clique para lat/lng
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 0.01;
+    const y = ((e.clientY - rect.top) / rect.height - 0.5) * -0.01;
+    
+    // Converte para lat/lng (simulado)
+    const lat = -23.5489 + y;
+    const lng = -46.6388 + x;
+    
+    onMapClick(lat, lng);
+  };
+
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden shadow-lg">
-      <GoogleMap
-        mapContainerStyle={mapContainerStyle}
-        center={defaultCenter}
-        zoom={12}
-        onLoad={onLoad}
-        onUnmount={onUnmount}
+      {/* Mapa simulado */}
+      <div 
+        className="w-full h-full bg-slate-200 relative cursor-pointer"
         onClick={handleMapClick}
-        options={{
-          fullscreenControl: false,
-          mapTypeControl: false,
-          streetViewControl: false,
-          zoomControl: true,
-          styles: [
-            {
-              featureType: "poi",
-              elementType: "labels",
-              stylers: [{ visibility: "off" }]
-            }
-          ]
-        }}
       >
-        {filteredPins.map((pin) => (
-          <Marker
-            key={pin.id}
-            position={{ lat: pin.location.lat, lng: pin.location.lng }}
-            onClick={() => {
-              setSelectedMarker(pin);
-              onPinClick(pin);
-            }}
-            icon={{
-              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(getPinSvg(pin.type))}`,
-              scaledSize: new google.maps.Size(32, 32),
-            }}
-            animation={google.maps.Animation.DROP}
-          />
-        ))}
+        {/* Grade para simular um mapa */}
+        <div className="absolute inset-0 grid grid-cols-10 grid-rows-10">
+          {Array.from({ length: 100 }).map((_, i) => (
+            <div key={i} className="border border-slate-300/50"></div>
+          ))}
+        </div>
+        
+        {/* Centro do mapa (São Paulo) */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-500 rounded-full"></div>
 
-        {selectedMarker && (
-          <InfoWindow
-            position={{ lat: selectedMarker.location.lat, lng: selectedMarker.location.lng }}
-            onCloseClick={() => setSelectedMarker(null)}
-          >
-            <div className="p-2 max-w-xs">
-              <div className="font-semibold mb-1">{getPinTypeLabel(selectedMarker.type)}</div>
-              <p className="text-sm">{selectedMarker.description}</p>
-            </div>
-          </InfoWindow>
-        )}
-      </GoogleMap>
-
-      {!apiKey && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
-          <div className="glass-panel p-6 max-w-md">
-            <h3 className="text-xl font-semibold mb-2">API do Google Maps necessária</h3>
-            <p className="mb-4">Para visualizar o mapa, é necessário fornecer uma chave de API do Google Maps.</p>
+        {/* Texto de instrução */}
+        <div className="absolute top-4 left-0 right-0 text-center">
+          <div className="bg-white/80 mx-auto inline-block px-3 py-1 rounded-lg shadow text-sm">
+            Clique para adicionar um problema
           </div>
         </div>
-      )}
+        
+        {/* Renderiza os pins */}
+        {filteredPins.map((pin) => {
+          const { x, y } = getPositionFromLatLng(pin.location.lat, pin.location.lng);
+          return (
+            <div
+              key={pin.id}
+              className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer"
+              style={{ 
+                left: `calc(50% + ${x}px)`, 
+                top: `calc(50% + ${y}px)` 
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedMarker(pin);
+                onPinClick(pin);
+              }}
+            >
+              <div className={`p-1 rounded-full transition-transform hover:scale-110 ${getPinColorClass(pin.type)}`}>
+                <MapPin className="w-6 h-6 text-white" />
+              </div>
+              
+              {/* Tooltip para mostrar informações do pin */}
+              {selectedMarker?.id === pin.id && (
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 bg-white p-2 rounded shadow-lg z-10 min-w-40 max-w-52">
+                  <div className="font-semibold mb-1">{getPinTypeLabel(pin.type)}</div>
+                  <p className="text-sm">{pin.description}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
 
-// Helper functions
-const getPinColor = (type: PinType): string => {
+// Funções auxiliares
+const getPinColorClass = (type: PinType): string => {
   switch (type) {
-    case 'flood': return '#3b82f6'; // blue
-    case 'pothole': return '#f59e0b'; // amber
-    case 'passable': return '#10b981'; // emerald
-    case 'robbery': return '#ef4444'; // red
-    default: return '#000000';
+    case 'flood': return 'bg-blue-500';
+    case 'pothole': return 'bg-amber-500';
+    case 'passable': return 'bg-emerald-500';
+    case 'robbery': return 'bg-red-500';
+    default: return 'bg-gray-500';
   }
-};
-
-const getPinSvg = (type: PinType): string => {
-  const color = getPinColor(type);
-  let svgContent;
-  
-  switch (type) {
-    case 'flood':
-      svgContent = `<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="${color}" />`;
-      break;
-    case 'pothole':
-      svgContent = `<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="${color}" />`;
-      break;
-    case 'passable':
-      svgContent = `<circle cx="12" cy="12" r="10" fill="${color}" fill-opacity="0.2"></circle><path d="M9 12l2 2 4-4" stroke="${color}" stroke-width="2"></path>`;
-      break;
-    case 'robbery':
-      svgContent = `<circle cx="12" cy="12" r="10" fill="${color}" fill-opacity="0.2"></circle><path d="M12 8v4M12 16h.01" stroke="${color}" stroke-width="2"></path>`;
-      break;
-    default:
-      svgContent = `<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />`;
-  }
-  
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgContent}</svg>`;
 };
 
 const getPinTypeLabel = (type: PinType): string => {
