@@ -60,20 +60,34 @@ const Map: React.FC<MapProps> = ({
       <div 
         className="w-full h-full bg-slate-200 relative cursor-pointer"
         onClick={handleMapClick}
+        style={{ minHeight: '400px' }}
       >
         {/* Grade para simular um mapa */}
         <div className="absolute inset-0 grid grid-cols-10 grid-rows-10">
           {Array.from({ length: 100 }).map((_, i) => (
-            <div key={i} className="border border-slate-300/50"></div>
+            <div key={i} className="border border-slate-300"></div>
           ))}
         </div>
         
+        {/* Adiciona mais elementos visuais ao mapa simulado */}
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Estradas principais simuladas */}
+          <div className="absolute left-1/4 top-0 bottom-0 w-1 bg-slate-400"></div>
+          <div className="absolute right-1/4 top-0 bottom-0 w-1 bg-slate-400"></div>
+          <div className="absolute top-1/4 left-0 right-0 h-1 bg-slate-400"></div>
+          <div className="absolute bottom-1/4 left-0 right-0 h-1 bg-slate-400"></div>
+          
+          {/* Áreas verdes simuladas */}
+          <div className="absolute top-1/8 left-1/8 w-1/6 h-1/6 rounded-full bg-green-200/60"></div>
+          <div className="absolute bottom-1/6 right-1/5 w-1/4 h-1/5 rounded-lg bg-green-200/60"></div>
+        </div>
+        
         {/* Centro do mapa (São Paulo) */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-500 rounded-full"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-blue-500 rounded-full"></div>
 
         {/* Texto de instrução */}
         <div className="absolute top-4 left-0 right-0 text-center">
-          <div className="bg-white/80 mx-auto inline-block px-3 py-1 rounded-lg shadow text-sm">
+          <div className="bg-white/90 mx-auto inline-block px-3 py-2 rounded-lg shadow-lg text-sm font-medium">
             Clique para adicionar um problema
           </div>
         </div>
@@ -84,7 +98,7 @@ const Map: React.FC<MapProps> = ({
           return (
             <div
               key={pin.id}
-              className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer"
+              className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10"
               style={{ 
                 left: `calc(50% + ${x}px)`, 
                 top: `calc(50% + ${y}px)` 
@@ -95,13 +109,13 @@ const Map: React.FC<MapProps> = ({
                 onPinClick(pin);
               }}
             >
-              <div className={`p-1 rounded-full transition-transform hover:scale-110 ${getPinColorClass(pin.type)}`}>
+              <div className={`p-1 rounded-full transition-transform hover:scale-110 shadow-lg ${getPinColorClass(pin.type)}`}>
                 <MapPin className="w-6 h-6 text-white" />
               </div>
               
               {/* Tooltip para mostrar informações do pin */}
               {selectedMarker?.id === pin.id && (
-                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 bg-white p-2 rounded shadow-lg z-10 min-w-40 max-w-52">
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 bg-white p-3 rounded shadow-lg z-20 min-w-40 max-w-52">
                   <div className="font-semibold mb-1">{getPinTypeLabel(pin.type)}</div>
                   <p className="text-sm">{pin.description}</p>
                 </div>
