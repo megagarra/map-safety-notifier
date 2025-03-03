@@ -1,8 +1,26 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Pin, PinType } from '@/types';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertCircle, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for Leaflet marker icons
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+
+// Delete the default icon
+delete L.Icon.Default.prototype._getIconUrl;
+
+// Set up the default icon
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl,
+  iconUrl,
+  shadowUrl,
+});
 
 interface MapProps {
   pins: Pin[];
@@ -11,6 +29,49 @@ interface MapProps {
   selectedPinTypes: PinType[] | null;
   apiKey?: string; // Mantemos este prop para compatibilidade, mas não usaremos
 }
+
+// Component para detectar clicks no mapa
+const MapClickHandler = ({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) => {
+  const map = useMapEvents({
+    click: (e) => {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+};
+
+// Component para criar um pin customizado
+const CustomPin = ({ pin, onClick }: { pin: Pin; onClick: () => void }) => {
+  const iconColor = getPinColorClass(pin.type);
+  
+  const customIcon = L.divIcon({
+    className: 'custom-pin',
+    html: `<div class="pin-container ${iconColor}" style="position: relative;">
+             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+               <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+               <circle cx="12" cy="10" r="3"></circle>
+             </svg>
+           </div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 24],
+    popupAnchor: [0, -24]
+  });
+
+  return (
+    <Marker 
+      position={[pin.location.lat, pin.location.lng]} 
+      icon={customIcon}
+      eventHandlers={{
+        click: onClick
+      }}
+    >
+      <Popup>
+        <div className="font-semibold mb-1">{getPinTypeLabel(pin.type)}</div>
+        <p className="text-sm">{pin.description}</p>
+      </Popup>
+    </Marker>
+  );
+};
 
 const Map: React.FC<MapProps> = ({ 
   pins, 
@@ -26,103 +87,42 @@ const Map: React.FC<MapProps> = ({
     ? pins.filter(pin => selectedPinTypes.includes(pin.type))
     : pins;
 
-  // Função para converter lat/lng para posição no mapa
-  const getPositionFromLatLng = (lat: number, lng: number) => {
-    // Normaliza lat/lng para uma posição relativa no mapa
-    // Estamos considerando o centro de São Paulo como referência
-    const centerLat = -23.5489;
-    const centerLng = -46.6388;
-    
-    // Calcula a posição relativa (distância do centro)
-    // Multiplicando por 3000 para aumentar o efeito de distanciamento
-    const x = (lng - centerLng) * 3000;  
-    const y = (lat - centerLat) * -3000; // Invertido porque o CSS cresce para baixo
-    
-    return { x, y };
-  };
-
-  const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Converte a posição do clique para lat/lng
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 0.01;
-    const y = ((e.clientY - rect.top) / rect.height - 0.5) * -0.01;
-    
-    // Converte para lat/lng (simulado)
-    const lat = -23.5489 + y;
-    const lng = -46.6388 + x;
-    
-    onMapClick(lat, lng);
-  };
-
+  // Centro do mapa em São Paulo
+  const center: [number, number] = [-23.5489, -46.6388];
+  
   return (
-    <div className="relative w-full h-full rounded-lg overflow-hidden shadow-lg">
-      {/* Mapa simulado */}
-      <div 
-        className="w-full h-full bg-slate-200 relative cursor-pointer"
-        onClick={handleMapClick}
-        style={{ minHeight: '400px' }}
+    <div className="relative w-full h-full rounded-lg overflow-hidden shadow-lg" style={{ minHeight: '400px' }}>
+      <MapContainer 
+        center={center} 
+        zoom={13} 
+        scrollWheelZoom={true}
+        style={{ height: '100%', width: '100%', minHeight: '400px' }}
+        className="z-0"
       >
-        {/* Grade para simular um mapa */}
-        <div className="absolute inset-0 grid grid-cols-10 grid-rows-10">
-          {Array.from({ length: 100 }).map((_, i) => (
-            <div key={i} className="border border-slate-300"></div>
-          ))}
-        </div>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
         
-        {/* Adiciona mais elementos visuais ao mapa simulado */}
-        <div className="absolute inset-0 pointer-events-none">
-          {/* Estradas principais simuladas */}
-          <div className="absolute left-1/4 top-0 bottom-0 w-1 bg-slate-400"></div>
-          <div className="absolute right-1/4 top-0 bottom-0 w-1 bg-slate-400"></div>
-          <div className="absolute top-1/4 left-0 right-0 h-1 bg-slate-400"></div>
-          <div className="absolute bottom-1/4 left-0 right-0 h-1 bg-slate-400"></div>
-          
-          {/* Áreas verdes simuladas */}
-          <div className="absolute top-1/8 left-1/8 w-1/6 h-1/6 rounded-full bg-green-200/60"></div>
-          <div className="absolute bottom-1/6 right-1/5 w-1/4 h-1/5 rounded-lg bg-green-200/60"></div>
-        </div>
+        <MapClickHandler onMapClick={onMapClick} />
         
-        {/* Centro do mapa (São Paulo) */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-blue-500 rounded-full"></div>
-
-        {/* Texto de instrução */}
-        <div className="absolute top-4 left-0 right-0 text-center">
-          <div className="bg-white/90 mx-auto inline-block px-3 py-2 rounded-lg shadow-lg text-sm font-medium">
-            Clique para adicionar um problema
-          </div>
+        {filteredPins.map((pin) => (
+          <CustomPin 
+            key={pin.id} 
+            pin={pin} 
+            onClick={() => {
+              setSelectedMarker(pin);
+              onPinClick(pin);
+            }}
+          />
+        ))}
+      </MapContainer>
+      
+      {/* Texto de instrução */}
+      <div className="absolute top-4 left-0 right-0 text-center z-10 pointer-events-none">
+        <div className="bg-white/90 mx-auto inline-block px-3 py-2 rounded-lg shadow-lg text-sm font-medium">
+          Clique para adicionar um problema
         </div>
-        
-        {/* Renderiza os pins */}
-        {filteredPins.map((pin) => {
-          const { x, y } = getPositionFromLatLng(pin.location.lat, pin.location.lng);
-          return (
-            <div
-              key={pin.id}
-              className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10"
-              style={{ 
-                left: `calc(50% + ${x}px)`, 
-                top: `calc(50% + ${y}px)` 
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedMarker(pin);
-                onPinClick(pin);
-              }}
-            >
-              <div className={`p-1 rounded-full transition-transform hover:scale-110 shadow-lg ${getPinColorClass(pin.type)}`}>
-                <MapPin className="w-6 h-6 text-white" />
-              </div>
-              
-              {/* Tooltip para mostrar informações do pin */}
-              {selectedMarker?.id === pin.id && (
-                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 bg-white p-3 rounded shadow-lg z-20 min-w-40 max-w-52">
-                  <div className="font-semibold mb-1">{getPinTypeLabel(pin.type)}</div>
-                  <p className="text-sm">{pin.description}</p>
-                </div>
-              )}
-            </div>
-          );
-        })}
       </div>
     </div>
   );
