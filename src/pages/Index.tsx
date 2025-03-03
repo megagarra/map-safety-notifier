@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useMapData } from '@/hooks/useMapData';
 import Map from '@/components/Map';
@@ -14,7 +15,7 @@ import { cn } from '@/lib/utils';
 
 const Index = () => {
   const { pins, loading, addPin, filterPins } = useMapData();
-  const [mapboxApiKey, setMapboxApiKey] = useState<string>('');
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>('');
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -45,10 +46,10 @@ const Index = () => {
   };
 
   const handleNewReport = () => {
-    if (!mapboxApiKey) {
+    if (!googleMapsApiKey) {
       toast({
-        title: "API do Mapbox necessária",
-        description: "Por favor, forneça uma chave de API do Mapbox antes de reportar problemas",
+        title: "API do Google Maps necessária",
+        description: "Por favor, forneça uma chave de API do Google Maps antes de reportar problemas",
         variant: "destructive"
       });
       return;
@@ -75,7 +76,7 @@ const Index = () => {
       return;
     }
     
-    setMapboxApiKey(apiKeyInput);
+    setGoogleMapsApiKey(apiKeyInput);
     toast({
       title: "Chave de API salva",
       description: "O mapa agora está disponível para uso",
@@ -90,23 +91,23 @@ const Index = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <NavBar onNewReport={handleNewReport} />
       
-      {!mapboxApiKey && (
+      {!googleMapsApiKey && (
         <div className="container mx-auto px-4 animate-fadeIn mt-20 mb-4">
           <div className="glass-panel p-6 max-w-md mx-auto">
-            <h3 className="text-xl font-semibold mb-2">API do Mapbox necessária</h3>
-            <p className="mb-4">Para usar este aplicativo, forneça sua chave de API pública do Mapbox:</p>
+            <h3 className="text-xl font-semibold mb-2">API do Google Maps necessária</h3>
+            <p className="mb-4">Para usar este aplicativo, forneça sua chave de API do Google Maps:</p>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="Chave de API do Mapbox"
+                placeholder="Chave de API do Google Maps"
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <Button onClick={saveApiKey}>Salvar</Button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Obtenha sua chave em <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" className="underline">mapbox.com</a>
+              Obtenha sua chave em <a href="https://console.cloud.google.com/google/maps-apis/overview" target="_blank" rel="noopener noreferrer" className="underline">Google Cloud Console</a>
             </p>
           </div>
         </div>
@@ -147,7 +148,7 @@ const Index = () => {
                   onPinClick={handlePinClick} 
                   onMapClick={handleMapClick}
                   selectedPinTypes={selectedPinTypes}
-                  apiKey={mapboxApiKey}
+                  apiKey={googleMapsApiKey}
                 />
               )}
             </div>
