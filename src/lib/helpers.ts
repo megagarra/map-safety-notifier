@@ -1,106 +1,111 @@
 import { Pin, PinType, PinStatus, PinHistoryEntry } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { subDays, addDays } from 'date-fns';
+import { subDays } from 'date-fns';
 
-// Locais específicos em Franco da Rocha
+// Locais específicos em Franco da Rocha com coordenadas exatas
 const specificLocations = [
-  { name: 'Jardim Luciana', lat: -23.319186, lng: -46.757346 },
-  { name: 'Centro', lat: -23.3228, lng: -46.5400 },
-  { name: 'Parque Vitória', lat: -23.3180, lng: -46.5310 },
-  { name: 'Vila dos Comerciários', lat: -23.3305, lng: -46.5422 },
-  { name: 'Jardim Progresso', lat: -23.3336, lng: -46.5351 },
-  { name: 'Vila Bela', lat: -23.3266, lng: -46.5301 },
-  { name: 'Parque Monte Verde', lat: -23.3347, lng: -46.5477 },
-  { name: 'Jardim Cruzeiro', lat: -23.3195, lng: -46.5450 },
+  { name: 'Jardim Luciana', lat: -23.3204591, lng: -46.7693249},
+  { name: 'Centro', lat: -23.3278622, lng: -46.7274257},
+  { name: 'Parque Vitória', lat: -23.3257631, lng: -46.7018562},
+  { name: 'Vila dos Comerciários', lat: -23.3051584, lng: -46.7201061 },
+  { name: 'Jardim Progresso', lat: -23.7348546, lng: -46.6786048 },
+  { name: 'Vila Bela', lat: -23.3103551, lng: -46.7239363 },
+  { name: 'Parque Monte Verde', lat: -23.3101433, lng: -46.7111614 },
+  { name: 'Jardim Cruzeiro', lat: -23.3258863, lng: -46.7331844 },
 ];
 
-// Descrições genéricas para problemas
-const descriptions = [
-  'Problema relatado na área. Requer atenção imediata.',
-  'Ocorrência de Problema na área. Cuidado ao transitar.',
-  'Problema identificado nesta via. Evite passar pela área.',
-  'Problema detectado recentemente na área. Tenha cuidado.',
-  'Área com Problema. Busque rotas alternativas.',
-  'Cuidado ao passar pela área. Problema reportado por múltiplos usuários.',
-  'Problema confirmado na área. Autoridades notificadas.',
-  'Situação de Problema na área. Recomenda-se evitar o local.',
-];
-
-// Função para gerar uma descrição aleatória
-const getRandomDescription = (type: PinType): string => {
-  const description = descriptions[Math.floor(Math.random() * descriptions.length)];
-  const location = specificLocations[Math.floor(Math.random() * specificLocations.length)];
-  
-  const typeLabel = type === 'infraestrutura' ? 'Problema de infraestrutura' : 'Ocorrência de crime';
-  
-  return description
-    .replace('Problema', typeLabel)
-    .replace('área', location.name);
+// Descrições específicas para problemas por local
+const problemDescriptions = {
+  'infraestrutura': {
+    'Jardim Luciana': 'Buraco na via principal próximo ao supermercado. Requer atenção imediata.',
+    'Centro': 'Falta de iluminação na praça central. Várias lâmpadas quebradas.',
+    'Parque Vitória': 'Calçadas danificadas na avenida principal. Difícil passagem para pedestres.',
+    'Vila dos Comerciários': 'Ponto de ônibus sem cobertura. Problema em dias de chuva.',
+    'Jardim Progresso': 'Árvore caída bloqueando parcialmente a rua. Necessita remoção.',
+    'Vila Bela': 'Vazamento de água na esquina da rua principal. Desperdício contínuo.',
+    'Parque Monte Verde': 'Lixo acumulado próximo à praça. Atrai animais e insetos.',
+    'Jardim Cruzeiro': 'Asfalto deteriorado em toda extensão da avenida. Dificulta tráfego.'
+  },
+  'crime': {
+    'Jardim Luciana': 'Relatos de furtos no período noturno. Recomenda-se atenção ao transitar.',
+    'Centro': 'Ocorrência de assaltos próximo à estação. Maior incidência após 20h.',
+    'Parque Vitória': 'Denúncias de arrombamentos em residências. Busque reforçar segurança.',
+    'Vila dos Comerciários': 'Relatos de roubos de celulares. Mantenha objetos escondidos.',
+    'Jardim Progresso': 'Tentativas de furto a estabelecimentos comerciais. Polícia notificada.',
+    'Vila Bela': 'Ocorrência de vandalismo em espaços públicos. Câmeras sendo instaladas.',
+    'Parque Monte Verde': 'Relatos de furtos de veículos. Evite estacionar em áreas isoladas.',
+    'Jardim Cruzeiro': 'Ocorrência de roubos a pedestres. Recomenda-se evitar caminhar sozinho.'
+  }
 };
 
-// Função para gerar uma data aleatória dentro de um intervalo
-const getRandomDate = (start: Date, end: Date): Date => {
-  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+// Função para obter a descrição específica do problema
+const getDescription = (type: PinType, locationName: string): string => {
+  return problemDescriptions[type][locationName];
 };
 
-// Função para gerar histórico aleatório de um pin
+// Datas fixas para os eventos em vez de aleatórias
+const generateHistoryDates = (reportDate: Date): {reported: Date, acknowledged: Date, inProgress: Date, resolved: Date} => {
+  const reported = new Date(reportDate);
+  const acknowledged = new Date(reportDate);
+  acknowledged.setDate(acknowledged.getDate() + 2); // Sempre 2 dias depois
+  
+  const inProgress = new Date(acknowledged);
+  inProgress.setDate(inProgress.getDate() + 3); // Sempre 3 dias depois do reconhecimento
+  
+  const resolved = new Date(inProgress);
+  resolved.setDate(resolved.getDate() + 5); // Sempre 5 dias depois do início do trabalho
+  
+  return {reported, acknowledged, inProgress, resolved};
+};
+
+// Função para gerar histórico de um pin com datas fixas
 const generatePinHistory = (
   pinType: PinType, 
   createdAt: Date, 
   currentStatus: PinStatus
 ): { history: PinHistoryEntry[], persistenceDays: number } => {
   const history: PinHistoryEntry[] = [];
-  let currentDate = new Date(createdAt);
   const now = new Date();
+  const historyDates = generateHistoryDates(createdAt);
   
-  // Primeira entrada: reportado
+  // Sempre adiciona entrada reportada
   history.push({
     status: 'reported',
-    date: currentDate.toISOString(),
+    date: historyDates.reported.toISOString(),
     description: 'Problema reportado por usuário'
   });
   
-  // Possivelmente adiciona reconhecimento (70% de chance)
-  if (Math.random() < 0.7) {
-    currentDate = new Date(currentDate.getTime() + Math.random() * 2 * 24 * 60 * 60 * 1000); // 0-2 dias depois
-    if (currentDate <= now) {
-      history.push({
-        status: 'acknowledged',
-        date: currentDate.toISOString(),
-        description: 'Problema reconhecido pela autoridade responsável'
-      });
-      
-      // Possivelmente adiciona em andamento (60% de chance)
-      if (Math.random() < 0.6) {
-        currentDate = new Date(currentDate.getTime() + Math.random() * 3 * 24 * 60 * 60 * 1000); // 0-3 dias depois
-        if (currentDate <= now) {
-          history.push({
-            status: 'in_progress',
-            date: currentDate.toISOString(),
-            description: 'Trabalho de resolução iniciado'
-          });
-          
-          // Possivelmente adiciona resolução (50% de chance)
-          if (Math.random() < 0.5) {
-            currentDate = new Date(currentDate.getTime() + Math.random() * 5 * 24 * 60 * 60 * 1000); // 0-5 dias depois
-            if (currentDate <= now) {
-              history.push({
-                status: 'resolved',
-                date: currentDate.toISOString(),
-                description: 'Problema resolvido com sucesso'
-              });
-            }
-          }
-        }
-      }
-    }
+  // Adiciona reconhecimento se o status atual for pelo menos 'acknowledged'
+  if (['acknowledged', 'in_progress', 'resolved'].includes(currentStatus)) {
+    history.push({
+      status: 'acknowledged',
+      date: historyDates.acknowledged.toISOString(),
+      description: 'Problema reconhecido pela autoridade responsável'
+    });
+  }
+  
+  // Adiciona em andamento se o status atual for pelo menos 'in_progress'
+  if (['in_progress', 'resolved'].includes(currentStatus)) {
+    history.push({
+      status: 'in_progress',
+      date: historyDates.inProgress.toISOString(),
+      description: 'Trabalho de resolução iniciado'
+    });
+  }
+  
+  // Adiciona resolvido se o status atual for 'resolved'
+  if (currentStatus === 'resolved') {
+    history.push({
+      status: 'resolved',
+      date: historyDates.resolved.toISOString(),
+      description: 'Problema resolvido com sucesso'
+    });
   }
   
   // Calcular dias de persistência
-  const lastEntry = history[history.length - 1];
   const startDate = new Date(history[0].date);
   const endDate = currentStatus === 'resolved' 
-    ? new Date(lastEntry.date) 
+    ? new Date(history[history.length - 1].date) 
     : new Date(); // Se não resolvido, conta até hoje
     
   const persistenceDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -108,78 +113,88 @@ const generatePinHistory = (
   return { history, persistenceDays };
 };
 
-// Função para gerar pins aleatórios em volta de um local central
-export const generatePins = (
-  count: number = 20, 
-  center: [number, number] = [-23.3228, -46.54], 
-  radius: number = 0.03
-): Pin[] => {
+// Status pré-definidos por localização
+const locationStatus: Record<string, PinStatus> = {
+  'Jardim Luciana': 'reported',
+  'Centro': 'acknowledged',
+  'Parque Vitória': 'in_progress',
+  'Vila dos Comerciários': 'resolved',
+  'Jardim Progresso': 'reported',
+  'Vila Bela': 'acknowledged',
+  'Parque Monte Verde': 'in_progress',
+  'Jardim Cruzeiro': 'resolved'
+};
+
+// Função para gerar pins com localizações exatas
+export const generatePins = (count: number = 8): Pin[] => {
   const pins: Pin[] = [];
-  const pinTypes: PinType[] = ['infraestrutura', 'crime'];
-  const statusOptions: PinStatus[] = ['reported', 'acknowledged', 'in_progress', 'resolved'];
-  
   const now = new Date();
   const thirtyDaysAgo = subDays(now, 30);
   
-  for (let i = 0; i < count; i++) {
-    // Gerar coordenadas aleatórias dentro do raio
-    const randomAngle = Math.random() * Math.PI * 2;
-    const randomRadius = Math.random() * radius;
-    const offsetLat = randomRadius * Math.cos(randomAngle);
-    const offsetLng = randomRadius * Math.sin(randomAngle);
+  // Criar pins para infraestrutura
+  specificLocations.forEach(location => {
+    // Definir data de reporte fixa - distribui ao longo de 30 dias
+    const reportedAt = new Date(thirtyDaysAgo);
+    reportedAt.setDate(reportedAt.getDate() + specificLocations.indexOf(location) * 3); // Cada 3 dias
     
-    // Escolher um tipo aleatório
-    const type = pinTypes[Math.floor(Math.random() * pinTypes.length)];
+    // Definir status específico para o local
+    const status = locationStatus[location.name];
     
-    // Gerar data aleatória nos últimos 30 dias
-    const reportedAt = getRandomDate(thirtyDaysAgo, now).toISOString();
+    // Gerar histórico baseado em datas fixas
+    const { history, persistenceDays } = generatePinHistory('infraestrutura', reportedAt, status);
     
-    // Determinar status atual
-    const currentStatus = statusOptions[Math.floor(Math.random() * statusOptions.length)];
-    
-    // Gerar histórico e dias de persistência
-    const { history, persistenceDays } = generatePinHistory(type, new Date(reportedAt), currentStatus);
-    
-    // Determinar local específico mais próximo
-    let nearestLocation = specificLocations[0];
-    let minDistance = Number.MAX_VALUE;
-    
-    specificLocations.forEach(location => {
-      const distance = Math.sqrt(
-        Math.pow(location.lat - (center[0] + offsetLat), 2) + 
-        Math.pow(location.lng - (center[1] + offsetLng), 2)
-      );
-      
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestLocation = location;
-      }
-    });
-    
-    // Criar pin
+    // Criar pin de infraestrutura
     pins.push({
       id: uuidv4(),
-      type,
+      type: 'infraestrutura',
       location: {
-        lat: center[0] + offsetLat,
-        lng: center[1] + offsetLng
+        lat: location.lat,
+        lng: location.lng
       },
-      address: `Rua Exemplo, ${Math.floor(Math.random() * 1000)}, ${nearestLocation.name}, Franco da Rocha - SP`,
-      description: getRandomDescription(type),
-      reportedAt,
-      status: currentStatus,
-      history,
-      persistenceDays,
-      images: type === 'infraestrutura' 
-        ? [
-            `/images/examples/infrastructure${Math.floor(Math.random() * 3) + 1}.jpg`,
-          ] 
-        : []
+      address: `Rua Principal, ${100 + specificLocations.indexOf(location) * 10}, ${location.name}, Franco da Rocha - SP`,
+      description: getDescription('infraestrutura', location.name),
+      reportedAt: reportedAt.toISOString(),
+      status: status,
+      history: history,
+      persistenceDays: persistenceDays,
+      images: [`/images/examples/infrastructure${(specificLocations.indexOf(location) % 3) + 1}.jpg`]
     });
-  }
+    
+    // Criar pin de crime para mesma área, com pequeno offset na localização
+    if (pins.length < count) {
+      const crimeReportedAt = new Date(reportedAt);
+      crimeReportedAt.setDate(crimeReportedAt.getDate() + 1); // 1 dia depois do problema de infraestrutura
+      
+      const crimeStatus = status === 'resolved' ? 'acknowledged' : 
+                         status === 'acknowledged' ? 'reported' : 
+                         status === 'reported' ? 'in_progress' : 'resolved';
+      
+      const { history: crimeHistory, persistenceDays: crimePersistenceDays } = 
+        generatePinHistory('crime', crimeReportedAt, crimeStatus);
+      
+      pins.push({
+        id: uuidv4(),
+        type: 'crime',
+        location: {
+          lat: location.lat + 0.001, // Pequeno offset para não sobrepor
+          lng: location.lng + 0.001
+        },
+        address: `Av. Secundária, ${200 + specificLocations.indexOf(location) * 10}, ${location.name}, Franco da Rocha - SP`,
+        description: getDescription('crime', location.name),
+        reportedAt: crimeReportedAt.toISOString(),
+        status: crimeStatus,
+        history: crimeHistory,
+        persistenceDays: crimePersistenceDays,
+        images: [] // Sem imagens para crimes
+      });
+    }
+  });
   
-  return pins;
+  // Retornar apenas o número solicitado de pins
+  return pins.slice(0, count);
 };
+
+// As demais funções permanecem iguais, pois não envolvem aleatoriedade
 
 // Função para agrupar pins por tipo
 export const groupPinsByType = (pins: Pin[]): Record<PinType, Pin[]> => {
@@ -303,4 +318,4 @@ export default {
   calculatePersistenceStats,
   filterPinsByPersistence,
   getHeatmapData
-}; 
+};
