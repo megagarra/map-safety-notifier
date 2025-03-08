@@ -305,6 +305,31 @@ const PinDetails = ({ pin, onClose }) => {
   );
 };
 
+// Adicione o componente ConstructionIcon
+const ConstructionIcon = ({ size = 16, className = "" }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round"
+    className={className}
+  >
+    <rect x="2" y="6" width="20" height="8" rx="1"/>
+    <path d="M17 14v7"/>
+    <path d="M7 14v7"/>
+    <path d="M17 3v3"/>
+    <path d="M7 3v3"/>
+    <path d="M10 14 2.3 6.3"/>
+    <path d="m14 6 7.7 7.7"/>
+    <path d="m8 6 8 8"/>
+  </svg>
+);
+
 const Map = ({ 
   pins, 
   onPinClick, 
@@ -380,17 +405,14 @@ const Map = ({
               className: 'custom-div-icon',
               html: `
                 <div class="pin-container ${pin.type === 'crime' ? 'pin-pulse-red' : 'pin-pulse-blue'}">
-                  <div class="custom-pin ${pin.type === 'crime' ? 'crime-pin' : 'infra-pin'}">
+                  <div class="custom-pin ${pin.type === 'infraestrutura' ? 'infra-pin' : 'crime-pin'}">
                     ${getPinIconSvg(pin.type)}
                   </div>
-                  <div class="score-badge">
-                    ${getScoreFromType(pin.type)}
-                  </div>
+                  <div class="score-badge">${getScoreFromType(pin.type)}</div>
                 </div>
               `,
-              iconSize: [36, 36],
-              iconAnchor: [18, 18],
-              popupAnchor: [0, -18]
+              iconSize: [30, 30],
+              iconAnchor: [15, 15]
             })}
             eventHandlers={{
               click: () => onPinClick(pin)
@@ -488,7 +510,7 @@ const Map = ({
 const getPinColorClass = (type) => {
   switch (type) {
     case 'infraestrutura':
-      return 'bg-blue-500 text-white';
+      return 'bg-black text-yellow-400 border-2 border-yellow-500/30';
     case 'crime':
       return 'bg-red-600 text-white';
     default:
@@ -499,13 +521,11 @@ const getPinColorClass = (type) => {
 const getPinIconSvg = (type) => {
   switch (type) {
     case 'infraestrutura':
-      // Ícone de construção/infraestrutura (Building) - maior
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="12" y1="6" x2="12" y2="6.01"></line><line x1="12" y1="10" x2="12" y2="10.01"></line><line x1="12" y1="14" x2="12" y2="14.01"></line><line x1="12" y1="18" x2="12" y2="18.01"></line></svg>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14 2.3 6.3"/><path d="m14 6 7.7 7.7"/><path d="m8 6 8 8"/></svg>`;
     case 'crime':
-      // AlertCircle para crime - maior
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/></svg>`;
     default:
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>`;
   }
 };
 
