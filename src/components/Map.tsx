@@ -8,7 +8,19 @@ import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import PinHistory from '@/components/PinHistory';
-import { Clock, X, Copy, AlertCircle, CheckCircle, Wrench, BarChart3, LineChart, AlertTriangle } from 'lucide-react';
+import { 
+  Clock, 
+  X, 
+  Copy, 
+  AlertCircle, 
+  CheckCircle, 
+  Wrench, 
+  BarChart3, 
+  LineChart, 
+  AlertTriangle, 
+  ThumbsUp, 
+  Users 
+} from 'lucide-react';
 import HeatmapControl from '@/components/HeatmapControl';
 import PersistenceStats from '@/components/PersistenceStats';
 import PersistenceTimeline from '@/components/PersistenceTimeline';
@@ -49,6 +61,7 @@ interface MapProps {
   selectedPin: Pin | null;
   center: [number, number];
   zoom: number;
+  onVote: (pinId: string) => void;
 }
 
 // Mapa com tema escuro similar à imagem
@@ -66,26 +79,43 @@ const MapClickHandler = ({ onMapClick }) => {
 };
 
 // Componente para criar um pin customizado
-const CustomPin = ({ pin, onClick }) => {
+const CustomPin = ({ pin, onClick, onVote }) => {
   const isCrime = pin.type === 'crime';
+  const hasHighVotes = (pin.votes || 0) > 5;
   
   return (
     <div 
-      className={`pin-container ${isCrime ? 'pin-pulse' : ''}`}
+      className={cn(
+        "absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all",
+        isCrime ? "pin-pulse-red" : "pin-pulse-yellow",
+        hasHighVotes ? "scale-110 z-30" : "z-20"
+      )}
       onClick={(e) => {
         e.stopPropagation();
         onClick(pin);
       }}
     >
-      <div className={`custom-pin ${isCrime ? 'crime-pin' : 'infra-pin'}`}>
+      <div className={cn(
+        "rounded-full flex items-center justify-center shadow-lg",
+        isCrime ? "crime-pin" : "infra-pin",
+        hasHighVotes ? "border-[3px]" : "border-2",
+        hasHighVotes && isCrime ? "border-red-400" : "",
+        hasHighVotes && !isCrime ? "border-yellow-400" : "",
+        "w-8 h-8"
+      )}>
         <div 
           dangerouslySetInnerHTML={{ 
             __html: getPinIconSvg(pin.type) 
           }} 
+          className="flex items-center justify-center w-full h-full"
         />
       </div>
-      <div className="score-badge">
-        {getScoreFromType(pin.type)}
+      
+      <div className={cn(
+        "absolute -top-1 -right-1 flex items-center justify-center rounded-full shadow-md border border-gray-300",
+        hasHighVotes ? "h-5 w-9 bg-yellow-400 text-black text-xs" : "h-4 w-4 bg-white text-black text-[10px]"
+      )}>
+        {hasHighVotes ? `${pin.votes || 0} 👍` : getScoreFromType(pin.type)}
       </div>
     </div>
   );
@@ -162,13 +192,159 @@ const MapCenterUpdater = ({ center, zoom }) => {
   return null;
 };
 
+// Definição do tipo de comentário
+interface PinComment {
+  id: string;
+  pinId: string;
+  author: {
+    name: string;
+    type: 'citizen' | 'government' | 'city_hall';
+    avatar?: string;
+  };
+  content: string;
+  timestamp: string;
+}
+
+// Componente para Avatar do autor
+const CommentAvatar = ({ author }) => {
+  const getBgColor = () => {
+    switch (author.type) {
+      case 'government': 
+        return 'bg-blue-600';
+      case 'city_hall': 
+        return 'bg-green-600';
+      default: 
+        return 'bg-gray-600';
+    }
+  };
+
+  const getInitials = (name) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  };
+
+  return (
+    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${getBgColor()}`}>
+      {author.avatar ? (
+        <img src={author.avatar} alt={author.name} className="w-full h-full rounded-full" />
+      ) : (
+        <span className="text-xs font-bold text-white">{getInitials(author.name)}</span>
+      )}
+    </div>
+  );
+};
+
+// Componente para Badge de tipo de usuário
+const UserTypeBadge = ({ type }) => {
+  const getBadgeStyle = () => {
+    switch (type) {
+      case 'government':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'city_hall':
+        return 'bg-green-500/20 text-green-400 border-green-500/30';
+      default:
+        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    }
+  };
+
+  const getLabel = () => {
+    switch (type) {
+      case 'government':
+        return 'Governo';
+      case 'city_hall':
+        return 'Prefeitura';
+      default:
+        return 'Cidadão';
+    }
+  };
+
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${getBadgeStyle()}`}>
+      {getLabel()}
+    </span>
+  );
+};
+
+// Componente para um único comentário
+const CommentItem = ({ comment }) => {
+  return (
+    <div className="flex gap-3 py-3 border-b border-[#2a2a2a] last:border-0">
+      <CommentAvatar author={comment.author} />
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-sm font-medium text-white">{comment.author.name}</span>
+          <UserTypeBadge type={comment.author.type} />
+          <span className="ml-auto text-xs text-gray-500">
+            {formatDistanceToNow(new Date(comment.timestamp), { addSuffix: true, locale: ptBR })}
+          </span>
+        </div>
+        <p className="text-sm text-gray-300">{comment.content}</p>
+      </div>
+    </div>
+  );
+};
+
 // Componente de detalhes do pin (igual ao cartão Adidas na imagem)
-const PinDetails = ({ pin, onClose }) => {
+const PinDetails = ({ pin, onClose, onVote, userType }) => {
   const [showHistory, setShowHistory] = useState(false);
-  const isCrime = pin.type === 'crime';
+  const [showComments, setShowComments] = useState(true);
+  const [newComment, setNewComment] = useState('');
+  const [comments, setComments] = useState<PinComment[]>([
+    {
+      id: '1',
+      pinId: pin.id,
+      author: {
+        name: 'João Silva',
+        type: 'citizen',
+      },
+      content: 'Estou enfrentando este problema há semanas. Alguém da prefeitura poderia verificar?',
+      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1 dia atrás
+    },
+    {
+      id: '2',
+      pinId: pin.id,
+      author: {
+        name: 'Secretaria de Infraestrutura',
+        type: 'city_hall',
+      },
+      content: 'Agradecemos o relato. Nossa equipe técnica foi enviada para avaliação do local.',
+      timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), // 12 horas atrás
+    },
+    {
+      id: '3',
+      pinId: pin.id,
+      author: {
+        name: 'Departamento de Obras',
+        type: 'government',
+      },
+      content: 'Registramos a ocorrência e incluímos na programação de reparos para a próxima semana.',
+      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), // 6 horas atrás
+    },
+  ]);
   
   if (!pin) return null;
   
+  // Função para enviar comentário (simulada)
+  const handleSubmitComment = () => {
+    if (!newComment.trim()) return;
+    
+    // Criar novo comentário
+    const comment: PinComment = {
+      id: `comment-${Date.now()}`,
+      pinId: pin.id,
+      author: {
+        name: userType === 'citizen' ? 'Você' : 
+              userType === 'government' ? 'Depto. de Governo' : 'Prefeitura Municipal',
+        type: userType,
+      },
+      content: newComment.trim(),
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Adicionar à lista
+    setComments([...comments, comment]);
+    setNewComment('');
+  };
+
   // Função para copiar a URL atual para a área de transferência
   const copyLocationLink = () => {
     const url = window.location.href;
@@ -181,24 +357,29 @@ const PinDetails = ({ pin, onClose }) => {
       });
   };
 
+  // Função para lidar com o voto
+  const handleVote = () => {
+    if (pin.userVoted) return; // Evitar múltiplos votos
+    
+    onVote(pin.id);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 pointer-events-auto backdrop-blur-sm">
       <div className={cn(
         "relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border transition-all duration-300 animate-fadeIn",
-        isCrime ? "border-[#f43f5e]" : "border-[#2a2a2a]"
+        pin.type === 'crime' ? "border-[#f43f5e]" : "border-[#2a2a2a]"
       )}>
         <div className={cn(
           "sticky top-0 z-10 flex justify-between items-center p-4 border-b",
-          isCrime 
-            ? "border-[#f43f5e]/30 bg-[#1a1a1a]" 
-            : "border-[#2a2a2a] bg-[#1a1a1a]"
+          pin.type === 'crime' ? "border-[#f43f5e]/30 bg-[#1a1a1a]" : "border-[#2a2a2a] bg-[#1a1a1a]"
         )}>
           <div className="flex items-center gap-2">
             <div className={cn(
               "flex items-center justify-center h-8 w-8 rounded-full",
-              isCrime ? "bg-[#1a1a1a] border-[#f43f5e] border-2 text-[#f43f5e]" : getPinColorClass(pin.type)
+              pin.type === 'crime' ? "bg-[#1a1a1a] border-[#f43f5e] border-2 text-[#f43f5e]" : getPinColorClass(pin.type)
             )}>
-              {isCrime ? (
+              {pin.type === 'crime' ? (
                 <AlertCircle size={16} className="text-[#f43f5e]" />
               ) : (
                 <div 
@@ -290,7 +471,7 @@ const PinDetails = ({ pin, onClose }) => {
             </div>
           )}
           
-          {isCrime && (
+          {pin.type === 'crime' && (
             <div className="mb-4 p-3 bg-[#1a1a1a] border border-[#f43f5e] rounded-lg text-white/90">
               <div className="flex items-center gap-2 mb-1">
                 <AlertCircle size={16} className="text-[#f43f5e]" />
@@ -299,6 +480,92 @@ const PinDetails = ({ pin, onClose }) => {
               <p className="text-sm text-gray-300">Este local possui registro de atividade criminosa. Recomendamos cautela ao transitar por esta área.</p>
             </div>
           )}
+          
+          {/* Seção de votação */}
+          <div className="my-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+            <h4 className="text-sm font-medium text-white mb-3">Confirmação do Problema</h4>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users size={16} className="text-gray-400" />
+                <span className="text-sm text-gray-300">
+                  <span className="font-medium text-white">{pin.votes || 0}</span> pessoas confirmaram este problema
+                </span>
+              </div>
+              <button 
+                onClick={handleVote}
+                disabled={pin.userVoted}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors",
+                  pin.userVoted 
+                    ? "bg-green-500/20 text-green-400 cursor-default" 
+                    : "bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]"
+                )}
+              >
+                <ThumbsUp size={14} />
+                <span>{pin.userVoted ? "Confirmado" : "Confirmar"}</span>
+              </button>
+            </div>
+            {pin.userVoted && (
+              <p className="mt-2 text-xs text-green-400">
+                Obrigado por confirmar este problema. Isso ajuda a priorizar soluções.
+              </p>
+            )}
+          </div>
+          
+          {/* Seção de comentários */}
+          <div className="mt-6 pt-4 border-t border-[#2a2a2a]">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium text-white">Comentários ({comments.length})</h4>
+              <button
+                onClick={() => setShowComments(!showComments)}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                {showComments ? 'Ocultar' : 'Mostrar'}
+              </button>
+            </div>
+            
+            {showComments && (
+              <>
+                <div className="mb-4 space-y-1">
+                  {comments.map(comment => (
+                    <CommentItem key={comment.id} comment={comment} />
+                  ))}
+                </div>
+                
+                {/* Formulário de novo comentário */}
+                <div className="mt-4 pt-3 border-t border-[#2a2a2a]">
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="text-xs text-gray-400">Comentar como:</label>
+                    <select
+                      value={userType}
+                      onChange={(e) => setUserType(e.target.value as any)}
+                      className="text-xs bg-[#2a2a2a] text-white border-0 rounded-md px-2 py-1"
+                    >
+                      <option value="citizen">Cidadão</option>
+                      <option value="government">Governo</option>
+                      <option value="city_hall">Prefeitura</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <textarea
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Escreva um comentário..."
+                      className="flex-1 min-h-[60px] text-sm resize-none bg-[#1a1a1a] border border-[#2a2a2a] rounded-md p-2 text-white placeholder-gray-500 focus:outline-none focus:border-white"
+                    />
+                    <button
+                      onClick={handleSubmitComment}
+                      disabled={!newComment.trim()}
+                      className="self-end h-9 px-3 bg-white text-black text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Enviar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -338,7 +605,8 @@ const Map = ({
   selectedPinTypes, 
   selectedPin,
   center,
-  zoom
+  zoom,
+  onVote
 }) => {
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [heatmapIntensity, setHeatmapIntensity] = useState(0.6);
@@ -349,6 +617,7 @@ const Map = ({
   const [showPersistenceFilter, setShowPersistenceFilter] = useState(false);
   const [filteredPinsByPersistence, setFilteredPinsByPersistence] = useState<Pin[]>([]);
   const mapRef = useRef(null);
+  const [userRoleSimulation, setUserRoleSimulation] = useState<'citizen' | 'government' | 'city_hall'>('citizen');
   
   // Filtra pins se necessário
   const filteredPins = selectedPinTypes?.length 
@@ -429,7 +698,9 @@ const Map = ({
         <div className="absolute top-0 left-0 w-full h-0 z-50">
           <PinDetails 
             pin={selectedPin} 
-            onClose={handleCloseDetails}
+            onClose={handleCloseDetails} 
+            onVote={onVote}
+            userType={userRoleSimulation}
           />
         </div>
       )}
@@ -502,6 +773,9 @@ const Map = ({
           <PersistenceTimeline pins={pins} />
         </div>
       )}
+      
+      {/* Seletor de perfil para simulação - adicionado ao canto inferior esquerdo */}
+  
     </div>
   );
 };

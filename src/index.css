@@ -360,3 +360,80 @@
   opacity: 1;
 }
 
+/* Estilos para pins com destaque de votação */
+.vote-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background-color: #f59e0b;
+  color: black;
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+  padding: 0 4px;
+}
+
+.vote-highlight {
+  animation: pulse-vote 2s infinite;
+}
+
+@keyframes pulse-vote {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+/* Adicionar pulsação específica para pins populares */
+.pin-popular {
+  transform: scale(1.15);
+  z-index: 30;
+}
+
+/* Estilos para comentários */
+.comment-item {
+  transition: all 0.2s ease;
+}
+
+.comment-item:hover {
+  background-color: rgba(45, 45, 45, 0.5);
+}
+
+.comment-author-government {
+  color: #60a5fa;
+}
+
+.comment-author-city_hall {
+  color: #34d399;
+}
+
+.comment-author-citizen {
+  color: #e5e7eb;
+}
+
+.comment-badge {
+  font-size: 0.6rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  margin-left: 0.5rem;
+}
+
+.comment-timestamp {
+  font-size: 0.65rem;
+  color: #6b7280;
+  margin-left: auto;
+}
+

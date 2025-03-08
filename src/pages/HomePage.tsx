@@ -5,7 +5,7 @@ import NavBar from '@/components/NavBar';
 import ReportModal from '@/components/ReportModal';
 import { Pin, PinType } from '@/types';
 import { generatePins } from '@/lib/helpers';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from '@/components/ui/use-toast';
 
 // Componente usando abordagem de classe para evitar problemas com hooks
 class HomePage extends React.Component {
@@ -30,11 +30,11 @@ class HomePage extends React.Component {
     this.openReportModal = this.openReportModal.bind(this);
     this.closeReportModal = this.closeReportModal.bind(this);
     this.handleReportSubmit = this.handleReportSubmit.bind(this);
+    this.handleVote = this.handleVote.bind(this);
     
     // Referências para navegação
     this.navigate = props.navigate;
     this.location = props.location;
-    this.toast = props.toast;
   }
   
   // Lifecycle methods
@@ -140,6 +140,64 @@ class HomePage extends React.Component {
     });
   }
   
+  // Método para lidar com votos
+  handleVote(pinId) {
+    // Atualizar estado local
+    this.setState(prevState => {
+      const updatedPins = prevState.pins.map(pin => {
+        if (pin.id === pinId) {
+          // Se o usuário já votou, não permitir voto duplo
+          if (pin.userVoted) return pin;
+          
+          // Atualizar o pin com o voto
+          return {
+            ...pin,
+            votes: (pin.votes || 0) + 1,
+            userVoted: true
+          };
+        }
+        return pin;
+      });
+      
+      // Também atualizar o pin selecionado se estiver aberto
+      let updatedSelectedPin = prevState.selectedPin;
+      if (updatedSelectedPin && updatedSelectedPin.id === pinId) {
+        updatedSelectedPin = {
+          ...updatedSelectedPin,
+          votes: (updatedSelectedPin.votes || 0) + 1,
+          userVoted: true
+        };
+      }
+      
+      return { 
+        pins: updatedPins,
+        selectedPin: updatedSelectedPin
+      };
+    });
+    
+    // Mostrar feedback ao usuário
+    toast({
+      title: "Voto registrado",
+      description: "Obrigado por confirmar este problema.",
+      variant: "success"
+    });
+    
+    // Aqui você poderia implementar a persistência do voto em um backend
+    // Por exemplo, chamando uma API:
+    // this.saveVoteToServer(pinId);
+  }
+  
+  // Método para salvar o voto no servidor (implementação simulada)
+  saveVoteToServer(pinId) {
+    // Exemplo de chamada de API (simulada)
+    console.log(`Salvando voto para o pin ${pinId} no servidor...`);
+    // fetch('/api/pins/vote', {
+    //   method: 'POST',
+    //   body: JSON.stringify({ pinId }),
+    //   headers: { 'Content-Type': 'application/json' }
+    // });
+  }
+  
   render() {
     const { 
       pins, 
@@ -169,6 +227,7 @@ class HomePage extends React.Component {
             selectedPin={selectedPin}
             center={center}
             zoom={zoom}
+            onVote={this.handleVote} // Passar a função de votação para o Map
           />
         </div>
         
@@ -189,7 +248,6 @@ class HomePage extends React.Component {
 export default function HomePageWrapper() {
   const navigate = useNavigate();
   const location = useLocation();
-  const toast = useToast();
   
-  return <HomePage navigate={navigate} location={location} toast={toast} />;
+  return <HomePage navigate={navigate} location={location} />;
 } 

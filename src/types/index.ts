@@ -22,6 +22,8 @@ export interface Pin {
   history: PinHistoryEntry[];
   status: PinStatus;
   persistenceDays?: number;
+  votes?: number;
+  userVoted?: boolean;
 }
 
 export interface CreatePinInput {
