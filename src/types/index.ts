@@ -1,5 +1,12 @@
+export type PinType = 'infraestrutura' | 'crime';
 
-export type PinType = 'flood' | 'pothole' | 'passable' | 'robbery';
+export type PinStatus = 'reported' | 'acknowledged' | 'in_progress' | 'resolved';
+
+export interface PinHistoryEntry {
+  status: PinStatus;
+  date: string;
+  description?: string;
+}
 
 export interface Pin {
   id: string;
@@ -10,8 +17,11 @@ export interface Pin {
   };
   description: string;
   images: string[];
-  reportedAt: Date;
+  reportedAt: string;
   address?: string;
+  history: PinHistoryEntry[];
+  status: PinStatus;
+  persistenceDays?: number;
 }
 
 export interface CreatePinInput {

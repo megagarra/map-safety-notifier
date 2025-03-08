@@ -1,19 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Pin, PinType } from '@/types';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl, AttributionControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import PinHistory from '@/components/PinHistory';
+import { Clock, X, Copy, AlertCircle, CheckCircle, Wrench, BarChart3, LineChart } from 'lucide-react';
+import HeatmapControl from '@/components/HeatmapControl';
+import PersistenceStats from '@/components/PersistenceStats';
+import PersistenceTimeline from '@/components/PersistenceTimeline';
+import PersistenceFilter from '@/components/PersistenceFilter';
 
 // Fix for Leaflet marker icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
+// At the top of your file, add these type declarations
+declare module 'leaflet' {
+  interface IconDefault {
+    _getIconUrl?: string;
+  }
+  
+  interface Map {
+    isUserInteraction?: React.MutableRefObject<boolean>;
+  }
+}
+
 // Delete the default icon
-delete L.Icon.Default.prototype._getIconUrl;
+delete (L.Icon.Default.prototype as L.IconDefault)._getIconUrl;
 
 // Set up the default icon
 L.Icon.Default.mergeOptions({
@@ -151,69 +169,114 @@ const MapCenterUpdater = ({ center, zoom }) => {
 
 // Componente de detalhes do pin (igual ao cartão Adidas na imagem)
 const PinDetails = ({ pin, onClose }) => {
+  const [showHistory, setShowHistory] = useState(false);
+  
   if (!pin) return null;
   
   // Função para copiar a URL atual para a área de transferência
   const copyLocationLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url)
-      .then(() => alert("Link copiado para a área de transferência!"))
-      .catch(err => console.error('Erro ao copiar link: ', err));
+      .then(() => {
+        alert('Link copiado para a área de transferência!');
+      })
+      .catch(err => {
+        console.error('Erro ao copiar link:', err);
+      });
   };
-  
-  // Converter coordenadas para formato DMS
-  const latitudeDMS = convertToDMS(pin.location.lat, true);
-  const longitudeDMS = convertToDMS(pin.location.lng, false);
-  
+
   return (
-    <div className="absolute z-20 top-1/4 right-8 map-detail-card w-64">
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="brand-circle">
-            {getPinIcon(pin.type)}
-          </div>
-          <div>
-            <div className="font-medium">{getPinTypeLabel(pin.type)}</div>
-            <div className="text-xs text-gray-400">
-              Franco da Rocha • {latitudeDMS}, {longitudeDMS}
+    <div className="fixed right-4 top-[120px] z-50 max-h-[70vh] w-[350px] overflow-y-auto rounded-xl bg-[#121212]/95 backdrop-blur-lg shadow-xl border border-[#2a2a2a] transition-all duration-300 animate-slideIn pointer-events-auto">
+      <div className="relative p-4">
+        <button 
+          onClick={() => onClose()}
+          className="absolute right-4 top-4 h-7 w-7 rounded-full bg-[#2a2a2a]/80 flex items-center justify-center text-white/70 hover:bg-[#3a3a3a] hover:text-white transition-colors cursor-pointer"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a] flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", getPinColorClass(pin.type))}>
+              {getPinIcon(pin.type)}
+            </div>
+            <div>
+              <h3 className="font-medium text-white">{getPinTypeLabel(pin.type)}</h3>
+              <div className="text-xs text-gray-400">
+                {format(new Date(pin.reportedAt), "dd 'de' MMMM, yyyy", { locale: ptBR })}
+              </div>
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-2 mb-3">
-          <div className="score-badge">{getScoreFromType(pin.type)}</div>
-          <Button variant="outline" size="sm" className="text-xs h-7 rounded-full px-3 bg-secondary border-border">
-            Reportado hoje
-          </Button>
-          <Button variant="outline" size="sm" className="text-xs h-7 rounded-full px-3 bg-secondary border-border">
-            Verificado
-          </Button>
-        </div>
-        
-        <h3 className="text-sm font-medium mb-2">
-          {pin.description.length > 30 ? `${pin.description.substring(0, 30)}...` : pin.description}
-        </h3>
-        
-        <p className="text-xs text-muted-foreground mb-3">
-          {pin.description}
-        </p>
-        
-        <div className="flex gap-2 mt-2">
-          <Button variant="outline" className="flex-1 text-sm h-8 rounded-md bg-[#252525] border-[#2a2a2a] text-white hover:bg-[#333333]">
-            Mais Detalhes
-          </Button>
-          <Button 
-            variant="outline" 
-            className="w-10 h-8 rounded-md bg-[#252525] border-[#2a2a2a] text-white hover:bg-[#333333]"
-            onClick={copyLocationLink}
-            title="Compartilhar localização"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M18 8L6 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              <path d="M21 12L3 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              <path d="M18 16H6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </Button>
+        <div className="p-4">
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs text-gray-400">Localização</div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 text-xs text-gray-400 hover:text-white hover:bg-[#252525]"
+                onClick={copyLocationLink}
+              >
+                <Copy size={12} className="mr-1" />
+                Copiar link
+              </Button>
+            </div>
+            <div className="text-sm text-white">
+              {pin.address || `${convertToDMS(pin.location.lat, true)}, ${convertToDMS(pin.location.lng, false)}`}
+            </div>
+          </div>
+          
+          <div className="mb-3">
+            <div className="text-xs text-gray-400 mb-1">Descrição</div>
+            <p className="text-sm text-white">{pin.description}</p>
+          </div>
+          
+          {/* Status atual */}
+          <div className="mb-3">
+            <div className="text-xs text-gray-400 mb-1">Status atual</div>
+            <div className={cn(
+              "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs",
+              getStatusBgClass(pin.status)
+            )}>
+              {getStatusIcon(pin.status)}
+              <span>{getStatusLabel(pin.status)}</span>
+            </div>
+            
+            {/* Indicador de persistência */}
+            {pin.persistenceDays !== undefined && (
+              <div className="mt-2 text-xs text-gray-400">
+                {pin.status === 'resolved' ? 
+                  `Resolvido após ${pin.persistenceDays} dias` : 
+                  `Persistindo há ${pin.persistenceDays} dias`}
+              </div>
+            )}
+          </div>
+          
+          {/* Histórico expandido */}
+          {showHistory && pin.history && (
+            <div className="mt-4 pt-4 border-t border-[#2a2a2a]">
+              <PinHistory 
+                history={pin.history} 
+                persistenceDays={pin.persistenceDays}
+              />
+            </div>
+          )}
+          
+          {/* Imagens */}
+          {pin.images && pin.images.length > 0 && (
+            <div className="mt-4">
+              <div className="text-xs text-gray-400 mb-2">Imagens</div>
+              <div className="grid grid-cols-3 gap-2">
+                {pin.images.map((img, index) => (
+                  <div key={index} className="aspect-square rounded-md overflow-hidden bg-[#252525]">
+                    <img src={img} alt={`Imagem ${index + 1}`} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -230,19 +293,54 @@ const Map = ({
   center,
   zoom
 }) => {
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapIntensity, setHeatmapIntensity] = useState(0.6);
+  const [activeHeatmapType, setActiveHeatmapType] = useState<PinType | 'all'>('all');
+  const [showStats, setShowStats] = useState(false);
+  const [showPersistenceStats, setShowPersistenceStats] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [showPersistenceFilter, setShowPersistenceFilter] = useState(false);
+  const [filteredPinsByPersistence, setFilteredPinsByPersistence] = useState<Pin[]>([]);
+  const mapRef = useRef(null);
+  
   // Filtra pins se necessário
   const filteredPins = selectedPinTypes?.length 
     ? pins.filter(pin => selectedPinTypes.includes(pin.type))
+    : filteredPinsByPersistence.length && showPersistenceFilter
+    ? filteredPinsByPersistence
     : pins;
 
+  // Função para lidar com o filtro de persistência
+  const handlePersistenceFilter = (filtered: Pin[]) => {
+    setFilteredPinsByPersistence(filtered);
+  };
+
+  // Adicione este useEffect para centralizar no pin selecionado
+  useEffect(() => {
+    if (selectedPin && mapRef.current) {
+      // Centraliza o mapa no pin quando selecionado
+      mapRef.current.setView(
+        [selectedPin.location.lat, selectedPin.location.lng],
+        mapRef.current.getZoom(),
+        { animate: true, duration: 0.5 }
+      );
+    }
+  }, [selectedPin]);
+
+  // Função explícita para lidar com o fechamento do modal
+  const handleCloseDetails = () => {
+    onPinClick(null);
+  };
+  
   return (
-    <div className="map-container">
-      <MapContainer 
+    <div className="relative h-full w-full">
+      <MapContainer
         center={center}
         zoom={zoom}
-        scrollWheelZoom={true}
-        style={{ height: '100vh', width: '100%' }}
-        className="z-0"
+        ref={mapRef}
+        className="h-full w-full bg-[#121212]"
+        zoomControl={false}
+        attributionControl={false}
       >
         <TileLayer
           attribution={attribution}
@@ -259,9 +357,89 @@ const Map = ({
             onClick={() => onPinClick(pin)}
           />
         ))}
+        
+        <ZoomControl position="bottomright" />
+        <AttributionControl position="bottomleft" />
       </MapContainer>
       
-      {selectedPin && <PinDetails pin={selectedPin} onClose={() => onPinClick(null)} />}
+      {/* Renderize PinDetails fora do MapContainer, mas com pointer-events-auto */}
+      {selectedPin && (
+        <div className="absolute top-0 left-0 w-full h-0 z-50">
+          <PinDetails 
+            pin={selectedPin} 
+            onClose={handleCloseDetails}
+          />
+        </div>
+      )}
+      
+      {/* Heatmap Controls */}
+      <div className="absolute top-4 right-4 z-[1000]">
+        <HeatmapControl
+          showHeatmap={showHeatmap}
+          onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
+          intensity={heatmapIntensity}
+          onIntensityChange={setHeatmapIntensity}
+          activeType={activeHeatmapType}
+          onTypeChange={setActiveHeatmapType}
+        />
+      </div>
+      
+      {/* Persistence Filter */}
+      {showPersistenceFilter && (
+        <div className="absolute top-4 left-[calc(72px+1rem)] z-[1000]">
+          <PersistenceFilter 
+            pins={pins} 
+            onFilter={handlePersistenceFilter} 
+          />
+        </div>
+      )}
+      
+      {/* Stats Buttons */}
+      <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
+          onClick={() => setShowStats(!showStats)}
+        >
+          <BarChart3 size={14} />
+          {showStats ? 'Ocultar Estatísticas' : 'Mostrar Estatísticas'}
+        </Button>
+        
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
+          onClick={() => setShowTimeline(!showTimeline)}
+        >
+          <LineChart size={14} />
+          {showTimeline ? 'Ocultar Timeline' : 'Mostrar Timeline'}
+        </Button>
+        
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
+          onClick={() => setShowPersistenceFilter(!showPersistenceFilter)}
+        >
+          <Clock size={14} />
+          {showPersistenceFilter ? 'Ocultar Filtro' : 'Filtrar por Tempo'}
+        </Button>
+      </div>
+      
+      {/* Stats Panel */}
+      {showStats && (
+        <div className="absolute bottom-16 right-4 z-[1000] w-96">
+          <PersistenceStats pins={pins} />
+        </div>
+      )}
+      
+      {/* Timeline Panel */}
+      {showTimeline && (
+        <div className="absolute bottom-16 left-4 z-[1000]">
+          <PersistenceTimeline pins={pins} />
+        </div>
+      )}
     </div>
   );
 };
@@ -269,49 +447,32 @@ const Map = ({
 // Funções auxiliares
 const getPinColorClass = (type) => {
   switch (type) {
-    case 'flood': return 'bg-flood';
-    case 'pothole': return 'bg-pothole';
-    case 'passable': return 'bg-passable';
-    case 'robbery': return 'bg-robbery';
-    default: return 'bg-gray-500';
+    case 'infraestrutura':
+      return 'bg-blue-500 text-white';
+    case 'robbery':
+      return 'bg-red-500 text-white';
+    default:
+      return 'bg-gray-500 text-white';
   }
 };
 
 const getPinIconSvg = (type) => {
   switch (type) {
-    case 'flood': 
-      return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 22a8 8 0 0 1-8-8c0-5 8-14 8-14s8 9 8 14a8 8 0 0 1-8 8z" fill="white"/></svg>';
-    case 'pothole': 
-      return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="white"/><path d="M5 5l14 14" stroke="#f59e0b" stroke-width="2"/></svg>';
-    case 'passable': 
-      return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="white"/><path d="M8 12l3 3 5-6" stroke="#10b981" stroke-width="2"/></svg>';
-    case 'robbery': 
-      return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="white"/><path d="M12 8v4M12 16h.01" stroke="#ef4444" stroke-width="2"/></svg>';
-    default: 
-      return '';
+    case 'infraestrutura':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 17V9"/><path d="M11 17V5"/><path d="M15 17v-7"/><path d="M19 17v-3"/></svg>`;
+    case 'robbery':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 17v.01"/><path d="M12 7v5"/></svg>`;
+    default:
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`;
   }
 };
 
 const getPinIcon = (type) => {
   switch (type) {
-    case 'flood':
+    case 'infraestrutura':
       return (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 22C9.82437 21 7.94351 19.3951 5.27939 16.1853C3.5732 14.0885 2.72011 13.0401 2.3442 11.7508C2 10.5614 2 9.56939 2 7.58535V7.2C2 5.27477 2 4.31215 2.43597 3.54306C2.81947 2.87152 3.39158 2.33294 4.0797 1.96910C4.85869 1.55556 5.87556 1.55556 7.90931 1.55556H16.0907C18.1244 1.55556 19.1413 1.55556 19.9203 1.96910C20.6084 2.33294 21.1805 2.87152 21.564 3.54306C22 4.31215 22 5.27477 22 7.2V7.58535C22 9.56939 22 10.5614 21.6558 11.7508C21.2799 13.0401 20.4268 14.0885 18.7206 16.1853C16.0565 19.3951 14.1756 21 12 21V22Z" fill="#45a0f8"/>
-        </svg>
-      );
-    case 'pothole':
-      return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" fill="#f59e0b"/>
-          <path d="M5 5L19 19" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-      );
-    case 'passable':
-      return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" fill="#10b981"/>
-          <path d="M8 12L11 15L16 9" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       );
     case 'robbery':
@@ -328,21 +489,23 @@ const getPinIcon = (type) => {
 
 const getPinTypeLabel = (type) => {
   switch (type) {
-    case 'flood': return 'Alagamento';
-    case 'pothole': return 'Buracos';
-    case 'passable': return 'Passável';
-    case 'robbery': return 'Assalto';
-    default: return type;
+    case 'infraestrutura':
+      return 'Infraestrutura';
+    case 'robbery':
+      return 'Roubo';
+    default:
+      return 'Desconhecido';
   }
 };
 
 const getScoreFromType = (type) => {
   switch (type) {
-    case 'flood': return '100';
-    case 'pothole': return '85';
-    case 'passable': return '95';
-    case 'robbery': return '80';
-    default: return '90';
+    case 'infraestrutura':
+      return 3;
+    case 'robbery':
+      return 5;
+    default:
+      return 1;
   }
 };
 
@@ -359,6 +522,52 @@ const convertToDMS = (coordinate, isLatitude) => {
     : (coordinate >= 0 ? "E" : "W");
   
   return `${degrees}°${minutes}'${seconds}"${direction}`;
+};
+
+// Funções auxiliares para status
+const getStatusBgClass = (status: string): string => {
+  switch (status) {
+    case 'reported':
+      return 'bg-flood/20 text-flood';
+    case 'acknowledged':
+      return 'bg-pothole/20 text-pothole';
+    case 'in_progress':
+      return 'bg-passable/20 text-passable';
+    case 'resolved':
+      return 'bg-passable/20 text-passable';
+    default:
+      return 'bg-gray-500/20 text-gray-400';
+  }
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'reported':
+      return <AlertCircle size={10} className="text-current" />;
+    case 'acknowledged':
+      return <Clock size={10} className="text-current" />;
+    case 'in_progress':
+      return <Wrench size={10} className="text-current" />;
+    case 'resolved':
+      return <CheckCircle size={10} className="text-current" />;
+    default:
+      return null;
+  }
+};
+
+const getStatusLabel = (status: string): string => {
+  switch (status) {
+    case 'reported':
+      return 'Reportado';
+    case 'acknowledged':
+      return 'Reconhecido';
+    case 'in_progress':
+      return 'Em andamento';
+    case 'resolved':
+      return 'Resolvido';
+    default:
+      return status;
+  }
 };
 
 export default Map;

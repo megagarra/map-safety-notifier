@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PinType, CreatePinInput } from '@/types';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle, DropletIcon, CircleOff, Image as ImageIcon, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, DropletIcon, CircleOff, Image as ImageIcon, X, BarChart3, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ReportModalProps {
@@ -22,13 +22,13 @@ const ReportModal: React.FC<ReportModalProps> = ({
   onSubmit, 
   location 
 }) => {
-  const [type, setType] = useState<PinType>('flood');
+  const [type, setType] = useState<PinType>('infraestrutura');
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleClose = () => {
-    setType('flood');
+    setType('infraestrutura');
     setDescription('');
     setImages([]);
     onClose();
@@ -50,20 +50,21 @@ const ReportModal: React.FC<ReportModalProps> = ({
       onSubmit(data);
       handleClose();
     } catch (error) {
-      console.error('Error submitting report:', error);
+      console.error('Erro ao enviar relatório:', error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    // In a real application, you would upload these to a storage service
-    // For now, we'll just create object URLs for preview
-    const newImages = Array.from(files).map(file => URL.createObjectURL(file));
-    setImages([...images, ...newImages]);
+    if (e.target.files?.length) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImages([...images, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const removeImage = (index: number) => {
@@ -110,71 +111,37 @@ const ReportModal: React.FC<ReportModalProps> = ({
               </div>
             </div>
             
-            <RadioGroup 
-              value={type}
-              onValueChange={(value) => setType(value as PinType)}
-              className="grid grid-cols-2 gap-3"
-            >
-              <div className={cn(
+            <div className="grid grid-cols-2 gap-3">
+              <div onClick={() => setType('infraestrutura')} className={cn(
                 "flex items-center rounded-md border p-3 cursor-pointer transition-colors",
-                type === 'flood' 
+                type === 'infraestrutura' 
                   ? "bg-[#1a1a1a] border-[#45a0f8]" 
                   : "border-[#2a2a2a] hover:border-[#45a0f8]/50 bg-[#1e1e1e]"
               )}>
-                <RadioGroupItem value="flood" id="flood" className="sr-only" />
-                <Label htmlFor="flood" className="flex items-center gap-2 cursor-pointer w-full text-white">
-                  <div className="w-6 h-6 rounded-full bg-[#45a0f8] flex items-center justify-center">
-                    <DropletIcon size={14} className="text-white" />
-                  </div>
-                  <span>Alagamento</span>
-                </Label>
+                <div className="h-8 w-8 mr-3 rounded-full bg-blue-500/10 flex items-center justify-center">
+                  <BarChart3 className="h-4 w-4 text-blue-500" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-white">Infraestrutura</div>
+                  <div className="text-xs text-gray-400">Problemas de estrutura urbana</div>
+                </div>
               </div>
-              
-              <div className={cn(
+
+              <div onClick={() => setType('crime')} className={cn(
                 "flex items-center rounded-md border p-3 cursor-pointer transition-colors",
-                type === 'pothole' 
-                  ? "bg-[#1a1a1a] border-[#f59e0b]" 
-                  : "border-[#2a2a2a] hover:border-[#f59e0b]/50 bg-[#1e1e1e]"
+                type === 'crime' 
+                  ? "bg-[#1a1a1a] border-[#f43f5e]" 
+                  : "border-[#2a2a2a] hover:border-[#f43f5e]/50 bg-[#1e1e1e]"
               )}>
-                <RadioGroupItem value="pothole" id="pothole" className="sr-only" />
-                <Label htmlFor="pothole" className="flex items-center gap-2 cursor-pointer w-full text-white">
-                  <div className="w-6 h-6 rounded-full bg-[#f59e0b] flex items-center justify-center">
-                    <CircleOff size={14} className="text-white" />
-                  </div>
-                  <span>Buraco</span>
-                </Label>
+                <div className="h-8 w-8 mr-3 rounded-full bg-red-500/10 flex items-center justify-center">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-white">Crime</div>
+                  <div className="text-xs text-gray-400">Ocorrências de segurança</div>
+                </div>
               </div>
-              
-              <div className={cn(
-                "flex items-center rounded-md border p-3 cursor-pointer transition-colors",
-                type === 'passable' 
-                  ? "bg-[#1a1a1a] border-[#10b981]" 
-                  : "border-[#2a2a2a] hover:border-[#10b981]/50 bg-[#1e1e1e]"
-              )}>
-                <RadioGroupItem value="passable" id="passable" className="sr-only" />
-                <Label htmlFor="passable" className="flex items-center gap-2 cursor-pointer w-full text-white">
-                  <div className="w-6 h-6 rounded-full bg-[#10b981] flex items-center justify-center">
-                    <CheckCircle size={14} className="text-white" />
-                  </div>
-                  <span>Passável</span>
-                </Label>
-              </div>
-              
-              <div className={cn(
-                "flex items-center rounded-md border p-3 cursor-pointer transition-colors",
-                type === 'robbery' 
-                  ? "bg-[#1a1a1a] border-[#ef4444]" 
-                  : "border-[#2a2a2a] hover:border-[#ef4444]/50 bg-[#1e1e1e]"
-              )}>
-                <RadioGroupItem value="robbery" id="robbery" className="sr-only" />
-                <Label htmlFor="robbery" className="flex items-center gap-2 cursor-pointer w-full text-white">
-                  <div className="w-6 h-6 rounded-full bg-[#ef4444] flex items-center justify-center">
-                    <AlertCircle size={14} className="text-white" />
-                  </div>
-                  <span>Assalto</span>
-                </Label>
-              </div>
-            </RadioGroup>
+            </div>
           </div>
 
           <div className="space-y-2">
