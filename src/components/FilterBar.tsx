@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { PinType } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -34,13 +33,15 @@ const FilterBar: React.FC<FilterBarProps> = ({ selectedTypes, onTypeSelect }) =>
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3 bg-white/80 backdrop-blur-sm rounded-lg shadow-sm border border-border animate-fadeIn">
+    <div className="flex flex-wrap items-center gap-2 p-4 bg-white/70 backdrop-blur-md rounded-xl shadow-lg border border-border/40 transition-all duration-300 hover:bg-white/80 animate-fadeIn">
       <Button
         variant={isSelected('flood') ? "default" : "outline"}
         size="sm"
         className={cn(
-          "transition-all duration-300 gap-2",
-          isSelected('flood') ? "bg-flood text-white hover:bg-flood/90" : "hover:border-flood/50"
+          "transition-all duration-300 gap-2 rounded-lg font-medium shadow-sm",
+          isSelected('flood') 
+            ? "bg-gradient-to-r from-flood to-flood/90 text-white hover:opacity-90 shadow-flood/20" 
+            : "hover:border-flood/50 hover:text-flood"
         )}
         onClick={() => toggleType('flood')}
       >
@@ -52,8 +53,10 @@ const FilterBar: React.FC<FilterBarProps> = ({ selectedTypes, onTypeSelect }) =>
         variant={isSelected('pothole') ? "default" : "outline"}
         size="sm"
         className={cn(
-          "transition-all duration-300 gap-2",
-          isSelected('pothole') ? "bg-pothole text-white hover:bg-pothole/90" : "hover:border-pothole/50"
+          "transition-all duration-300 gap-2 rounded-lg font-medium shadow-sm",
+          isSelected('pothole') 
+            ? "bg-gradient-to-r from-pothole to-pothole/90 text-white hover:opacity-90 shadow-pothole/20" 
+            : "hover:border-pothole/50 hover:text-pothole"
         )}
         onClick={() => toggleType('pothole')}
       >
@@ -65,8 +68,10 @@ const FilterBar: React.FC<FilterBarProps> = ({ selectedTypes, onTypeSelect }) =>
         variant={isSelected('passable') ? "default" : "outline"}
         size="sm"
         className={cn(
-          "transition-all duration-300 gap-2",
-          isSelected('passable') ? "bg-passable text-white hover:bg-passable/90" : "hover:border-passable/50"
+          "transition-all duration-300 gap-2 rounded-lg font-medium shadow-sm",
+          isSelected('passable') 
+            ? "bg-gradient-to-r from-passable to-passable/90 text-white hover:opacity-90 shadow-passable/20" 
+            : "hover:border-passable/50 hover:text-passable"
         )}
         onClick={() => toggleType('passable')}
       >

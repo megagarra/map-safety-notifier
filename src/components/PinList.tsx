@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Pin, PinType } from '@/types';
 import { DropletIcon, CircleOff, CheckCircle, AlertCircle, ExternalLink, Clock } from 'lucide-react';
@@ -18,8 +17,8 @@ interface PinListProps {
 const PinList: React.FC<PinListProps> = ({ pins, selectedPin, onPinClick }) => {
   if (pins.length === 0) {
     return (
-      <div className="text-center p-6">
-        <p className="text-muted-foreground">Nenhum registro encontrado</p>
+      <div className="text-center p-6 text-muted-foreground">
+        <p>Nenhum registro encontrado</p>
       </div>
     );
   }
@@ -29,62 +28,57 @@ const PinList: React.FC<PinListProps> = ({ pins, selectedPin, onPinClick }) => {
   });
 
   return (
-    <ScrollArea className="h-full pr-4">
-      <div className="space-y-3 animate-fadeIn pb-4">
-        {sortedPins.map((pin) => (
-          <Card 
-            key={pin.id} 
-            className={cn(
-              "overflow-hidden transition-all duration-300 hover:shadow-md cursor-pointer group",
-              selectedPin?.id === pin.id ? "ring-2 ring-primary ring-offset-2" : ""
-            )}
-            onClick={() => onPinClick(pin)}
-          >
-            <CardHeader className={cn(
-              "p-3 pb-0",
-              getPinBackgroundClass(pin.type)
-            )}>
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-2">
-                  {getPinIcon(pin.type)}
-                  <CardTitle className="text-sm font-medium">{getPinTypeLabel(pin.type)}</CardTitle>
-                </div>
-                <div className="flex items-center text-xs text-muted-foreground gap-1">
-                  <Clock size={12} />
-                  <span>{formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR })}</span>
-                </div>
+    <div className="p-4 space-y-3">
+      {sortedPins.map((pin) => (
+        <div 
+          key={pin.id} 
+          className={cn(
+            "bg-secondary border border-border rounded-lg p-3 cursor-pointer transition-all duration-300",
+            selectedPin?.id === pin.id ? "ring-2 ring-primary" : "hover:bg-accent/50"
+          )}
+          onClick={() => onPinClick(pin)}
+        >
+          <div className="flex items-center gap-3">
+            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", getPinColorClass(pin.type))}>
+              {getPinIcon(pin.type)}
+            </div>
+            
+            <div className="flex-1">
+              <div className="font-medium">{getPinTypeLabel(pin.type)}</div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR })}</span>
+                <span>•</span>
+                <span className="truncate max-w-[120px]">
+                  {pin.address || `${pin.location.lat.toFixed(4)}, ${pin.location.lng.toFixed(4)}`}
+                </span>
               </div>
-            </CardHeader>
-            <CardContent className="p-3">
-              <p className="text-sm line-clamp-2">{pin.description}</p>
-            </CardContent>
-            {pin.images.length > 0 && (
-              <div className="px-3 pb-3">
-                <div className="grid grid-cols-3 gap-1">
-                  {pin.images.slice(0, 3).map((img, index) => (
-                    <div key={index} className="aspect-square rounded overflow-hidden">
-                      <img 
-                        src={img} 
-                        alt={`Imagem ${index + 1}`} 
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                      />
-                    </div>
-                  ))}
+            </div>
+            
+            <div className="score-badge">
+              {getScoreFromType(pin.type)}
+            </div>
+          </div>
+          
+          <div className="mt-2 text-sm text-muted-foreground line-clamp-2">
+            {pin.description}
+          </div>
+          
+          {pin.images.length > 0 && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {pin.images.slice(0, 3).map((img, index) => (
+                <div key={index} className="aspect-square rounded-md overflow-hidden bg-accent">
+                  <img 
+                    src={img} 
+                    alt={`Imagem ${index + 1}`} 
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-              </div>
-            )}
-            <CardFooter className="p-3 pt-0 flex justify-between items-center">
-              <span className="text-xs text-muted-foreground">
-                {pin.address || `${pin.location.lat.toFixed(4)}, ${pin.location.lng.toFixed(4)}`}
-              </span>
-              <Button size="sm" variant="ghost" className="p-0 h-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                <ExternalLink size={14} />
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
-    </ScrollArea>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 };
 
@@ -120,6 +114,26 @@ const getPinTypeLabel = (type: PinType): string => {
     case 'passable': return 'Passável';
     case 'robbery': return 'Assalto';
     default: return type;
+  }
+};
+
+const getScoreFromType = (type: PinType): string => {
+  switch (type) {
+    case 'flood': return '100';
+    case 'pothole': return '85';
+    case 'passable': return '95';
+    case 'robbery': return '90';
+    default: return '80';
+  }
+};
+
+const getPinColorClass = (type: PinType): string => {
+  switch (type) {
+    case 'flood': return 'bg-flood';
+    case 'pothole': return 'bg-pothole';
+    case 'passable': return 'bg-passable';
+    case 'robbery': return 'bg-robbery';
+    default: return 'bg-gray-500';
   }
 };
 

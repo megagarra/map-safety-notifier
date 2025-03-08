@@ -1,17 +1,21 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useMapData } from '@/hooks/useMapData';
 import Map from '@/components/Map';
 import NavBar from '@/components/NavBar';
 import ReportModal from '@/components/ReportModal';
-import PinList from '@/components/PinList';
-import FilterBar from '@/components/FilterBar';
 import { Pin, PinType, CreatePinInput } from '@/types';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { generatePins } from '@/lib/helpers';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+// Variável para armazenar o timeout fora do componente
+let urlUpdateTimeout: number | undefined;
 
 const Index = () => {
   const { pins, loading, addPin, filterPins } = useMapData();
@@ -22,16 +26,24 @@ const Index = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [center, setCenter] = useState<[number, number]>([-23.3268, -46.7263]);
+  const [zoom, setZoom] = useState<number>(14);
 
   const filteredPins = selectedPinTypes ? filterPins(selectedPinTypes) : pins;
   
   const handleMapClick = (lat: number, lng: number) => {
     setSelectedLocation({ lat, lng });
     setReportModalOpen(true);
+    updateUrlWithCoordinates(lat, lng);
   };
   
   const handlePinClick = (pin: Pin) => {
-    setSelectedPin(pin);
+    setSelectedPin(pin === selectedPin ? null : pin);
+    if (pin) {
+      updateUrlWithCoordinates(pin.location.lat, pin.location.lng);
+    }
   };
   
   const handleReportSubmit = (data: CreatePinInput) => {
@@ -59,82 +71,92 @@ const Index = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
+  useEffect(() => {
+    setSelectedPinTypes(generatePins(20).map(pin => pin.type));
+  }, []);
+
+  useEffect(() => {
+    // Carregar pins
+    const initialPins = generatePins(8);
+    setPins(initialPins);
+    
+    // Verificar URL para coordenadas
+    const urlParams = new URLSearchParams(location.search);
+    const lat = parseFloat(urlParams.get('lat') || '');
+    const lng = parseFloat(urlParams.get('lng') || '');
+    const z = parseInt(urlParams.get('z') || '');
+    
+    if (!isNaN(lat) && !isNaN(lng)) {
+      setCenter([lat, lng]);
+      if (!isNaN(z)) {
+        setZoom(z);
+      }
+    }
+  }, [location.search]);
+
+  const updateUrlWithCoordinates = (lat: number, lng: number, z?: number) => {
+    const currentZ = z || zoom;
+    
+    // Evitar atualizações desnecessárias
+    if (Math.abs(center[0] - lat) < 0.0001 && 
+        Math.abs(center[1] - lng) < 0.0001 && 
+        currentZ === zoom) {
+      return;
+    }
+    
+    // Atualizar estados
+    setCenter([lat, lng]);
+    if (currentZ !== zoom) {
+      setZoom(currentZ);
+    }
+    
+    // Debounce para URL
+    if (urlUpdateTimeout) {
+      clearTimeout(urlUpdateTimeout);
+    }
+    
+    urlUpdateTimeout = window.setTimeout(() => {
+      navigate(`/?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}&z=${currentZ}`, { replace: true });
+      urlUpdateTimeout = undefined;
+    }, 500);
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <NavBar onNewReport={handleNewReport} />
-      
-      <main className="flex-1 container mx-auto p-4 pt-20">
-        <div className="flex flex-col h-[calc(100vh-8rem)] md:flex-row gap-4">
-          {isMobile && (
-            <Button 
-              variant="outline" 
-              size="icon" 
-              className="fixed bottom-4 right-4 z-30 rounded-full shadow-lg md:hidden"
-              onClick={toggleSidebar}
-            >
-              {sidebarOpen ? <ArrowRight /> : <ArrowLeft />}
-            </Button>
-          )}
-          
-          <div className="flex-1 relative">
-            <div className="absolute top-4 left-0 right-0 z-10 px-4">
-              <FilterBar
-                selectedTypes={selectedPinTypes}
-                onTypeSelect={setSelectedPinTypes}
-              />
-            </div>
-            
-            <div className="h-full rounded-lg overflow-hidden">
-              {loading ? (
-                <div className="h-full flex items-center justify-center bg-muted/20 rounded-lg">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <p className="text-muted-foreground">Carregando mapa...</p>
-                  </div>
-                </div>
-              ) : (
-                <Map 
-                  pins={filteredPins} 
-                  onPinClick={handlePinClick} 
-                  onMapClick={handleMapClick}
-                  selectedPinTypes={selectedPinTypes}
-                />
-              )}
-            </div>
-          </div>
-          
-          <div 
-            className={cn(
-              "w-full md:w-80 lg:w-96 bg-card rounded-lg border overflow-hidden shadow-sm transition-all duration-300 ease-in-out",
-              isMobile && !sidebarOpen ? "h-0 opacity-0" : "h-full opacity-100",
-              isMobile && sidebarOpen ? "fixed inset-x-4 bottom-16 top-24 z-20" : ""
-            )}
-          >
-            <div className="h-full flex flex-col">
-              <div className="p-4 border-b">
-                <h2 className="text-lg font-semibold">Problemas Reportados</h2>
-                <p className="text-sm text-muted-foreground">
-                  {filteredPins.length} registro{filteredPins.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <PinList 
-                  pins={filteredPins} 
-                  selectedPin={selectedPin}
-                  onPinClick={handlePinClick}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-      
-      <ReportModal 
-        isOpen={reportModalOpen}
-        onClose={() => setReportModalOpen(false)}
-        onSubmit={handleReportSubmit}
-        location={selectedLocation}
+    <div className="flex h-screen w-full overflow-hidden">
+      <NavBar 
+        onNewReport={handleNewReport} 
+        pins={pins}
+        onPinClick={handlePinClick}
       />
+      
+      <div className="flex-1 relative">
+        <Map
+          pins={pins}
+          onPinClick={handlePinClick}
+          onMapClick={handleMapClick}
+          onMapMove={(newCenter, newZoom) => {
+            setCenter(newCenter);
+            setZoom(newZoom);
+            updateUrlWithCoordinates(newCenter[0], newCenter[1], newZoom);
+          }}
+          selectedPinTypes={selectedPinTypes}
+          selectedPin={selectedPin}
+          center={center}
+          zoom={zoom}
+        />
+      </div>
+      
+      {reportModalOpen && (
+        <ReportModal
+          isOpen={reportModalOpen}
+          onClose={() => {
+            setReportModalOpen(false);
+            setSelectedLocation(null);
+          }}
+          onSubmit={handleReportSubmit}
+          location={selectedLocation}
+        />
+      )}
     </div>
   );
 };
