@@ -79,7 +79,7 @@ const MapClickHandler = ({ onMapClick }) => {
 };
 
 // Componente para criar um pin customizado
-const CustomPin = ({ pin, onClick, onVote }) => {
+const CustomPin = ({ pin, onClick }) => {
   const isCrime = pin.type === 'crime';
   const hasHighVotes = (pin.votes || 0) > 5;
   
@@ -95,13 +95,13 @@ const CustomPin = ({ pin, onClick, onVote }) => {
         onClick(pin);
       }}
     >
+      {/* Apenas o ícone do pin, sem badge de status */}
       <div className={cn(
         "rounded-full flex items-center justify-center shadow-lg",
-        isCrime ? "crime-pin" : "infra-pin",
-        hasHighVotes ? "border-[3px]" : "border-2",
-        hasHighVotes && isCrime ? "border-red-400" : "",
-        hasHighVotes && !isCrime ? "border-yellow-400" : "",
-        "w-8 h-8"
+        isCrime ? 
+          "bg-[#1a1a1a] border-2 border-red-500/30 text-red-400" : 
+          "bg-[#1a1a1a] border-2 border-yellow-500/30 text-yellow-400",
+        hasHighVotes ? "w-10 h-10 border-[3px]" : "w-8 h-8"
       )}>
         <div 
           dangerouslySetInnerHTML={{ 
@@ -109,13 +109,13 @@ const CustomPin = ({ pin, onClick, onVote }) => {
           }} 
           className="flex items-center justify-center w-full h-full"
         />
-      </div>
-      
-      <div className={cn(
-        "absolute -top-1 -right-1 flex items-center justify-center rounded-full shadow-md border border-gray-300",
-        hasHighVotes ? "h-5 w-9 bg-yellow-400 text-black text-xs" : "h-4 w-4 bg-white text-black text-[10px]"
-      )}>
-        {hasHighVotes ? `${pin.votes || 0} 👍` : getScoreFromType(pin.type)}
+        
+        {/* Badge para votos */}
+        {(pin.votes && pin.votes > 0) && (
+          <div className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full shadow-md border border-[#333]">
+            {pin.votes}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -672,16 +672,9 @@ const Map = ({
             position={[pin.location.lat, pin.location.lng]}
             icon={L.divIcon({
               className: 'custom-div-icon',
-              html: `
-                <div class="pin-container ${pin.type === 'crime' ? 'pin-pulse-red' : 'pin-pulse-blue'}">
-                  <div class="custom-pin ${pin.type === 'infraestrutura' ? 'infra-pin' : 'crime-pin'}">
-                    ${getPinIconSvg(pin.type)}
-                  </div>
-                  <div class="score-badge">${getScoreFromType(pin.type)}</div>
-                </div>
-              `,
-              iconSize: [30, 30],
-              iconAnchor: [15, 15]
+              html: createPinHTML(pin),
+              iconSize: [30, 30], // Tamanho reduzido sem o badge
+              iconAnchor: [15, 15] // Centralizado no ponto
             })}
             eventHandlers={{
               click: () => onPinClick(pin)
@@ -883,6 +876,57 @@ const getStatusLabel = (status: string): string => {
       return 'Resolvido';
     default:
       return status;
+  }
+};
+
+// Função para criar o HTML do pin diretamente
+const createPinHTML = (pin) => {
+  const isCrime = pin.type === 'crime';
+  const hasHighVotes = (pin.votes || 0) > 5;
+  
+  return `
+    <div class="pin-wrapper-simple">
+      <div class="pin-container ${isCrime ? 'pin-pulse-red' : 'pin-pulse-yellow'} ${hasHighVotes ? 'scale-110' : ''}">
+        <div class="custom-pin ${isCrime ? 'crime-pin' : 'infra-pin'} rounded-full flex items-center justify-center shadow-lg ${hasHighVotes ? 'h-10 w-10' : 'h-8 w-8'}">
+          ${getPinIconSvg(pin.type)}
+          ${(pin.votes && pin.votes > 0) 
+            ? `<div class="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full border border-gray-700">${pin.votes}</div>` 
+            : ''}
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+// Função para obter classes CSS para badges de status (versão para HTML direto)
+const getStatusBadgeClassHTML = (status) => {
+  switch (status) {
+    case 'reported':
+      return 'bg-red-500/80 text-white';
+    case 'acknowledged':
+      return 'bg-yellow-500/80 text-black';
+    case 'in_progress':
+      return 'bg-blue-500/80 text-white';
+    case 'resolved':
+      return 'bg-green-500/80 text-white';
+    default:
+      return 'bg-gray-500/80 text-white';
+  }
+};
+
+// Função para obter classes CSS para badges de status (versão para className)
+const getStatusBadgeClass = (status) => {
+  switch (status) {
+    case 'reported':
+      return 'bg-red-500/80 text-white';
+    case 'acknowledged':
+      return 'bg-yellow-500/80 text-black';
+    case 'in_progress':
+      return 'bg-blue-500/80 text-white';
+    case 'resolved':
+      return 'bg-green-500/80 text-white';
+    default:
+      return 'bg-gray-500/80 text-white';
   }
 };
 
