@@ -4,7 +4,7 @@ import { subDays, addDays } from 'date-fns';
 
 // Locais específicos em Franco da Rocha
 const specificLocations = [
-  { name: 'Jardim Luciana', lat: -23.3284, lng: -46.5378 },
+  { name: 'Jardim Luciana', lat: -23.319186, lng: -46.757346 },
   { name: 'Centro', lat: -23.3228, lng: -46.5400 },
   { name: 'Parque Vitória', lat: -23.3180, lng: -46.5310 },
   { name: 'Vila dos Comerciários', lat: -23.3305, lng: -46.5422 },

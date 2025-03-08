@@ -8,7 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import PinHistory from '@/components/PinHistory';
-import { Clock, X, Copy, AlertCircle, CheckCircle, Wrench, BarChart3, LineChart } from 'lucide-react';
+import { Clock, X, Copy, AlertCircle, CheckCircle, Wrench, BarChart3, LineChart, AlertTriangle } from 'lucide-react';
 import HeatmapControl from '@/components/HeatmapControl';
 import PersistenceStats from '@/components/PersistenceStats';
 import PersistenceTimeline from '@/components/PersistenceTimeline';
@@ -67,32 +67,27 @@ const MapClickHandler = ({ onMapClick }) => {
 
 // Componente para criar um pin customizado
 const CustomPin = ({ pin, onClick }) => {
-  const iconColor = getPinColorClass(pin.type);
-  const score = getScoreFromType(pin.type);
+  const isCrime = pin.type === 'crime';
   
-  const customIcon = L.divIcon({
-    className: 'custom-pin',
-    html: `<div class="relative">
-             <div class="score-badge absolute -top-7 left-1/2 transform -translate-x-1/2 z-10 bg-black/70">
-               ${score}
-             </div>
-             <div class="pin-container ${iconColor}">
-               ${getPinIconSvg(pin.type)}
-             </div>
-           </div>`,
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -40]
-  });
-
   return (
-    <Marker 
-      position={[pin.location.lat, pin.location.lng]} 
-      icon={customIcon}
-      eventHandlers={{
-        click: () => onClick(pin)
+    <div 
+      className={`pin-container ${isCrime ? 'pin-pulse' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(pin);
       }}
-    />
+    >
+      <div className={`custom-pin ${isCrime ? 'crime-pin' : 'infra-pin'}`}>
+        <div 
+          dangerouslySetInnerHTML={{ 
+            __html: getPinIconSvg(pin.type) 
+          }} 
+        />
+      </div>
+      <div className="score-badge">
+        {getScoreFromType(pin.type)}
+      </div>
+    </div>
   );
 };
 
@@ -170,6 +165,7 @@ const MapCenterUpdater = ({ center, zoom }) => {
 // Componente de detalhes do pin (igual ao cartão Adidas na imagem)
 const PinDetails = ({ pin, onClose }) => {
   const [showHistory, setShowHistory] = useState(false);
+  const isCrime = pin.type === 'crime';
   
   if (!pin) return null;
   
@@ -186,27 +182,43 @@ const PinDetails = ({ pin, onClose }) => {
   };
 
   return (
-    <div className="fixed right-4 top-[120px] z-50 max-h-[70vh] w-[350px] overflow-y-auto rounded-xl bg-[#121212]/95 backdrop-blur-lg shadow-xl border border-[#2a2a2a] transition-all duration-300 animate-slideIn pointer-events-auto">
-      <div className="relative p-4">
-        <button 
-          onClick={() => onClose()}
-          className="absolute right-4 top-4 h-7 w-7 rounded-full bg-[#2a2a2a]/80 flex items-center justify-center text-white/70 hover:bg-[#3a3a3a] hover:text-white transition-colors cursor-pointer"
-        >
-          <X size={16} />
-        </button>
-
-        <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a] flex justify-between items-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 pointer-events-auto backdrop-blur-sm">
+      <div className={cn(
+        "relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border transition-all duration-300 animate-fadeIn",
+        isCrime ? "border-[#f43f5e]" : "border-[#2a2a2a]"
+      )}>
+        <div className={cn(
+          "sticky top-0 z-10 flex justify-between items-center p-4 border-b",
+          isCrime 
+            ? "border-[#f43f5e]/30 bg-[#1a1a1a]" 
+            : "border-[#2a2a2a] bg-[#1a1a1a]"
+        )}>
           <div className="flex items-center gap-2">
-            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", getPinColorClass(pin.type))}>
-              {getPinIcon(pin.type)}
+            <div className={cn(
+              "flex items-center justify-center h-8 w-8 rounded-full",
+              isCrime ? "bg-[#1a1a1a] border-[#f43f5e] border-2 text-[#f43f5e]" : getPinColorClass(pin.type)
+            )}>
+              {isCrime ? (
+                <AlertCircle size={16} className="text-[#f43f5e]" />
+              ) : (
+                <div 
+                  dangerouslySetInnerHTML={{ 
+                    __html: getPinIconSvg(pin.type) 
+                  }} 
+                  className="scale-75"
+                />
+              )}
             </div>
-            <div>
-              <h3 className="font-medium text-white">{getPinTypeLabel(pin.type)}</h3>
-              <div className="text-xs text-gray-400">
-                {format(new Date(pin.reportedAt), "dd 'de' MMMM, yyyy", { locale: ptBR })}
-              </div>
-            </div>
+            <h3 className="text-lg font-medium text-white">
+              {getPinTypeLabel(pin.type)}
+            </h3>
           </div>
+          <button 
+            onClick={() => onClose()}
+            className="h-8 w-8 rounded-full bg-[#2a2a2a]/80 flex items-center justify-center text-white/70 hover:bg-[#3a3a3a] hover:text-white transition-colors cursor-pointer"
+          >
+            <X size={18} />
+          </button>
         </div>
         
         <div className="p-4">
@@ -275,6 +287,16 @@ const PinDetails = ({ pin, onClose }) => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          
+          {isCrime && (
+            <div className="mb-4 p-3 bg-[#1a1a1a] border border-[#f43f5e] rounded-lg text-white/90">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertCircle size={16} className="text-[#f43f5e]" />
+                <span className="font-medium">Área de risco</span>
+              </div>
+              <p className="text-sm text-gray-300">Este local possui registro de atividade criminosa. Recomendamos cautela ao transitar por esta área.</p>
             </div>
           )}
         </div>
@@ -350,11 +372,29 @@ const Map = ({
         <MapEvents onMapClick={onMapClick} onMapMove={onMapMove} />
         <MapCenterUpdater center={center} zoom={zoom} />
         
-        {filteredPins.map((pin) => (
-          <CustomPin 
-            key={pin.id} 
-            pin={pin} 
-            onClick={() => onPinClick(pin)}
+        {filteredPins.map(pin => (
+          <Marker 
+            key={pin.id}
+            position={[pin.location.lat, pin.location.lng]}
+            icon={L.divIcon({
+              className: 'custom-div-icon',
+              html: `
+                <div class="pin-container ${pin.type === 'crime' ? 'pin-pulse-red' : 'pin-pulse-blue'}">
+                  <div class="custom-pin ${pin.type === 'crime' ? 'crime-pin' : 'infra-pin'}">
+                    ${getPinIconSvg(pin.type)}
+                  </div>
+                  <div class="score-badge">
+                    ${getScoreFromType(pin.type)}
+                  </div>
+                </div>
+              `,
+              iconSize: [36, 36],
+              iconAnchor: [18, 18],
+              popupAnchor: [0, -18]
+            })}
+            eventHandlers={{
+              click: () => onPinClick(pin)
+            }}
           />
         ))}
         
@@ -449,8 +489,8 @@ const getPinColorClass = (type) => {
   switch (type) {
     case 'infraestrutura':
       return 'bg-blue-500 text-white';
-    case 'robbery':
-      return 'bg-red-500 text-white';
+    case 'crime':
+      return 'bg-red-600 text-white';
     default:
       return 'bg-gray-500 text-white';
   }
@@ -459,31 +499,13 @@ const getPinColorClass = (type) => {
 const getPinIconSvg = (type) => {
   switch (type) {
     case 'infraestrutura':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 17V9"/><path d="M11 17V5"/><path d="M15 17v-7"/><path d="M19 17v-3"/></svg>`;
-    case 'robbery':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 17v.01"/><path d="M12 7v5"/></svg>`;
+      // Ícone de construção/infraestrutura (Building) - maior
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="12" y1="6" x2="12" y2="6.01"></line><line x1="12" y1="10" x2="12" y2="10.01"></line><line x1="12" y1="14" x2="12" y2="14.01"></line><line x1="12" y1="18" x2="12" y2="18.01"></line></svg>`;
+    case 'crime':
+      // AlertCircle para crime - maior
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
     default:
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`;
-  }
-};
-
-const getPinIcon = (type) => {
-  switch (type) {
-    case 'infraestrutura':
-      return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 22C9.82437 21 7.94351 19.3951 5.27939 16.1853C3.5732 14.0885 2.72011 13.0401 2.3442 11.7508C2 10.5614 2 9.56939 2 7.58535V7.2C2 5.27477 2 4.31215 2.43597 3.54306C2.81947 2.87152 3.39158 2.33294 4.0797 1.96910C4.85869 1.55556 5.87556 1.55556 7.90931 1.55556H16.0907C18.1244 1.55556 19.1413 1.55556 19.9203 1.96910C20.6084 2.33294 21.1805 2.87152 21.564 3.54306C22 4.31215 22 5.27477 22 7.2V7.58535C22 9.56939 22 10.5614 21.6558 11.7508C21.2799 13.0401 20.4268 14.0885 18.7206 16.1853C16.0565 19.3951 14.1756 21 12 21V22Z" fill="#45a0f8"/>
-        </svg>
-      );
-    case 'robbery':
-      return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" fill="#ef4444"/>
-          <path d="M12 8V12M12 16H12.01" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-      );
-    default:
-      return null;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>`;
   }
 };
 
