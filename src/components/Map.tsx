@@ -19,7 +19,9 @@ import {
   LineChart, 
   AlertTriangle, 
   ThumbsUp, 
-  Users 
+  Users,
+  Shield,
+  User
 } from 'lucide-react';
 import HeatmapControl from '@/components/HeatmapControl';
 import PersistenceStats from '@/components/PersistenceStats';
@@ -33,8 +35,10 @@ import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
 // At the top of your file, add these type declarations
 declare module 'leaflet' {
-  interface IconDefault {
-    _getIconUrl?: string;
+  namespace Icon {
+    interface Default {
+      _getIconUrl?: string;
+    }
   }
   
   interface Map {
@@ -43,7 +47,7 @@ declare module 'leaflet' {
 }
 
 // Delete the default icon
-delete (L.Icon.Default.prototype as L.IconDefault)._getIconUrl;
+delete L.Icon.Default.prototype._getIconUrl;
 
 // Set up the default icon
 L.Icon.Default.mergeOptions({
@@ -62,6 +66,8 @@ interface MapProps {
   center: [number, number];
   zoom: number;
   onVote: (pinId: string) => void;
+  showSecurityPanel?: boolean;
+  securityMode?: boolean;
 }
 
 // Mapa com tema escuro similar à imagem
@@ -606,7 +612,9 @@ const Map = ({
   selectedPin,
   center,
   zoom,
-  onVote
+  onVote,
+  showSecurityPanel = false,
+  securityMode = false
 }) => {
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [heatmapIntensity, setHeatmapIntensity] = useState(0.6);
@@ -695,6 +703,24 @@ const Map = ({
             onVote={onVote}
             userType={userRoleSimulation}
           />
+        </div>
+      )}
+      
+      {/* Security Panel if enabled */}
+      {showSecurityPanel && (
+        <div className="absolute bottom-24 left-4 right-4 z-[1000] bg-[#121212]/90 backdrop-blur-sm border border-[#2a2a2a] rounded-lg p-4 flex flex-col gap-2">
+          <h3 className="text-white font-medium flex items-center gap-2">
+            <Shield size={18} className="text-green-400" />
+            SecureMe - {securityMode ? 'Modo segurança' : 'Solicitar escolta'}
+          </h3>
+          {securityMode ? (
+            <p className="text-sm text-gray-300">Você está no modo segurança. Esteja atento a solicitações próximas.</p>
+          ) : (
+            <p className="text-sm text-gray-300">Clique no mapa para selecionar o local para solicitar escolta.</p>
+          )}
+          <Button variant="outline" className="bg-green-600 hover:bg-green-700 text-white border-none w-full">
+            {securityMode ? 'Ficar disponível' : 'Solicitar agora'}
+          </Button>
         </div>
       )}
       
@@ -787,147 +813,4 @@ const getPinColorClass = (type) => {
 
 const getPinIconSvg = (type) => {
   switch (type) {
-    case 'infraestrutura':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14 2.3 6.3"/><path d="m14 6 7.7 7.7"/><path d="m8 6 8 8"/></svg>`;
-    case 'crime':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/></svg>`;
-    default:
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>`;
-  }
-};
-
-const getPinTypeLabel = (type) => {
-  switch (type) {
-    case 'infraestrutura':
-      return 'Infraestrutura';
-    case 'robbery':
-      return 'Roubo';
-    default:
-      return 'Desconhecido';
-  }
-};
-
-const getScoreFromType = (type) => {
-  switch (type) {
-    case 'infraestrutura':
-      return 3;
-    case 'robbery':
-      return 5;
-    default:
-      return 1;
-  }
-};
-
-// Função auxiliar para converter coordenadas decimais para formato DMS
-const convertToDMS = (coordinate, isLatitude) => {
-  const absolute = Math.abs(coordinate);
-  const degrees = Math.floor(absolute);
-  const minutesNotTruncated = (absolute - degrees) * 60;
-  const minutes = Math.floor(minutesNotTruncated);
-  const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(1);
-  
-  const direction = isLatitude 
-    ? (coordinate >= 0 ? "N" : "S") 
-    : (coordinate >= 0 ? "E" : "W");
-  
-  return `${degrees}°${minutes}'${seconds}"${direction}`;
-};
-
-// Funções auxiliares para status
-const getStatusBgClass = (status: string): string => {
-  switch (status) {
-    case 'reported':
-      return 'bg-flood/20 text-flood';
-    case 'acknowledged':
-      return 'bg-pothole/20 text-pothole';
-    case 'in_progress':
-      return 'bg-passable/20 text-passable';
-    case 'resolved':
-      return 'bg-passable/20 text-passable';
-    default:
-      return 'bg-gray-500/20 text-gray-400';
-  }
-};
-
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'reported':
-      return <AlertCircle size={10} className="text-current" />;
-    case 'acknowledged':
-      return <Clock size={10} className="text-current" />;
-    case 'in_progress':
-      return <Wrench size={10} className="text-current" />;
-    case 'resolved':
-      return <CheckCircle size={10} className="text-current" />;
-    default:
-      return null;
-  }
-};
-
-const getStatusLabel = (status: string): string => {
-  switch (status) {
-    case 'reported':
-      return 'Reportado';
-    case 'acknowledged':
-      return 'Reconhecido';
-    case 'in_progress':
-      return 'Em andamento';
-    case 'resolved':
-      return 'Resolvido';
-    default:
-      return status;
-  }
-};
-
-// Função para criar o HTML do pin diretamente
-const createPinHTML = (pin) => {
-  const isCrime = pin.type === 'crime';
-  const hasHighVotes = (pin.votes || 0) > 5;
-  
-  return `
-    <div class="pin-wrapper-simple">
-      <div class="pin-container ${isCrime ? 'pin-pulse-red' : 'pin-pulse-yellow'} ${hasHighVotes ? 'scale-110' : ''}">
-        <div class="custom-pin ${isCrime ? 'crime-pin' : 'infra-pin'} rounded-full flex items-center justify-center shadow-lg ${hasHighVotes ? 'h-10 w-10' : 'h-8 w-8'}">
-          ${getPinIconSvg(pin.type)}
-          ${(pin.votes && pin.votes > 0) 
-            ? `<div class="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full border border-gray-700">${pin.votes}</div>` 
-            : ''}
-        </div>
-      </div>
-    </div>
-  `;
-};
-
-// Função para obter classes CSS para badges de status (versão para HTML direto)
-const getStatusBadgeClassHTML = (status) => {
-  switch (status) {
-    case 'reported':
-      return 'bg-red-500/80 text-white';
-    case 'acknowledged':
-      return 'bg-yellow-500/80 text-black';
-    case 'in_progress':
-      return 'bg-blue-500/80 text-white';
-    case 'resolved':
-      return 'bg-green-500/80 text-white';
-    default:
-      return 'bg-gray-500/80 text-white';
-  }
-};
-
-// Função para obter classes CSS para badges de status (versão para className)
-const getStatusBadgeClass = (status) => {
-  switch (status) {
-    case 'reported':
-      return 'bg-red-500/80 text-white';
-    case 'acknowledged':
-      return 'bg-yellow-500/80 text-black';
-    case 'in_progress':
-      return 'bg-blue-500/80 text-white';
-    case 'resolved':
-      return 'bg-green-500/80 text-white';
-    default:
-      return 'bg-gray-500/80 text-white';
-  }
-};
-
-export default Map;
+    case 'infra
