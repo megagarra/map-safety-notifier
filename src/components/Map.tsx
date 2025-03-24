@@ -88,14 +88,14 @@ const MapClickHandler = ({ onMapClick }) => {
 // Componente para criar um pin customizado
 const CustomPin = ({ pin, onClick }) => {
   const isCrime = pin.type === 'crime';
-  const hasHighVotes = (pin.votes || 0) > 5;
+  const hasHighVotes = pin.votes && pin.votes >= 5;
   
   return (
     <div 
       className={cn(
         "absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all",
         isCrime ? "pin-pulse-red" : "pin-pulse-yellow",
-        hasHighVotes ? "scale-110 z-30" : "z-20"
+        hasHighVotes ? "scale-110 z-20" : "z-10"
       )}
       onClick={(e) => {
         e.stopPropagation();
@@ -764,7 +764,12 @@ const Map = ({
   const effectiveCenter = center || defaultCenter;
   
   return (
-    <div className="h-full w-full relative rounded-lg overflow-hidden">
+    <div className="h-full w-full relative rounded-lg overflow-hidden map-wrapper">
+      {/* Adiciona uma div de carregamento que será mostrada antes do mapa ser completamente renderizado */}
+      {isMobile && (
+        <div className="map-loading-placeholder absolute inset-0 bg-[#121212] z-[5]"></div>
+      )}
+      
       <MapContainer
         center={effectiveCenter}
         zoom={zoom}
@@ -772,6 +777,17 @@ const Map = ({
         zoomControl={false}
         attributionControl={false}
         ref={mapRef}
+        className="map-container"
+        whenReady={() => {
+          // Remove o placeholder quando o mapa estiver pronto
+          const placeholder = document.querySelector('.map-loading-placeholder');
+          if (placeholder) {
+            placeholder.classList.add('opacity-0');
+            setTimeout(() => {
+              placeholder?.remove();
+            }, 300);
+          }
+        }}
       >
         <TileLayer
           url={customTileLayer}

@@ -40,3 +40,41 @@
 .read-the-docs {
   color: #888;
 }
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body, html {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.app-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Mobile specific fixes */
+@media (max-width: 767px) {
+  body, html, #root, .app-container {
+    height: 100%;
+    overflow: hidden;
+    position: fixed;
+    inset: 0;
+  }
+}

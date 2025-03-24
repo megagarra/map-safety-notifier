@@ -18,7 +18,7 @@ class HomePage extends React.Component {
       selectedPin: null,
       selectedPinTypes: null,
       center: null, // Iniciar sem coordenadas fixas
-      zoom: 14,
+      zoom: 12,
       reportModalOpen: false,
       newPinLocation: null,
       isLoadingUserLocation: true // Começar com carregamento ativado
@@ -266,7 +266,7 @@ class HomePage extends React.Component {
     // Mostrar carregando enquanto obtém a localização
     if (isLoadingUserLocation || !center) {
       return (
-        <div className="h-screen w-full flex items-center justify-center bg-[#121212]">
+        <div className="h-screen w-full flex items-center justify-center bg-[#121212] fixed inset-0">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-t-blue-500 border-blue-300/30 rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-white text-lg">Obtendo sua localização...</p>
@@ -277,14 +277,14 @@ class HomePage extends React.Component {
     }
     
     return (
-      <div className="flex h-screen w-full overflow-hidden">
+      <div className="flex h-screen w-full overflow-hidden fixed inset-0">
         <NavBar 
           onNewReport={this.openReportModal} 
           pins={pins}
           onPinClick={this.handlePinClick}
         />
         
-        <div className="flex-1 relative">
+        <div className="flex-1 relative h-full">
           <Map
             pins={pins}
             onPinClick={this.handlePinClick}

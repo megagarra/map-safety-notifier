@@ -73,9 +73,31 @@
 /* Estilos personalizados para o Leaflet */
 .leaflet-container {
   width: 100% !important;
-  height: 100vh !important;
+  height: 100% !important;
   z-index: 0;
   background-color: #121212 !important;
+}
+
+/* Ensure map parent container has proper height */
+.h-full {
+  height: 100% !important;
+}
+
+/* Fix for mobile devices */
+@media (max-width: 767px) {
+  .h-full {
+    height: 100% !important;
+  }
+  
+  html, body, #root, .app {
+    height: 100% !important;
+    overflow: hidden;
+  }
+  
+  .leaflet-container {
+    height: 100% !important;
+    min-height: 100% !important;
+  }
 }
 
 .pin-container {
@@ -756,6 +778,80 @@
   input[type="text"],
   input[type="search"] {
     min-height: 44px;
+  }
+}
+
+/* Map container and loading fixes */
+.map-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.map-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.map-loading-placeholder {
+  transition: opacity 0.3s ease;
+}
+
+/* Fix map height issues on mobile */
+@media (max-width: 767px) {
+  .leaflet-container {
+    height: 100% !important;
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  
+  .map-wrapper {
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100% !important;
+  }
+  
+  .leaflet-control-container .leaflet-top,
+  .leaflet-control-container .leaflet-bottom {
+    z-index: 900 !important;
+  }
+  
+  /* Make touch targets larger for mobile */
+  button, 
+  a,
+  .leaflet-control-zoom a,
+  .location-button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  
+  /* Force proper rendering */
+  .leaflet-control-zoom,
+  .leaflet-control-attribution {
+    display: block !important;
+  }
+}
+
+/* Estilos para garantir que o botão de menu não seja sobreposto por pins */
+@media (max-width: 767px) {
+  .custom-div-icon {
+    z-index: 200 !important;
+  }
+  
+  /* Ajuste para garantir que o botão de hambúrguer fique sempre visível */
+  button.fixed {
+    z-index: 1001 !important;
+  }
+  
+  /* Ajuste dos controles do mapa para não ficarem sob o botão */
+  .leaflet-top.leaflet-right {
+    margin-right: 50px !important;
   }
 }
 
