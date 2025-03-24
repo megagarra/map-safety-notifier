@@ -126,7 +126,7 @@ const locationStatus: Record<string, PinStatus> = {
 };
 
 // Função para gerar pins com localizações exatas
-export const generatePins = (count: number = 8): Pin[] => {
+export const generatePins = (count: number = 15): Pin[] => {
   const pins: Pin[] = [];
   const now = new Date();
   const thirtyDaysAgo = subDays(now, 30);
@@ -143,6 +143,9 @@ export const generatePins = (count: number = 8): Pin[] => {
     // Gerar histórico baseado em datas fixas
     const { history, persistenceDays } = generatePinHistory('infraestrutura', reportedAt, status);
     
+    // Gerar votos aleatórios (0-10)
+    const votes = Math.floor(Math.random() * 11);
+    
     // Criar pin de infraestrutura
     pins.push({
       id: uuidv4(),
@@ -157,6 +160,8 @@ export const generatePins = (count: number = 8): Pin[] => {
       status: status,
       history: history,
       persistenceDays: persistenceDays,
+      votes: votes,
+      userVoted: false,
       images: [`/images/examples/infrastructure${(specificLocations.indexOf(location) % 3) + 1}.jpg`]
     });
     
@@ -166,11 +171,14 @@ export const generatePins = (count: number = 8): Pin[] => {
       crimeReportedAt.setDate(crimeReportedAt.getDate() + 1); // 1 dia depois do problema de infraestrutura
       
       const crimeStatus = status === 'resolved' ? 'acknowledged' : 
-                         status === 'acknowledged' ? 'reported' : 
-                         status === 'reported' ? 'in_progress' : 'resolved';
+                        status === 'acknowledged' ? 'reported' : 
+                        status === 'reported' ? 'in_progress' : 'resolved';
       
       const { history: crimeHistory, persistenceDays: crimePersistenceDays } = 
         generatePinHistory('crime', crimeReportedAt, crimeStatus);
+      
+      // Gerar votos aleatórios (0-15) para crimes - tendência a ter mais votos
+      const crimeVotes = Math.floor(Math.random() * 16);
       
       pins.push({
         id: uuidv4(),
@@ -185,6 +193,8 @@ export const generatePins = (count: number = 8): Pin[] => {
         status: crimeStatus,
         history: crimeHistory,
         persistenceDays: crimePersistenceDays,
+        votes: crimeVotes,
+        userVoted: false,
         images: [] // Sem imagens para crimes
       });
     }
@@ -276,6 +286,7 @@ export const filterPinsByPersistence = (pins: Pin[], minDays: number, maxDays: n
 };
 
 // Função para obter dados de mapa de calor a partir dos pins
+// Remove this entire function
 export const getHeatmapData = (pins: Pin[], pinType: PinType | 'all' = 'all'): [number, number, number][] => {
   const filteredPins = pinType === 'all' 
     ? pins 
@@ -287,27 +298,58 @@ export const getHeatmapData = (pins: Pin[], pinType: PinType | 'all' = 'all'): [
     
     switch (pin.status) {
       case 'reported':
-        intensity = 1.0;
-        break;
-      case 'acknowledged':
         intensity = 0.8;
         break;
       case 'in_progress':
-        intensity = 0.6;
+        intensity = 0.5;
         break;
       case 'resolved':
         intensity = 0.3;
         break;
     }
     
-    // Aumentar intensidade baseada nos dias de persistência
-    if (pin.persistenceDays && pin.status !== 'resolved') {
-      if (pin.persistenceDays > 30) intensity *= 1.5;
-      else if (pin.persistenceDays > 14) intensity *= 1.3;
-      else if (pin.persistenceDays > 7) intensity *= 1.1;
-    }
-    
     return [pin.location.lat, pin.location.lng, intensity];
+  });
+};
+
+// New geolocation function
+export const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation is not supported by this browser'));
+      return;
+    }
+
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+      },
+      (error) => {
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            reject(new Error('User denied geolocation prompt'));
+            break;
+          case error.POSITION_UNAVAILABLE:
+            reject(new Error('Location information is unavailable'));
+            break;
+          case error.TIMEOUT:
+            reject(new Error('The request to get location timed out'));
+            break;
+          default:
+            reject(new Error('An unknown error occurred'));
+        }
+      },
+      options
+    );
   });
 };
 
@@ -317,5 +359,6 @@ export default {
   groupPinsByStatus,
   calculatePersistenceStats,
   filterPinsByPersistence,
-  getHeatmapData
+  getCurrentLocation, // Add to exports
+  // Remove getHeatmapData if needed
 };

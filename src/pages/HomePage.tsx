@@ -4,7 +4,7 @@ import Map from '@/components/Map';
 import NavBar from '@/components/NavBar';
 import ReportModal from '@/components/ReportModal';
 import { Pin, PinType } from '@/types';
-import { generatePins } from '@/lib/helpers';
+import { generatePins, getCurrentLocation } from '@/lib/helpers';
 import { toast } from '@/components/ui/use-toast';
 
 // Componente usando abordagem de classe para evitar problemas com hooks
@@ -17,10 +17,11 @@ class HomePage extends React.Component {
       pins: [],
       selectedPin: null,
       selectedPinTypes: null,
-      center: [-23.3268, -46.7263],
+      center: null, // Iniciar sem coordenadas fixas
       zoom: 14,
       reportModalOpen: false,
-      newPinLocation: null
+      newPinLocation: null,
+      isLoadingUserLocation: true // Começar com carregamento ativado
     };
     
     // Bind de métodos
@@ -31,17 +32,66 @@ class HomePage extends React.Component {
     this.closeReportModal = this.closeReportModal.bind(this);
     this.handleReportSubmit = this.handleReportSubmit.bind(this);
     this.handleVote = this.handleVote.bind(this);
+    this.getUserLocation = this.getUserLocation.bind(this);
     
     // Referências para navegação
     this.navigate = props.navigate;
     this.location = props.location;
   }
   
+  // Método para obter localização do usuário
+  getUserLocation() {
+    this.setState({ isLoadingUserLocation: true });
+    
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          this.setState({ 
+            center: [latitude, longitude],
+            isLoadingUserLocation: false 
+          });
+          
+          // Atualizar URL com as novas coordenadas
+          this.updateUrlWithCoordinates(latitude, longitude, this.state.zoom);
+        },
+        (error) => {
+          console.error("Erro ao obter localização:", error);
+          this.setState({ 
+            isLoadingUserLocation: false,
+            // Usar coordenadas de fallback em caso de erro
+            center: [-23.5505, -46.6333] // São Paulo como fallback
+          });
+          toast({
+            title: "Localização indisponível",
+            description: "Não foi possível obter sua localização atual.",
+            variant: "destructive"
+          });
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      this.setState({ 
+        isLoadingUserLocation: false,
+        center: [-23.5505, -46.6333] // São Paulo como fallback
+      });
+      toast({
+        title: "Localização indisponível",
+        description: "Seu navegador não suporta geolocalização.",
+        variant: "destructive"
+      });
+    }
+  }
+  
   // Lifecycle methods
   componentDidMount() {
     // Carregar pins iniciais
     try {
-      const initialPins = generatePins(8);
+      const initialPins = generatePins(15);
       this.setState({ pins: initialPins });
     } catch (error) {
       console.error("Error loading pins:", error);
@@ -59,6 +109,11 @@ class HomePage extends React.Component {
       if (!isNaN(z)) {
         this.setState({ zoom: z });
       }
+      // Se encontrou coordenadas na URL, não precisa carregar localização
+      this.setState({ isLoadingUserLocation: false });
+    } else {
+      // Se não houver coordenadas na URL, tentar obter localização do usuário
+      this.getUserLocation();
     }
   }
   
@@ -85,7 +140,8 @@ class HomePage extends React.Component {
     const currentZ = z || zoom;
     
     // Evitar atualizações desnecessárias
-    if (Math.abs(center[0] - lat) < 0.0001 && 
+    if (center && 
+        Math.abs(center[0] - lat) < 0.0001 && 
         Math.abs(center[1] - lng) < 0.0001 && 
         currentZ === zoom) {
       return;
@@ -127,16 +183,28 @@ class HomePage extends React.Component {
       description: data.description,
       images: data.images,
       reportedAt: new Date().toISOString(),
-      address: 'Franco da Rocha'
+      address: 'Franco da Rocha',
+      status: 'reported',
+      votes: 0,
+      userVoted: false,
+      history: [
+        {
+          status: 'reported',
+          date: new Date().toISOString(),
+          description: 'Problema reportado por usuário'
+        }
+      ],
+      persistenceDays: 0
     };
     
     this.setState(prevState => ({
       pins: [...prevState.pins, newPin]
     }));
     
-    this.toast({
+    toast({
       title: "Relatório enviado",
       description: "Seu relatório foi enviado com sucesso.",
+      variant: "success"
     });
   }
   
@@ -181,21 +249,6 @@ class HomePage extends React.Component {
       description: "Obrigado por confirmar este problema.",
       variant: "success"
     });
-    
-    // Aqui você poderia implementar a persistência do voto em um backend
-    // Por exemplo, chamando uma API:
-    // this.saveVoteToServer(pinId);
-  }
-  
-  // Método para salvar o voto no servidor (implementação simulada)
-  saveVoteToServer(pinId) {
-    // Exemplo de chamada de API (simulada)
-    console.log(`Salvando voto para o pin ${pinId} no servidor...`);
-    // fetch('/api/pins/vote', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ pinId }),
-    //   headers: { 'Content-Type': 'application/json' }
-    // });
   }
   
   render() {
@@ -206,8 +259,22 @@ class HomePage extends React.Component {
       center, 
       zoom, 
       reportModalOpen, 
-      newPinLocation 
+      newPinLocation,
+      isLoadingUserLocation
     } = this.state;
+    
+    // Mostrar carregando enquanto obtém a localização
+    if (isLoadingUserLocation || !center) {
+      return (
+        <div className="h-screen w-full flex items-center justify-center bg-[#121212]">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-t-blue-500 border-blue-300/30 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-white text-lg">Obtendo sua localização...</p>
+            <p className="text-gray-400 text-sm mt-2">Permita o acesso à localização quando solicitado</p>
+          </div>
+        </div>
+      );
+    }
     
     return (
       <div className="flex h-screen w-full overflow-hidden">
@@ -227,7 +294,7 @@ class HomePage extends React.Component {
             selectedPin={selectedPin}
             center={center}
             zoom={zoom}
-            onVote={this.handleVote} // Passar a função de votação para o Map
+            onVote={this.handleVote}
           />
         </div>
         
@@ -245,9 +312,11 @@ class HomePage extends React.Component {
 }
 
 // Wrapper para fornecer hooks ao componente de classe
-export default function HomePageWrapper() {
+function HomePageWrapper() {
   const navigate = useNavigate();
   const location = useLocation();
   
   return <HomePage navigate={navigate} location={location} />;
-} 
+}
+
+export default HomePageWrapper; 

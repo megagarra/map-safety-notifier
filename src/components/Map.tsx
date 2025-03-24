@@ -19,9 +19,11 @@ import {
   LineChart, 
   AlertTriangle, 
   ThumbsUp, 
-  Users 
+  Users,
+  Navigation
 } from 'lucide-react';
-import HeatmapControl from '@/components/HeatmapControl';
+// Remove HeatmapControl import
+import HeatmapControl from '@/components/HeatmapControl';  // ← Remove this line
 import PersistenceStats from '@/components/PersistenceStats';
 import PersistenceTimeline from '@/components/PersistenceTimeline';
 import PersistenceFilter from '@/components/PersistenceFilter';
@@ -597,6 +599,53 @@ const ConstructionIcon = ({ size = 16, className = "" }) => (
   </svg>
 );
 
+// Componente para localização atual do usuário
+const LocationButton = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const map = useMap();
+
+  const handleLocateUser = () => {
+    setIsLoading(true);
+    
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          map.flyTo([latitude, longitude], 16, {
+            duration: 1.5
+          });
+          setIsLoading(false);
+        },
+        (error) => {
+          console.error("Erro ao obter localização: ", error);
+          setIsLoading(false);
+          // Feedback visual para o usuário
+          alert("Não foi possível obter sua localização. Verifique se você permitiu o acesso à localização.");
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      setIsLoading(false);
+      alert("Geolocalização não é suportada neste navegador.");
+    }
+  };
+
+  return (
+    <button
+      onClick={handleLocateUser}
+      className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg absolute z-[999] right-4 top-20"
+      title="Usar minha localização atual"
+      disabled={isLoading}
+    >
+      <Navigation className={cn("h-5 w-5", isLoading && "animate-pulse")} />
+    </button>
+  );
+};
+
 const Map = ({ 
   pins, 
   onPinClick, 
@@ -608,9 +657,7 @@ const Map = ({
   zoom,
   onVote
 }) => {
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [heatmapIntensity, setHeatmapIntensity] = useState(0.6);
-  const [activeHeatmapType, setActiveHeatmapType] = useState<PinType | 'all'>('all');
+  // Remover estados relacionados ao heatmap
   const [showStats, setShowStats] = useState(false);
   const [showPersistenceStats, setShowPersistenceStats] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -631,41 +678,39 @@ const Map = ({
     setFilteredPinsByPersistence(filtered);
   };
 
-  // Adicione este useEffect para centralizar no pin selecionado
-  useEffect(() => {
-    if (selectedPin && mapRef.current) {
-      // Centraliza o mapa no pin quando selecionado
-      mapRef.current.setView(
-        [selectedPin.location.lat, selectedPin.location.lng],
-        mapRef.current.getZoom(),
-        { animate: true, duration: 0.5 }
-      );
-    }
-  }, [selectedPin]);
-
   // Função explícita para lidar com o fechamento do modal
   const handleCloseDetails = () => {
     onPinClick(null);
   };
   
+  // Coordenadas padrão se center for null
+  const defaultCenter: [number, number] = [-23.5505, -46.6333]; // São Paulo como padrão
+  const effectiveCenter = center || defaultCenter;
+  
   return (
-    <div className="relative h-full w-full">
+    <div className="h-full w-full relative rounded-lg overflow-hidden">
       <MapContainer
-        center={center}
+        center={effectiveCenter}
         zoom={zoom}
-        ref={mapRef}
-        className="h-full w-full bg-[#121212]"
+        style={{ width: '100%', height: '100%' }}
         zoomControl={false}
         attributionControl={false}
+        ref={mapRef}
       >
         <TileLayer
-          attribution={attribution}
           url={customTileLayer}
+          attribution={attribution}
         />
         
         <MapEvents onMapClick={onMapClick} onMapMove={onMapMove} />
-        <MapCenterUpdater center={center} zoom={zoom} />
+        <MapCenterUpdater center={effectiveCenter} zoom={zoom} />
+        <ZoomControl position="bottomright" />
+        <AttributionControl position="bottomleft" />
         
+        {/* Botão de localização atual */}
+        <LocationButton />
+        
+        {/* Pins filtrados */}
         {filteredPins.map(pin => (
           <Marker 
             key={pin.id}
@@ -673,102 +718,29 @@ const Map = ({
             icon={L.divIcon({
               className: 'custom-div-icon',
               html: createPinHTML(pin),
-              iconSize: [30, 30], // Tamanho reduzido sem o badge
-              iconAnchor: [15, 15] // Centralizado no ponto
+              iconSize: [30, 30],
+              iconAnchor: [15, 15]
             })}
             eventHandlers={{
               click: () => onPinClick(pin)
             }}
           />
         ))}
-        
-        <ZoomControl position="bottomright" />
-        <AttributionControl position="bottomleft" />
       </MapContainer>
       
-      {/* Renderize PinDetails fora do MapContainer, mas com pointer-events-auto */}
+      {/* Modal de detalhes do pin */}
       {selectedPin && (
-        <div className="absolute top-0 left-0 w-full h-0 z-50">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
           <PinDetails 
             pin={selectedPin} 
             onClose={handleCloseDetails} 
             onVote={onVote}
-            userType={userRoleSimulation}
+            userType="citizen"
           />
         </div>
       )}
       
-      {/* Heatmap Controls */}
-      <div className="absolute top-4 right-4 z-[1000]">
-        <HeatmapControl
-          showHeatmap={showHeatmap}
-          onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
-          intensity={heatmapIntensity}
-          onIntensityChange={setHeatmapIntensity}
-          activeType={activeHeatmapType}
-          onTypeChange={setActiveHeatmapType}
-        />
-      </div>
-      
-      {/* Persistence Filter */}
-      {showPersistenceFilter && (
-        <div className="absolute top-4 left-[calc(72px+1rem)] z-[1000]">
-          <PersistenceFilter 
-            pins={pins} 
-            onFilter={handlePersistenceFilter} 
-          />
-        </div>
-      )}
-      
-      {/* Stats Buttons */}
-      <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
-          onClick={() => setShowStats(!showStats)}
-        >
-          <BarChart3 size={14} />
-          {showStats ? 'Ocultar Estatísticas' : 'Mostrar Estatísticas'}
-        </Button>
-        
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
-          onClick={() => setShowTimeline(!showTimeline)}
-        >
-          <LineChart size={14} />
-          {showTimeline ? 'Ocultar Timeline' : 'Mostrar Timeline'}
-        </Button>
-        
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
-          onClick={() => setShowPersistenceFilter(!showPersistenceFilter)}
-        >
-          <Clock size={14} />
-          {showPersistenceFilter ? 'Ocultar Filtro' : 'Filtrar por Tempo'}
-        </Button>
-      </div>
-      
-      {/* Stats Panel */}
-      {showStats && (
-        <div className="absolute bottom-16 right-4 z-[1000] w-96">
-          <PersistenceStats pins={pins} />
-        </div>
-      )}
-      
-      {/* Timeline Panel */}
-      {showTimeline && (
-        <div className="absolute bottom-16 left-4 z-[1000]">
-          <PersistenceTimeline pins={pins} />
-        </div>
-      )}
-      
-      {/* Seletor de perfil para simulação - adicionado ao canto inferior esquerdo */}
-  
+      {/* Outros elementos */}
     </div>
   );
 };
