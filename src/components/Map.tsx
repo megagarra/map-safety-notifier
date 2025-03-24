@@ -20,15 +20,10 @@ import {
   AlertTriangle, 
   ThumbsUp, 
   Users,
-<<<<<<< HEAD
-  Navigation
-=======
+  Navigation,
   Shield,
   User
->>>>>>> b845e8e5552fc46e0dc8dca0113c8bdda1a96b07
 } from 'lucide-react';
-// Remove HeatmapControl import
-import HeatmapControl from '@/components/HeatmapControl';  // ← Remove this line
 import PersistenceStats from '@/components/PersistenceStats';
 import PersistenceTimeline from '@/components/PersistenceTimeline';
 import PersistenceFilter from '@/components/PersistenceFilter';
@@ -664,11 +659,12 @@ const Map = ({
   selectedPin,
   center,
   zoom,
-  onVote,
-  showSecurityPanel = false,
-  securityMode = false
+  onVote
 }) => {
-  // Remover estados relacionados ao heatmap
+  // Estados para heatmap e recursos visuais
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapIntensity, setHeatmapIntensity] = useState(0.6);
+  const [activeHeatmapType, setActiveHeatmapType] = useState<PinType | 'all'>('all');
   const [showStats, setShowStats] = useState(false);
   const [showPersistenceStats, setShowPersistenceStats] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -676,6 +672,10 @@ const Map = ({
   const [filteredPinsByPersistence, setFilteredPinsByPersistence] = useState<Pin[]>([]);
   const mapRef = useRef(null);
   const [userRoleSimulation, setUserRoleSimulation] = useState<'citizen' | 'government' | 'city_hall'>('citizen');
+  
+  // Security panel states
+  const [showSecurityPanel, setShowSecurityPanel] = useState(false);
+  const [securityMode, setSecurityMode] = useState(false);
   
   // Filtra pins se necessário
   const filteredPins = selectedPinTypes?.length 
@@ -688,6 +688,18 @@ const Map = ({
   const handlePersistenceFilter = (filtered: Pin[]) => {
     setFilteredPinsByPersistence(filtered);
   };
+  
+  // Adicione este useEffect para centralizar no pin selecionado
+  useEffect(() => {
+    if (selectedPin && mapRef.current) {
+      // Centraliza o mapa no pin quando selecionado
+      mapRef.current.setView(
+        [selectedPin.location.lat, selectedPin.location.lng],
+        mapRef.current.getZoom(),
+        { animate: true, duration: 0.5 }
+      );
+    }
+  }, [selectedPin]);
 
   // Função explícita para lidar com o fechamento do modal
   const handleCloseDetails = () => {
@@ -751,9 +763,6 @@ const Map = ({
         </div>
       )}
       
-<<<<<<< HEAD
-      {/* Outros elementos */}
-=======
       {/* Security Panel if enabled */}
       {showSecurityPanel && (
         <div className="absolute bottom-24 left-4 right-4 z-[1000] bg-[#121212]/90 backdrop-blur-sm border border-[#2a2a2a] rounded-lg p-4 flex flex-col gap-2">
@@ -773,16 +782,7 @@ const Map = ({
       )}
       
       {/* Heatmap Controls */}
-      <div className="absolute top-4 right-4 z-[1000]">
-        <HeatmapControl
-          showHeatmap={showHeatmap}
-          onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
-          intensity={heatmapIntensity}
-          onIntensityChange={setHeatmapIntensity}
-          activeType={activeHeatmapType}
-          onTypeChange={setActiveHeatmapType}
-        />
-      </div>
+      {/* Removed HeatmapControl component since it was removed from imports */}
       
       {/* Persistence Filter */}
       {showPersistenceFilter && (
@@ -843,7 +843,6 @@ const Map = ({
       
       {/* Seletor de perfil para simulação - adicionado ao canto inferior esquerdo */}
   
->>>>>>> b845e8e5552fc46e0dc8dca0113c8bdda1a96b07
     </div>
   );
 };
@@ -862,4 +861,123 @@ const getPinColorClass = (type) => {
 
 const getPinIconSvg = (type) => {
   switch (type) {
-    case 'infra
+    case 'infraestrutura':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="20" height="8" rx="1"/>
+        <path d="M17 14v7"/>
+        <path d="M7 14v7"/>
+        <path d="M17 3v3"/>
+        <path d="M7 3v3"/>
+        <path d="M10 14 2.3 6.3"/>
+        <path d="m14 6 7.7 7.7"/>
+        <path d="m8 6 8 8"/>
+      </svg>`;
+    case 'crime':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>`;
+    default:
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>`;
+  }
+};
+
+const getPinTypeLabel = (type) => {
+  switch (type) {
+    case 'infraestrutura':
+      return 'Problema de Infraestrutura';
+    case 'crime':
+      return 'Ocorrência de Crime';
+    default:
+      return 'Problema Reportado';
+  }
+};
+
+// Função para obter a classe de fundo do status
+const getStatusBgClass = (status) => {
+  switch (status) {
+    case 'reported':
+      return 'bg-red-500/20 text-red-400';
+    case 'acknowledged':
+      return 'bg-yellow-500/20 text-yellow-400';
+    case 'in_progress':
+      return 'bg-blue-500/20 text-blue-400';
+    case 'resolved':
+      return 'bg-green-500/20 text-green-400';
+    default:
+      return 'bg-gray-500/20 text-gray-400';
+  }
+};
+
+// Função para obter o texto do status
+const getStatusLabel = (status) => {
+  switch (status) {
+    case 'reported':
+      return 'Reportado';
+    case 'acknowledged':
+      return 'Reconhecido';
+    case 'in_progress':
+      return 'Em andamento';
+    case 'resolved':
+      return 'Resolvido';
+    default:
+      return 'Desconhecido';
+  }
+};
+
+// Função para obter o ícone do status
+const getStatusIcon = (status) => {
+  switch (status) {
+    case 'reported':
+      return <AlertCircle size={14} />;
+    case 'acknowledged':
+      return <CheckCircle size={14} />;
+    case 'in_progress':
+      return <Wrench size={14} />;
+    case 'resolved':
+      return <CheckCircle size={14} />;
+    default:
+      return <AlertCircle size={14} />;
+  }
+};
+
+// Função para criar o HTML dos pins
+const createPinHTML = (pin) => {
+  const isCrime = pin.type === 'crime';
+  const hasHighVotes = (pin.votes || 0) > 5;
+  
+  return `
+    <div class="pin-wrapper-simple">
+      <div class="pin-container ${isCrime ? 'pin-pulse-red' : 'pin-pulse-yellow'} ${hasHighVotes ? 'scale-110' : ''}">
+        <div class="custom-pin ${isCrime ? 'crime-pin' : 'infra-pin'} rounded-full flex items-center justify-center shadow-lg ${hasHighVotes ? 'h-10 w-10' : 'h-8 w-8'}">
+          ${getPinIconSvg(pin.type)}
+          ${(pin.votes && pin.votes > 0) 
+            ? `<div class="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full border border-gray-700">${pin.votes}</div>` 
+            : ''}
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+// Função para converter coordenadas decimais para graus, minutos e segundos
+const convertToDMS = (coordinate, isLatitude) => {
+  const absolute = Math.abs(coordinate);
+  const degrees = Math.floor(absolute);
+  const minutesNotTruncated = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesNotTruncated);
+  const seconds = Math.floor((minutesNotTruncated - minutes) * 60);
+  
+  const direction = isLatitude
+    ? coordinate >= 0 ? "N" : "S"
+    : coordinate >= 0 ? "E" : "W";
+    
+  return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+};
+
+export default Map;
