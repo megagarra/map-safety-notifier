@@ -22,7 +22,8 @@ import {
   Users,
   Navigation,
   Shield,
-  User
+  User,
+  Settings
 } from 'lucide-react';
 import PersistenceStats from '@/components/PersistenceStats';
 import PersistenceTimeline from '@/components/PersistenceTimeline';
@@ -638,16 +639,52 @@ const LocationButton = () => {
     }
   };
 
-  return (
-    <button
-      onClick={handleLocateUser}
-      className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg absolute z-[999] right-4 top-20"
-      title="Usar minha localização atual"
-      disabled={isLoading}
-    >
-      <Navigation className={cn("h-5 w-5", isLoading && "animate-pulse")} />
-    </button>
-  );
+  useEffect(() => {
+    // Adicionar o botão de localização ao container de zoom existente
+    const zoomControl = document.querySelector('.leaflet-control-zoom');
+    if (zoomControl) {
+      // Criar o elemento do botão
+      const locationButton = document.createElement('a');
+      locationButton.className = 'leaflet-control-location';
+      locationButton.href = '#';
+      locationButton.title = 'Usar minha localização atual';
+      locationButton.innerHTML = `
+        <span class="location-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+          </svg>
+        </span>
+      `;
+      
+      // Adicionar evento de clique
+      locationButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        handleLocateUser();
+        
+        // Adicionar classe de carregamento
+        locationButton.classList.add('loading');
+        
+        // Remover a classe de carregamento após a conclusão
+        setTimeout(() => {
+          locationButton.classList.remove('loading');
+        }, 3000);
+      });
+      
+      // Inserir o botão antes do controle de zoom
+      zoomControl.insertBefore(locationButton, zoomControl.firstChild);
+    }
+    
+    // Limpeza quando o componente for desmontado
+    return () => {
+      const locationButton = document.querySelector('.leaflet-control-location');
+      if (locationButton) {
+        locationButton.remove();
+      }
+    };
+  }, [map]);
+
+  // Este componente não renderiza nada no DOM, pois manipula o DOM diretamente
+  return null;
 };
 
 const Map = ({ 
@@ -670,8 +707,24 @@ const Map = ({
   const [showTimeline, setShowTimeline] = useState(false);
   const [showPersistenceFilter, setShowPersistenceFilter] = useState(false);
   const [filteredPinsByPersistence, setFilteredPinsByPersistence] = useState<Pin[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const mapRef = useRef(null);
   const [userRoleSimulation, setUserRoleSimulation] = useState<'citizen' | 'government' | 'city_hall'>('citizen');
+  
+  // Detectar tela móvel
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkIsMobile);
+    };
+  }, []);
   
   // Security panel states
   const [showSecurityPanel, setShowSecurityPanel] = useState(false);
@@ -794,55 +847,15 @@ const Map = ({
         </div>
       )}
       
-      {/* Stats Buttons */}
-      <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
-          onClick={() => setShowStats(!showStats)}
+      {/* Mobile: botão para mostrar/ocultar controles */}
+      {isMobile && (
+        <button
+          onClick={() => setShowControls(!showControls)}
+          className="absolute bottom-4 left-4 z-[1000] bg-[#121212]/90 backdrop-blur-sm border border-[#2a2a2a] p-2 rounded-full shadow-lg text-white"
         >
-          <BarChart3 size={14} />
-          {showStats ? 'Ocultar Estatísticas' : 'Mostrar Estatísticas'}
-        </Button>
-        
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
-          onClick={() => setShowTimeline(!showTimeline)}
-        >
-          <LineChart size={14} />
-          {showTimeline ? 'Ocultar Timeline' : 'Mostrar Timeline'}
-        </Button>
-        
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-[#121212]/90 backdrop-blur-sm border-[#2a2a2a] text-white hover:bg-[#1a1a1a] flex items-center gap-1.5"
-          onClick={() => setShowPersistenceFilter(!showPersistenceFilter)}
-        >
-          <Clock size={14} />
-          {showPersistenceFilter ? 'Ocultar Filtro' : 'Filtrar por Tempo'}
-        </Button>
-      </div>
-      
-      {/* Stats Panel */}
-      {showStats && (
-        <div className="absolute bottom-16 right-4 z-[1000] w-96">
-          <PersistenceStats pins={pins} />
-        </div>
+          <Settings size={20} className={showControls ? "rotate-45 transition-transform" : "transition-transform"} />
+        </button>
       )}
-      
-      {/* Timeline Panel */}
-      {showTimeline && (
-        <div className="absolute bottom-16 left-4 z-[1000]">
-          <PersistenceTimeline pins={pins} />
-        </div>
-      )}
-      
-      {/* Seletor de perfil para simulação - adicionado ao canto inferior esquerdo */}
-  
     </div>
   );
 };

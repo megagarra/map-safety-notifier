@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Pin, PinType } from '@/types';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -98,6 +98,48 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
   const [activeTab, setActiveTab] = useState<'pins' | 'stats' | 'settings'>('pins');
   const [sortBy, setSortBy] = useState<'recent' | 'distance' | 'votes'>('recent');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState(0);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Detectar tela móvel
+  useEffect(() => {
+    const checkIsMobile = () => {
+      const isMobileView = window.innerWidth < 768;
+      setIsMobile(isMobileView);
+      
+      // Auto colapsar em telas pequenas quando fechado
+      if (isMobileView && !mobileMenuOpen) {
+        setIsCollapsed(true);
+        setIsExpanded(false);
+      }
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkIsMobile);
+    };
+  }, [mobileMenuOpen]);
+
+  // Implementação de deslizar para fechar no mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isMobile || !mobileMenuOpen) return;
+    
+    const touchCurrentX = e.touches[0].clientX;
+    const diff = touchStartX - touchCurrentX;
+    
+    // Se deslizou para a esquerda por pelo menos 50px
+    if (diff > 50) {
+      setMobileMenuOpen(false);
+    }
+  };
 
   // Filtrar e ordenar pins
   const filteredPins = pins
@@ -121,15 +163,29 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
 
   // Toggle para expandir/colapsar o sidebar
   const toggleSidebar = () => {
-    setIsExpanded(!isExpanded);
+    if (isMobile) {
+      setMobileMenuOpen(!mobileMenuOpen);
+    } else {
+      setIsExpanded(!isExpanded);
+    }
   };
 
-  // Toggle para mostrar apenas ícones
+  // Toggle para mostrar apenas ícones (desktop)
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
     if (!isCollapsed) {
       setIsExpanded(false);
     }
+  };
+
+  // Toggle mobile menu com sidebar expandido
+  const toggleMobileMenu = () => {
+    if (!mobileMenuOpen) {
+      // Quando abrimos o menu em dispositivos móveis, mostre a versão expandida
+      setIsCollapsed(false);
+      setIsExpanded(true);
+    }
+    setMobileMenuOpen(!mobileMenuOpen);
   };
 
   // Toggle para filtrar por tipo
@@ -140,42 +196,51 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
       setSelectedTypes([...selectedTypes, type]);
     }
   };
-
+  
   return (
     <>
-      {/* Overlay para dispositivos móveis quando o sidebar está expandido */}
-      {isExpanded && (
+      {/* Overlay para telas móveis quando o menu está aberto */}
+      {isMobile && mobileMenuOpen && (
         <div 
-          className="lg:hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-30"
-          onClick={() => setIsExpanded(false)}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+          onClick={() => setMobileMenuOpen(false)}
         />
       )}
     
-      <div className={cn(
-        "fixed top-0 left-0 h-full z-40 transition-all duration-300 ease-in-out flex flex-col",
-        isCollapsed ? "w-16" : isExpanded ? "w-80" : "w-20"
-      )}>
-        {/* Sidebar principal */}
-    <div className={cn(
-          "h-full flex flex-col bg-[#0e0e0e] border-r border-[#222] shadow-xl",
-          isCollapsed ? "w-16" : isExpanded ? "w-80" : "w-20"
-    )}>
-      {/* Cabeçalho */}
-          <div className="flex items-center p-4 border-b border-[#222] bg-[#111] h-16">
-            {!isCollapsed && (
-              <>
-        <button 
-          onClick={toggleSidebar}
-                  className="h-8 w-8 rounded-full bg-[#222] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#333] transition-colors"
+      {/* Botão de menu móvel */}
+      {isMobile && (
+        <button
+          onClick={toggleMobileMenu}
+          className="fixed top-4 left-4 z-50 bg-[#1a1a1a] p-2 rounded-full shadow-lg text-white"
         >
-                  {isExpanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+          <Menu size={20} />
         </button>
-                
-                {isExpanded && (
-                  <div className="flex items-center ml-3">
-                    <div className="relative h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-lg">
-                      <MapPin size={14} className="text-white" />
-                      <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-green-500 border border-[#111]"></div>
+      )}
+    
+      <div 
+        ref={sidebarRef}
+        className={cn(
+          "h-full bg-[#121212] border-r border-[#222] transition-all duration-300 flex flex-col shadow-xl",
+          isCollapsed ? "w-[72px]" : isExpanded ? "w-[320px]" : "w-[240px]",
+          isMobile && "fixed top-0 bottom-0 z-50",
+          isMobile && mobileMenuOpen && "w-[320px]",
+          isMobile && !mobileMenuOpen && "transform -translate-x-full"
+        )}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+      >
+        {/* Cabeçalho */}
+        <div className="flex items-center p-3 border-b border-[#222]">
+          <button onClick={toggleSidebar} className="p-1 rounded-full hover:bg-[#2a2a2a] text-gray-400 hover:text-white">
+            {isExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+          </button>
+          
+          {isExpanded && (
+            <>
+              {activeTab === 'pins' && (
+                <div className="flex items-center ml-2">
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-lg">
+                    <MapPin size={14} className="text-white" />
                     </div>
                     <div className="ml-2">
                       <h1 className="text-sm font-medium text-white">Franco da Rocha</h1>
@@ -194,16 +259,55 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
       </div>
             )}
             
-            {/* Botão de colapso para desktop */}
-            <button 
-              onClick={toggleCollapse}
-              className="h-8 w-8 rounded-full bg-[#222] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#333] transition-colors ml-auto"
-            >
-              <PanelLeft size={14} className={isCollapsed ? "rotate-180" : ""} />
-            </button>
+            {/* Botão de colapso para desktop (oculto em mobile) */}
+            {!isMobile && (
+              <button 
+                onClick={toggleSidebar}
+                className="h-8 w-8 rounded-full bg-[#222] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#333] transition-colors ml-auto"
+              >
+                <PanelLeft size={14} className={isCollapsed ? "rotate-180" : ""} />
+              </button>
+            )}
+            
+            {/* Botão de fechar para mobile */}
+            {isMobile && mobileMenuOpen && (
+              <button 
+                onClick={() => setMobileMenuOpen(false)}
+                className="ml-auto h-10 w-10 rounded-full bg-[#333] flex items-center justify-center text-white"
+              >
+                <X size={20} />
+              </button>
+            )}
           </div>
           
-          {/* Navegação vertical */}
+          {/* Navegação - Mobile Tabs no topo */}
+          {isMobile && isExpanded && (
+            <div className="flex p-2 border-b border-[#222] justify-between">
+              <NavButton 
+                icon={<MapPin size={18} />} 
+                label="Pins" 
+                active={activeTab === 'pins'} 
+                onClick={() => setActiveTab('pins')} 
+                mobileTab={true}
+              />
+              <NavButton 
+                icon={<BarChart3 size={18} />} 
+                label="Estatísticas" 
+                active={activeTab === 'stats'} 
+                onClick={() => setActiveTab('stats')} 
+                mobileTab={true}
+              />
+              <NavButton 
+                icon={<Settings size={18} />} 
+                label="Configurações" 
+                active={activeTab === 'settings'} 
+                onClick={() => setActiveTab('settings')} 
+                mobileTab={true}
+              />
+            </div>
+          )}
+          
+          {/* Navegação vertical - apenas quando colapsado */}
           {isCollapsed && (
             <div className="flex flex-col items-center py-4 gap-1 border-b border-[#222]">
               <NavButton 
@@ -245,7 +349,7 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-white"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-white p-1"
                   >
                     <X size={14} />
                   </button>
@@ -254,8 +358,8 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
       </div>
           )}
           
-          {/* Navegação de abas - apenas quando expandido */}
-          {isExpanded && (
+          {/* Navegação de abas - apenas quando expandido e não mobile */}
+          {isExpanded && !isMobile && (
             <div className="flex px-4 py-2 border-b border-[#222]">
               <NavButton 
                 icon={<MapPin size={16} />} 
@@ -275,68 +379,92 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
                 active={activeTab === 'settings'} 
                 onClick={() => setActiveTab('settings')} 
               />
-                </div>
+            </div>
           )}
           
-          {/* Conteúdo principal */}
+          {/* Conteúdo principal baseado na aba selecionada */}
           {activeTab === 'pins' && (
             <>
-              {/* Filtros - somente quando expandido */}
+              {/* Filtros - apenas quando expandido */}
               {isExpanded && (
-                <div className="px-4 py-2">
+                <div className="p-3 border-b border-[#222]">
                   <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium text-white">Filtros</div>
                     <button 
                       onClick={() => setFilterOpen(!filterOpen)}
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white"
+                      className={cn(
+                        "h-7 w-7 rounded flex items-center justify-center text-gray-400 hover:text-white transition-colors",
+                        filterOpen && "bg-[#2a2a2a] text-white"
+                      )}
                     >
-                      <Filter size={12} />
-                      <span>Filtrar</span>
-                      <ChevronDown size={12} className={cn(
-                        "transition-transform",
-                        filterOpen ? "rotate-180" : ""
-                      )} />
-          </button>
-          
-                    <div className="flex items-center gap-2">
-                      <SortButton 
-                        label="Recentes"
-                        active={sortBy === 'recent'}
-                        onClick={() => setSortBy('recent')}
-                      />
-                      <SortButton 
-                        label="Votos"
-                        active={sortBy === 'votes'}
-                        onClick={() => setSortBy('votes')}
-                      />
-              </div>
-            </div>
-      
+                      <ChevronDown size={14} className={filterOpen ? "transform rotate-180" : ""} />
+                    </button>
+                  </div>
+                  
+                  {/* Filtros por tipo - sempre visível mesmo se a seção estiver fechada */}
+                  <div className="flex flex-wrap gap-1">
+                    <FilterButton 
+                      icon={<ConstructionIcon size={12} />} 
+                      label="Infraestrutura" 
+                      active={selectedTypes.includes('infraestrutura')} 
+                      onClick={() => togglePinType('infraestrutura')} 
+                    />
+                    <FilterButton 
+                      icon={<SirenIcon size={12} />} 
+                      label="Crime" 
+                      active={selectedTypes.includes('crime')} 
+                      onClick={() => togglePinType('crime')} 
+                    />
+                  </div>
+                  
+                  {/* Filtros adicionais - visíveis apenas quando expandidos */}
                   {filterOpen && (
-                    <div className="grid grid-cols-2 gap-2 mb-2 pt-2 border-t border-[#222]">
-                      <FilterButton 
-                        label="Infraestrutura"
-                        icon={<ConstructionIcon size={14} className="text-yellow-400" />}
-                        active={selectedTypes.includes('infraestrutura')}
-                        onClick={() => togglePinType('infraestrutura')}
-                      />
-                      <FilterButton 
-                        label="Crime"
-                        icon={<SirenIcon size={14} className="text-red-400" />}
-                        active={selectedTypes.includes('crime')}
-                        onClick={() => togglePinType('crime')}
-                      />
+                    <div className="mt-3 pt-3 border-t border-[#222] space-y-2">
+                      <div className="flex flex-wrap gap-1">
+                        <SortButton 
+                          label="Recentes" 
+                          active={sortBy === 'recent'} 
+                          onClick={() => setSortBy('recent')} 
+                        />
+                        <SortButton 
+                          label="Mais votados" 
+                          active={sortBy === 'votes'} 
+                          onClick={() => setSortBy('votes')} 
+                        />
+                        <SortButton 
+                          label="Próximos" 
+                          active={sortBy === 'distance'} 
+                          onClick={() => setSortBy('distance')} 
+                        />
+                      </div>
                     </div>
                   )}
-                  
-         
                 </div>
               )}
               
-              {/* Lista de pins */}
+              {/* Botão de novo relatório */}
+              <div className="p-3 border-b border-[#222]">
+                <Button
+                  onClick={() => {
+                    onNewReport();
+                    if (isMobile) setMobileMenuOpen(false);
+                  }}
+                  className={cn(
+                    "bg-white hover:bg-white/90 text-black w-full",
+                    isCollapsed ? "p-2 flex justify-center" : "flex items-center",
+                    isMobile && "h-12 text-base"
+                  )}
+                >
+                  <MapPin size={isCollapsed ? 18 : 16} className={isCollapsed ? "" : "mr-2"} />
+                  {!isCollapsed && <span>Novo relatório</span>}
+                </Button>
+              </div>
+              
+              {/* Listagem de pins */}
               <div className="flex-1 overflow-hidden">
-                {!isCollapsed && filteredPins.length === 0 ? (
+                {filteredPins.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                    <MapPin size={40} className="text-gray-600 mb-2" />
+                    <MapPin size={24} className="text-gray-600 mb-2" />
                     <p className="text-gray-400 text-sm">
                       {searchQuery ? 'Nenhum resultado encontrado' : 'Nenhum problema reportado'}
                     </p>
@@ -350,7 +478,7 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
                     )}
                   </div>
                 ) : (
-                  <ScrollArea className="h-full">
+                  <ScrollArea className="h-full custom-scrollbar">
                     <div className="px-2 py-2">
                       {isCollapsed ? (
                         // Versão reduzida para sidebar colapsada
@@ -396,10 +524,15 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
                             <PinCard 
                               key={pin.id} 
                               pin={pin} 
-            onClick={() => onPinClick(pin)}
+                              onClick={() => {
+                                onPinClick(pin);
+                                // Fechar menu móvel após clicar
+                                if (isMobile) setMobileMenuOpen(false);
+                              }}
                               expanded={isExpanded}
-          />
-        ))}
+                              isMobile={isMobile}
+                            />
+                          ))}
                         </div>
                       )}
                     </div>
@@ -425,97 +558,106 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
             </div>
           )}
           
-          {/* Footer com perfil de usuário */}
-          {isExpanded && (
-            <div className="p-4 border-t border-[#222] bg-[#111]">
+          {/* Rodapé com informações do usuário */}
+          <div className={cn("p-3 border-t border-[#222] mt-auto", !isExpanded && isCollapsed && "flex justify-center")}>
+            {isExpanded ? (
               <div className="flex items-center">
-                <Avatar className="h-8 w-8 border border-[#333]">
-                  <AvatarImage src="https://github.com/shadcn.png" />
-                  <AvatarFallback className="bg-blue-600 text-white text-xs">US</AvatarFallback>
+                <Avatar className="h-8 w-8 rounded-full">
+                  <AvatarImage src="/avatar-placeholder.svg" alt="Usuário" />
+                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs">US</AvatarFallback>
                 </Avatar>
                 <div className="ml-2">
                   <div className="text-sm font-medium text-white">Usuário</div>
                   <div className="text-xs text-gray-400">Cidadão</div>
                 </div>
-                <Button variant="ghost" size="icon" className="ml-auto h-8 w-8 text-gray-400 hover:text-white">
-                  <Settings size={16} />
-              </Button>
               </div>
-            </div>
-          )}
+            ) : (
+              <Avatar className="h-8 w-8 rounded-full">
+                <AvatarImage src="/avatar-placeholder.svg" alt="Usuário" />
+                <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs">US</AvatarFallback>
+              </Avatar>
+            )}
+          </div>
       </div>
-    </div>
     </>
   );
 };
 
-// Componente auxiliar para botões de navegação
-const NavButton = ({ icon, label, active, onClick, collapsed = false }) => {
-  return collapsed ? (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={onClick}
-            className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center transition-colors",
-              active
-                ? "bg-white/10 text-white"
-                : "text-gray-500 hover:text-white hover:bg-white/5"
-            )}
-          >
-            {icon}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
+const NavButton = ({ icon, label, active, onClick, collapsed = false, mobileTab = false }) => {
+  if (mobileTab) {
+    return (
+      <button
+        onClick={onClick}
+        className={cn(
+          "flex flex-col items-center p-2 rounded-lg transition-colors min-w-0 flex-1",
+          active ? "bg-[#2a2a2a] text-white" : "text-gray-500 hover:text-white"
+        )}
+      >
+        <div className="text-center">{icon}</div>
+        <span className="text-xs mt-1 whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
           {label}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  ) : (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 py-1.5 px-3 rounded-lg transition-colors flex-1",
-        active
-          ? "bg-white/10 text-white"
-          : "text-gray-500 hover:text-white hover:bg-white/5"
-      )}
-    >
-      {icon}
-      <span className="text-xs">{label}</span>
-    </button>
-  );
-};
-
-// Componente auxiliar para botões de filtro
-const FilterButton = ({ icon, label, active, onClick }) => {
+        </span>
+      </button>
+    );
+  }
+  
+  if (collapsed) {
+    return (
+      <button
+        onClick={onClick}
+        className={cn(
+          "w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+          active ? "bg-[#2a2a2a] text-white" : "text-gray-500 hover:text-white hover:bg-[#1a1a1a]"
+        )}
+        title={label}
+      >
+        {icon}
+      </button>
+    );
+  }
+  
   return (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors border",
-        active
-          ? "bg-white/10 text-white border-[#444]"
-          : "text-gray-500 hover:text-white border-[#222] hover:border-[#333]"
+        "flex items-center h-8 px-3 rounded-lg text-sm transition-colors flex-1",
+        active ? 
+          "bg-[#2a2a2a] text-white" : 
+          "text-gray-400 hover:text-white hover:bg-[#1a1a1a]"
       )}
     >
-      {icon}
+      <span className="mr-2">{icon}</span>
       <span>{label}</span>
     </button>
   );
 };
 
-// Componente auxiliar para botões de ordenação
+const FilterButton = ({ icon, label, active, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center h-7 px-2 rounded-lg text-xs transition-colors",
+        active ? 
+          "bg-[#2a2a2a] text-white" : 
+          "bg-[#1a1a1a] text-gray-400 hover:text-white hover:bg-[#222]"
+      )}
+    >
+      <span className="mr-1">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+};
+
 const SortButton = ({ label, active, onClick }) => {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "text-xs py-1 px-2 rounded transition-colors",
-        active
-          ? "bg-white/10 text-white"
-          : "text-gray-500 hover:text-white"
+        "h-7 px-2 rounded-lg text-xs transition-colors",
+        active ? 
+          "bg-[#2a2a2a] text-white" : 
+          "bg-[#1a1a1a] text-gray-400 hover:text-white hover:bg-[#222]"
       )}
     >
       {label}
@@ -523,85 +665,93 @@ const SortButton = ({ label, active, onClick }) => {
   );
 };
 
-// Componente para card de pin
-const PinCard = ({ pin, onClick, expanded }) => {
-  const isCrime = pin.type === 'crime';
-  const timeSince = formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR });
+const PinCard = ({ pin, onClick, expanded, isMobile = false }) => {
+  const timeAgo = formatDistanceToNow(new Date(pin.reportedAt), {
+    addSuffix: true,
+    locale: ptBR,
+  });
   
   return (
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left bg-[#131313] rounded-lg p-3 transition-all",
-        "hover:bg-[#1a1a1a] border border-transparent hover:border-[#333]",
-        expanded ? "" : "flex items-center justify-center"
+        "w-full p-2 rounded-lg bg-[#1a1a1a] hover:bg-[#232323] transition-colors text-left flex items-start gap-3 border border-transparent hover:border-[#333]",
+        isMobile && "p-3" // Mais espaço para toque em mobile
       )}
     >
-      <div className="flex items-start gap-3">
-        <div className={cn(
-          "flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center relative",
-          isCrime ? "bg-[#1a1a1a] border border-red-500/30" : "bg-[#1a1a1a] border border-yellow-500/30"
-        )}>
-          {isCrime ? (
-            <SirenIcon size={18} className="text-red-400" />
-          ) : (
-            <ConstructionIcon size={18} className="text-yellow-400" />
-          )}
+      {/* Ícone do pin */}
+      <div className={cn(
+        "shrink-0 w-10 h-10 rounded-full flex items-center justify-center relative",
+        pin.type === 'crime' ? "bg-[#1a1a1a] border-2 border-red-500/30" : "bg-[#1a1a1a] border-2 border-yellow-500/30",
+        isMobile && "w-12 h-12" // Ícone maior em mobile para facilitar toque
+      )}>
+        {pin.type === 'crime' ? (
+          <SirenIcon size={isMobile ? 18 : 16} className="text-red-400" />
+        ) : (
+          <ConstructionIcon size={isMobile ? 18 : 16} className="text-yellow-400" />
+        )}
+        
+        {/* Badge para votos */}
+        {(pin.votes && pin.votes > 0) && (
+          <div className={cn(
+            "absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full",
+            isMobile && "h-5 w-5 text-[10px]" // Badge maior em mobile
+          )}>
+            {pin.votes}
+          </div>
+        )}
+      </div>
+      
+      {/* Informações do pin */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1 mb-0.5">
+          <div className={cn("text-sm font-medium text-white truncate", isMobile && "text-base")}>
+            {pin.type === 'crime' ? 'Crime' : 'Infraestrutura'}
+          </div>
           
-          {/* Badge para votos */}
-          {(pin.votes && pin.votes > 0) && (
-            <div className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full">
-              {pin.votes}
-            </div>
-          )}
+          {/* Badge de status */}
+          <div className={cn(
+            "px-1.5 py-0.5 rounded-full text-[10px] uppercase font-medium leading-none",
+            getPinStatusStyle(pin.status),
+            isMobile && "text-[11px] px-2"
+          )}>
+            {getStatusLabel(pin.status)}
+          </div>
         </div>
         
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 mb-0.5">
-            <h3 className="text-sm font-medium text-white truncate">
-              {isCrime ? 'Crime' : 'Infraestrutura'}
-            </h3>
-            <div className={cn(
-              "text-[9px] px-1.5 rounded-full",
-              getPinStatusStyle(pin.status || 'reported')
-            )}>
-              {getStatusLabel(pin.status || 'reported')}
-            </div>
-          </div>
+        <p className={cn("text-xs text-gray-300 line-clamp-2 mb-1", isMobile && "text-sm")}>{pin.description}</p>
+        
+        <div className={cn("flex items-center text-[10px] text-gray-500", isMobile && "text-xs")}>
+          <Clock size={isMobile ? 12 : 10} className="mr-1" />
+          <span>há {pin.persistenceDays || 0} dias</span>
           
-          <p className="text-xs text-gray-400 line-clamp-2 mb-1">
-            {pin.description || "Sem descrição disponível"}
-          </p>
-          
-          <div className="flex items-center gap-1 text-[10px] text-gray-500">
-            <Clock size={10} />
-            <span>{timeSince}</span>
-            <span className="mx-1">•</span>
-            <span className="truncate">{pin.address || "Localização desconhecida"}</span>
-          </div>
+          {pin.address && (
+            <>
+              <span className="mx-1">•</span>
+              <span className="truncate">{pin.address}</span>
+            </>
+          )}
         </div>
       </div>
-        </button>
+    </button>
   );
 };
 
-// Função auxiliar para obter o estilo do status
 const getPinStatusStyle = (status: string) => {
   switch (status) {
     case 'reported':
-      return 'bg-red-500/20 text-red-400';
+      return 'bg-red-500/20 text-red-400 border border-red-500/30';
     case 'acknowledged':
-      return 'bg-yellow-500/20 text-yellow-400';
+      return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
     case 'in_progress':
-      return 'bg-blue-500/20 text-blue-400';
+      return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
     case 'resolved':
-      return 'bg-green-500/20 text-green-400';
+      return 'bg-green-500/20 text-green-400 border border-green-500/30';
     default:
-      return 'bg-gray-500/20 text-gray-400';
+      return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
   }
 };
 
-// Função auxiliar para obter o texto do status
 const getStatusLabel = (status: string) => {
   switch (status) {
     case 'reported':
@@ -613,7 +763,7 @@ const getStatusLabel = (status: string) => {
     case 'resolved':
       return 'Resolvido';
     default:
-      return status;
+      return 'Desconhecido';
   }
 };
 
