@@ -208,7 +208,7 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
       )}
     
       {/* Botão de menu móvel */}
-      {isMobile && (
+      {isMobile && !mobileMenuOpen && (
         <button
           onClick={toggleMobileMenu}
           className="fixed top-4 right-4 z-[1000] bg-[#1a1a1a] p-2 rounded-full shadow-lg text-white hover:bg-[#2a2a2a]"
