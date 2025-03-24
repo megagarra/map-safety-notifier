@@ -93,14 +93,13 @@ const MapClickHandler = ({ onMapClick }) => {
 
 // Componente para criar um pin customizado
 const CustomPin = ({ pin, onClick }) => {
-  const isCrime = pin.type === 'crime';
   const hasHighVotes = pin.votes && pin.votes >= 5;
   
   return (
     <div 
       className={cn(
         "absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all",
-        isCrime ? "pin-pulse-red" : "pin-pulse-yellow",
+        "pin-pulse-yellow",
         hasHighVotes ? "scale-110 z-20" : "z-10"
       )}
       onClick={(e) => {
@@ -111,9 +110,7 @@ const CustomPin = ({ pin, onClick }) => {
       {/* Apenas o ícone do pin, sem badge de status */}
       <div className={cn(
         "rounded-full flex items-center justify-center shadow-lg",
-        isCrime ? 
-          "bg-[#1a1a1a] border-2 border-red-500/30 text-red-400" : 
-          "bg-[#1a1a1a] border-2 border-yellow-500/30 text-yellow-400",
+        "bg-[#1a1a1a] border-2 border-yellow-500/30 text-yellow-400",
         hasHighVotes ? "w-10 h-10 border-[3px]" : "w-8 h-8"
       )}>
         <div 
@@ -397,29 +394,16 @@ const PinDetails = ({ pin, onClose, onVote, userType }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 pointer-events-auto backdrop-blur-sm">
-      <div className={cn(
-        "relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border transition-all duration-300 animate-fadeIn",
-        pin.type === 'crime' ? "border-[#f43f5e]" : "border-[#2a2a2a]"
-      )}>
-        <div className={cn(
-          "sticky top-0 z-10 flex justify-between items-center p-4 border-b",
-          pin.type === 'crime' ? "border-[#f43f5e]/30 bg-[#1a1a1a]" : "border-[#2a2a2a] bg-[#1a1a1a]"
-        )}>
+      <div className="relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border border-[#2a2a2a] transition-all duration-300 animate-fadeIn">
+        <div className="sticky top-0 z-10 flex justify-between items-center p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
           <div className="flex items-center gap-2">
-            <div className={cn(
-              "flex items-center justify-center h-8 w-8 rounded-full",
-              pin.type === 'crime' ? "bg-[#1a1a1a] border-[#f43f5e] border-2 text-[#f43f5e]" : getPinColorClass(pin.type)
-            )}>
-              {pin.type === 'crime' ? (
-                <AlertCircle size={16} className="text-[#f43f5e]" />
-              ) : (
-                <div 
-                  dangerouslySetInnerHTML={{ 
-                    __html: getPinIconSvg(pin.type) 
-                  }} 
-                  className="scale-75"
-                />
-              )}
+            <div className={getPinColorClass(pin.type)}>
+              <div 
+                dangerouslySetInnerHTML={{ 
+                  __html: getPinIconSvg(pin.type) 
+                }} 
+                className="scale-75"
+              />
             </div>
             <h3 className="text-lg font-medium text-white">
               {getPinTypeLabel(pin.type)}
@@ -499,16 +483,6 @@ const PinDetails = ({ pin, onClose, onVote, userType }) => {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-          
-          {pin.type === 'crime' && (
-            <div className="mb-4 p-3 bg-[#1a1a1a] border border-[#f43f5e] rounded-lg text-white/90">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle size={16} className="text-[#f43f5e]" />
-                <span className="font-medium">Área de risco</span>
-              </div>
-              <p className="text-sm text-gray-300">Este local possui registro de atividade criminosa. Recomendamos cautela ao transitar por esta área.</p>
             </div>
           )}
           
@@ -986,53 +960,25 @@ const Map = ({
 
 // Funções auxiliares
 const getPinColorClass = (type) => {
-  switch (type) {
-    case 'infraestrutura':
-      return 'bg-black text-yellow-400 border-2 border-yellow-500/30';
-    case 'crime':
-      return 'bg-red-600 text-white';
-    default:
-      return 'bg-gray-500 text-white';
-  }
+  return 'bg-black text-yellow-400 border-2 border-yellow-500/30';
 };
 
 const getPinIconSvg = (type) => {
-  switch (type) {
-    case 'infraestrutura':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="6" width="20" height="8" rx="1"/>
-        <path d="M17 14v7"/>
-        <path d="M7 14v7"/>
-        <path d="M17 3v3"/>
-        <path d="M7 3v3"/>
-        <path d="M10 14 2.3 6.3"/>
-        <path d="m14 6 7.7 7.7"/>
-        <path d="m8 6 8 8"/>
-      </svg>`;
-    case 'crime':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>`;
-    default:
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>`;
-  }
+  // Removed crime case, only infrastructure remains
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="6" width="20" height="8" rx="1"/>
+    <path d="M17 14v7"/>
+    <path d="M7 14v7"/>
+    <path d="M17 3v3"/>
+    <path d="M7 3v3"/>
+    <path d="M10 14 2.3 6.3"/>
+    <path d="m14 6 7.7 7.7"/>
+    <path d="m8 6 8 8"/>
+  </svg>`;
 };
 
 const getPinTypeLabel = (type) => {
-  switch (type) {
-    case 'infraestrutura':
-      return 'Problema de Infraestrutura';
-    case 'crime':
-      return 'Ocorrência de Crime';
-    default:
-      return 'Problema Reportado';
-  }
+  return 'Problema de Infraestrutura';
 };
 
 // Função para obter a classe de fundo do status
@@ -1085,13 +1031,12 @@ const getStatusIcon = (status) => {
 
 // Função para criar o HTML dos pins
 const createPinHTML = (pin) => {
-  const isCrime = pin.type === 'crime';
   const hasHighVotes = (pin.votes || 0) > 5;
   
   return `
     <div class="pin-wrapper-simple">
-      <div class="pin-container ${isCrime ? 'pin-pulse-red' : 'pin-pulse-yellow'} ${hasHighVotes ? 'scale-110' : ''}">
-        <div class="custom-pin ${isCrime ? 'crime-pin' : 'infra-pin'} rounded-full flex items-center justify-center shadow-lg ${hasHighVotes ? 'h-10 w-10' : 'h-8 w-8'}">
+      <div class="pin-container pin-pulse-yellow ${hasHighVotes ? 'scale-110' : ''}">
+        <div class="custom-pin infra-pin rounded-full flex items-center justify-center shadow-lg ${hasHighVotes ? 'h-10 w-10' : 'h-8 w-8'}">
           ${getPinIconSvg(pin.type)}
           ${(pin.votes && pin.votes > 0) 
             ? `<div class="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full border border-gray-700">${pin.votes}</div>` 
