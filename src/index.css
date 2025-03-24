@@ -74,8 +74,8 @@
 .leaflet-container {
   width: 100% !important;
   height: 100% !important;
-  z-index: 0;
-  background-color: #121212 !important;
+  z-index: 1 !important;
+  background-color: #333333 !important;
 }
 
 /* Ensure map parent container has proper height */
@@ -96,7 +96,12 @@
   
   .leaflet-container {
     height: 100% !important;
-    min-height: 100% !important;
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10 !important;
   }
 }
 
@@ -786,26 +791,81 @@
   width: 100%;
   height: 100%;
   position: relative;
+  z-index: 1;
+  isolation: isolate; /* Criar novo contexto de empilhamento */
 }
 
 .map-container {
   width: 100% !important;
   height: 100% !important;
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .map-loading-placeholder {
   transition: opacity 0.3s ease;
+  z-index: 2;
+}
+
+/* Melhorias para cache e desempenho do Leaflet */
+.custom-tile-layer {
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+.leaflet-tile-container {
+  will-change: transform;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+.leaflet-tile {
+  transform-origin: center;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform, opacity;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Fix map height issues on mobile */
 @media (max-width: 767px) {
+  body, html, #root {
+    height: 100vh !important;
+    width: 100vw !important;
+    overflow: hidden !important;
+    position: fixed !important;
+    top: 0;
+    left: 0;
+  }
+
+  .app-container, .h-full {
+    height: 100% !important;
+    width: 100% !important;
+    position: absolute !important;
+    overflow: hidden !important;
+  }
+  
   .leaflet-container {
     height: 100% !important;
+    width: 100% !important;
     position: absolute !important;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
+    z-index: 10 !important;
+    /* Otimizações de renderização */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    perspective: 1000;
+    -webkit-perspective: 1000;
   }
   
   .map-wrapper {
@@ -815,11 +875,19 @@
     right: 0;
     bottom: 0;
     height: 100% !important;
+    width: 100% !important;
+    z-index: 5;
+    overflow: hidden !important;
+  }
+  
+  .leaflet-control-container {
+    z-index: 1000 !important;
   }
   
   .leaflet-control-container .leaflet-top,
   .leaflet-control-container .leaflet-bottom {
-    z-index: 900 !important;
+    z-index: 1000 !important;
+    pointer-events: auto !important;
   }
   
   /* Make touch targets larger for mobile */
@@ -835,6 +903,21 @@
   .leaflet-control-zoom,
   .leaflet-control-attribution {
     display: block !important;
+  }
+  
+  /* Ajustes para dispositivos móveis de baixo desempenho */
+  .leaflet-fade-anim .leaflet-tile,
+  .leaflet-zoom-anim .leaflet-zoom-animated {
+    transition-duration: 0.15s !important;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  
+  /* Melhorar qualidade de renderização para dispositivos HiDPI */
+  @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .leaflet-tile {
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+    }
   }
 }
 
@@ -853,5 +936,32 @@
   .leaflet-top.leaflet-right {
     margin-right: 50px !important;
   }
+}
+
+/* Melhorias para cache e desempenho do Leaflet */
+.custom-tile-layer {
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.leaflet-fade-anim .leaflet-tile {
+  will-change: opacity;
+}
+
+.leaflet-zoom-anim .leaflet-zoom-animated {
+  will-change: transform;
+}
+
+/* Reduzir o tempo de animação para melhorar desempenho */
+.leaflet-fade-anim .leaflet-popup {
+  transition: opacity 0.15s linear;
+}
+
+/* Hardware acceleration para melhorar renderização do mapa */
+.leaflet-container {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 

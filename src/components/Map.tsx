@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import PinHistory from '@/components/PinHistory';
+import useMapCache from '@/hooks/useMapCache';
 import { 
   Clock, 
   X, 
@@ -36,10 +37,15 @@ import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
 // At the top of your file, add these type declarations
 declare module 'leaflet' {
-  namespace Icon {
-    interface Default {
+  interface IconDefaultType {
+    prototype: {
       _getIconUrl?: string;
-    }
+    };
+    mergeOptions(options: any): void;
+  }
+  
+  interface Icon {
+    Default: IconDefaultType;
   }
   
   interface Map {
@@ -174,6 +180,24 @@ const MapCenterUpdater = ({ center, zoom }) => {
     // Ignorar a primeira renderização que sempre ocorre naturalmente
     if (firstRender.current) {
       firstRender.current = false;
+      
+      // Forçar o mapa a recalcular seu tamanho após montagem
+      setTimeout(() => {
+        map.invalidateSize(true);
+        // Após invalidar o tamanho, também centralizar o mapa
+        map.setView(center, zoom, { animate: false });
+        
+        // Pré-carregar áreas vizinhas
+        setTimeout(() => {
+          // Simular pequenos movimentos para pré-carregar tiles
+          map.panBy([100, 100], { animate: false });
+          setTimeout(() => {
+            map.panBy([-100, -100], { animate: false });
+            map.setView(center, zoom, { animate: false });
+          }, 100);
+        }, 100);
+      }, 500);
+      
       return;
     }
     
@@ -650,7 +674,7 @@ const LocationButton = () => {
       locationButton.title = 'Usar minha localização atual';
       locationButton.innerHTML = `
         <span class="location-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
           </svg>
         </span>
@@ -711,6 +735,11 @@ const Map = ({
   const [showControls, setShowControls] = useState(false);
   const mapRef = useRef(null);
   const [userRoleSimulation, setUserRoleSimulation] = useState<'citizen' | 'government' | 'city_hall'>('citizen');
+  const [mapLoaded, setMapLoaded] = useState(false);
+  // Usar o hook de cache do mapa
+  const { cachedState, saveToCache } = useMapCache();
+  
+  const [mapInstance, setMapInstance] = useState(null);
   
   // Detectar tela móvel
   useEffect(() => {
@@ -754,6 +783,15 @@ const Map = ({
     }
   }, [selectedPin]);
 
+  // Handler para mapMoveEnd para salvar o estado do mapa
+  const handleMapMoveEnd = (center, zoom) => {
+    if (onMapMove) {
+      onMapMove(center, zoom);
+    }
+    // Usar a função do hook para salvar no cache
+    saveToCache(center, zoom);
+  };
+
   // Função explícita para lidar com o fechamento do modal
   const handleCloseDetails = () => {
     onPinClick(null);
@@ -761,49 +799,119 @@ const Map = ({
   
   // Coordenadas padrão se center for null
   const defaultCenter: [number, number] = [-23.5505, -46.6333]; // São Paulo como padrão
-  const effectiveCenter = center || defaultCenter;
+  // Usar coordenadas do cache se disponíveis e não houver centro definido
+  const effectiveCenter = center || (cachedState?.lastCenter) || defaultCenter;
+  const effectiveZoom = zoom || (cachedState?.lastZoom) || 12;
+  
+  // Função para forçar atualização do tamanho do mapa, especialmente útil em mobile
+  const forceMapUpdate = () => {
+    if (mapInstance) {
+      // Forçar o mapa a recalcular seu tamanho após montagem
+      mapInstance.invalidateSize(true);
+      
+      // Se temos centro e zoom, atualizar a visualização
+      if (effectiveCenter) {
+        mapInstance.setView(effectiveCenter, effectiveZoom, { animate: false });
+      }
+    }
+  };
+
+  // Forçar recarga quando o tamanho da janela muda (importante para rotação de dispositivo)
+  useEffect(() => {
+    const handleResize = () => {
+      setTimeout(forceMapUpdate, 250);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [mapInstance]);
+  
+  // Forçar recarga quando o mapa é montado inicialmente
+  useEffect(() => {
+    if (mapLoaded && mapInstance) {
+      // Dar tempo para o DOM ser renderizado completamente
+      setTimeout(forceMapUpdate, 500);
+    }
+  }, [mapLoaded, mapInstance]);
   
   return (
     <div className="h-full w-full relative rounded-lg overflow-hidden map-wrapper">
-      {/* Adiciona uma div de carregamento que será mostrada antes do mapa ser completamente renderizado */}
-      {isMobile && (
+      {/* Overlay de carregamento até o mapa inicializar completamente */}
+      {!mapLoaded && (
         <div className="map-loading-placeholder absolute inset-0 bg-[#121212] z-[5]"></div>
       )}
       
       <MapContainer
         center={effectiveCenter}
-        zoom={zoom}
+        zoom={effectiveZoom}
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
         attributionControl={false}
         ref={mapRef}
         className="map-container"
-        whenReady={() => {
-          // Remove o placeholder quando o mapa estiver pronto
-          const placeholder = document.querySelector('.map-loading-placeholder');
-          if (placeholder) {
-            placeholder.classList.add('opacity-0');
+        whenReady={(mapEvt) => {
+          setMapLoaded(true);
+          setMapInstance(mapEvt.target);
+          
+          // Forçar recálculo do tamanho do mapa
+          mapEvt.target.invalidateSize(true);
+          
+          // Se temos centro e zoom, atualizar a visualização
+          mapEvt.target.setView(effectiveCenter, effectiveZoom, { animate: false });
+          
+          // Remove o placeholder quando o mapa estiver carregado
+          setTimeout(() => {
+            const placeholder = document.querySelector('.map-loading-placeholder');
+            if (placeholder) {
+              placeholder.classList.add('opacity-0');
+              setTimeout(() => {
+                placeholder?.remove();
+              }, 300);
+            }
+            
+            // Forçar nova atualização do tamanho após o placeholder ser removido
             setTimeout(() => {
-              placeholder?.remove();
-            }, 300);
-          }
+              mapEvt.target.invalidateSize(true);
+              
+              // Pré-carregar tiles ao redor do centro visível
+              setTimeout(() => {
+                // Ajustar o zoom um nível para baixo e de volta para acionar carregamento de tiles
+                const currentZoom = mapEvt.target.getZoom();
+                mapEvt.target.setZoom(currentZoom - 1, { animate: false });
+                setTimeout(() => {
+                  mapEvt.target.setZoom(currentZoom, { animate: false });
+                }, 100);
+              }, 200);
+            }, 500);
+          }, 300);
         }}
       >
         <TileLayer
           url={customTileLayer}
           attribution={attribution}
+          // Configurações para melhorar o cache e desempenho
+          detectRetina={true}
+          maxZoom={19}
+          maxNativeZoom={18}
+          keepBuffer={15} // Aumentado para manter mais tiles em cache
+          updateWhenIdle={true}
+          updateWhenZooming={false}
+          className="custom-tile-layer"
         />
         
-        <MapEvents onMapClick={onMapClick} onMapMove={onMapMove} />
-        <MapCenterUpdater center={effectiveCenter} zoom={zoom} />
+        <MapEvents onMapClick={onMapClick} onMapMove={handleMapMoveEnd} />
+        <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
         <ZoomControl position="bottomright" />
         <AttributionControl position="bottomleft" />
         
         {/* Botão de localização atual */}
         <LocationButton />
         
-        {/* Pins filtrados */}
-        {filteredPins.map(pin => (
+        {/* Pins filtrados - Apenas renderizar se o mapa estiver carregado */}
+        {mapLoaded && filteredPins.map(pin => (
           <Marker 
             key={pin.id}
             position={[pin.location.lat, pin.location.lng]}
@@ -819,6 +927,22 @@ const Map = ({
           />
         ))}
       </MapContainer>
+      
+      {/* Botão para forçar recarga do mapa em caso de problemas (apenas mobile) */}
+      {isMobile && mapLoaded && (
+        <button
+          onClick={forceMapUpdate}
+          className="absolute top-4 right-16 z-[1000] bg-[#1a1a1a] p-2 rounded-full shadow-lg text-white hover:bg-[#2a2a2a]"
+          title="Recarregar mapa"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 2v6h6"></path>
+            <path d="M21 12A9 9 0 0 0 6 5.3L3 8"></path>
+            <path d="M21 22v-6h-6"></path>
+            <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"></path>
+          </svg>
+        </button>
+      )}
       
       {/* Modal de detalhes do pin */}
       {selectedPin && (
@@ -891,7 +1015,7 @@ const getPinColorClass = (type) => {
 const getPinIconSvg = (type) => {
   switch (type) {
     case 'infraestrutura':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="6" width="20" height="8" rx="1"/>
         <path d="M17 14v7"/>
         <path d="M7 14v7"/>
@@ -902,13 +1026,13 @@ const getPinIconSvg = (type) => {
         <path d="m8 6 8 8"/>
       </svg>`;
     case 'crime':
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>`;
     default:
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>

@@ -1,8 +1,10 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
 }
 
 .logo {
@@ -41,6 +43,14 @@
   color: #888;
 }
 
+.main-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -50,31 +60,57 @@
 body, html {
   height: 100%;
   width: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
 }
 
 .app-container {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 100%;
-  width: 100%;
+  margin: 0;
   overflow: hidden;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Mobile specific fixes */
 @media (max-width: 767px) {
-  body, html, #root, .app-container {
-    height: 100%;
-    overflow: hidden;
-    position: fixed;
-    inset: 0;
+  #root, body, html {
+    height: 100vh !important; /* Use viewport height */
+    width: 100vw !important;  /* Use viewport width */
+    overflow: hidden !important;
+    position: fixed !important;
+    max-height: -webkit-fill-available; /* iOS Safari fix */
+  }
+  
+  .app-container {
+    position: fixed !important;
+    height: 100% !important;
+    width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .main-content {
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100% !important;
+    width: 100% !important;
+    overflow: hidden !important;
+  }
+  
+  /* Fix for iOS Safari */
+  @supports (-webkit-touch-callout: none) {
+    body, html, #root {
+      height: -webkit-fill-available !important;
+    }
   }
 }
