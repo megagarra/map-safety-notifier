@@ -15,7 +15,15 @@ export const fetchPins = async (limit: number = 50): Promise<Pin[]> => {
       return [];
     }
 
-    return data as Pin[];
+    // Mapear cada pin para o formato camelCase usado na aplicação
+    const mappedData = data.map(pin => ({
+      ...pin,
+      reportedAt: pin.reportedat,
+      userVoted: pin.uservoted,
+      persistenceDays: pin.persistencedays
+    }));
+
+    return mappedData as Pin[];
   } catch (error) {
     console.error('Erro ao buscar pins:', error);
     return [];
@@ -36,7 +44,15 @@ export const fetchPinById = async (id: string): Promise<Pin | null> => {
       return null;
     }
 
-    return data as Pin;
+    // Mapear dados de volta para o formato camelCase usado na aplicação
+    const mappedData = {
+      ...data,
+      reportedAt: data.reportedat,
+      userVoted: data.uservoted,
+      persistenceDays: data.persistencedays
+    };
+
+    return mappedData as Pin;
   } catch (error) {
     console.error('Erro ao buscar pin:', error);
     return null;
@@ -50,7 +66,7 @@ export const createPin = async (pin: CreatePinInput): Promise<Pin | null> => {
     const newPin = {
       id: uuidv4(),
       ...pin,
-      reportedAt: new Date().toISOString(),
+      reportedat: new Date().toISOString(),
       status: 'reported',
       votes: 0,
       uservoted: false,
@@ -75,7 +91,15 @@ export const createPin = async (pin: CreatePinInput): Promise<Pin | null> => {
       return null;
     }
 
-    return data as Pin;
+    // Mapear dados de volta para o formato camelCase usado na aplicação
+    const mappedData = {
+      ...data,
+      reportedAt: data.reportedat,
+      userVoted: data.uservoted,
+      persistenceDays: data.persistencedays
+    };
+
+    return mappedData as Pin;
   } catch (error) {
     console.error('Erro ao criar pin:', error);
     return null;
@@ -85,9 +109,28 @@ export const createPin = async (pin: CreatePinInput): Promise<Pin | null> => {
 // Atualizar um pin existente
 export const updatePin = async (id: string, updates: Partial<Pin>): Promise<Pin | null> => {
   try {
+    // Converter campos de camelCase para o formato do banco de dados
+    const dbUpdates: any = { ...updates };
+    
+    // Mapear campos específicos
+    if (updates.reportedAt !== undefined) {
+      dbUpdates.reportedat = updates.reportedAt;
+      delete dbUpdates.reportedAt;
+    }
+    
+    if (updates.userVoted !== undefined) {
+      dbUpdates.uservoted = updates.userVoted;
+      delete dbUpdates.userVoted;
+    }
+    
+    if (updates.persistenceDays !== undefined) {
+      dbUpdates.persistencedays = updates.persistenceDays;
+      delete dbUpdates.persistenceDays;
+    }
+
     const { data, error } = await supabase
       .from('pins')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', id)
       .select()
       .single();
@@ -97,7 +140,15 @@ export const updatePin = async (id: string, updates: Partial<Pin>): Promise<Pin 
       return null;
     }
 
-    return data as Pin;
+    // Mapear dados de volta para o formato camelCase usado na aplicação
+    const mappedData = {
+      ...data,
+      reportedAt: data.reportedat,
+      userVoted: data.uservoted,
+      persistenceDays: data.persistencedays
+    };
+
+    return mappedData as Pin;
   } catch (error) {
     console.error('Erro ao atualizar pin:', error);
     return null;
@@ -143,7 +194,15 @@ export const voteOnPin = async (pinId: string): Promise<Pin | null> => {
         createdat: new Date().toISOString()
       });
 
-    return data as Pin;
+    // Mapear dados de volta para o formato camelCase usado na aplicação
+    const mappedData = {
+      ...data,
+      reportedAt: data.reportedat,
+      userVoted: data.uservoted,
+      persistenceDays: data.persistencedays
+    };
+
+    return mappedData as Pin;
   } catch (error) {
     console.error('Erro ao registrar voto:', error);
     return null;
@@ -198,14 +257,21 @@ export const calculatePersistenceStats = (pins: Pin[]) => {
   const unresolvedPins = pins.filter(pin => pin.status !== 'resolved');
   
   // Calcular média de dias
-  const totalDays = unresolvedPins.reduce((sum, pin) => sum + (pin.persistencedays || 0), 0);
+  const totalDays = unresolvedPins.reduce((sum, pin) => {
+    // Usar o valor mapeado de persistenceDays (que já deve estar correto no objeto Pin)
+    return sum + (pin.persistenceDays || 0);
+  }, 0);
+  
   const averageDays = unresolvedPins.length > 0 
     ? Math.round(totalDays / unresolvedPins.length) 
     : 0;
     
   // Obter o pin com maior persistência
   const maxPersistencePin = unresolvedPins.reduce(
-    (max, pin) => (pin.persistencedays || 0) > (max?.persistencedays || 0) ? pin : max,
+    (max, pin) => {
+      // Usar o valor mapeado de persistenceDays
+      return (pin.persistenceDays || 0) > ((max?.persistenceDays || 0)) ? pin : max;
+    },
     null as Pin | null
   );
   
@@ -218,7 +284,8 @@ export const calculatePersistenceStats = (pins: Pin[]) => {
   ];
   
   unresolvedPins.forEach(pin => {
-    const days = pin.persistencedays || 0;
+    // Usar o valor mapeado de persistenceDays
+    const days = pin.persistenceDays || 0;
     if (days <= 7) dayRanges[0].count++;
     else if (days <= 14) dayRanges[1].count++;
     else if (days <= 30) dayRanges[2].count++;
@@ -236,7 +303,8 @@ export const calculatePersistenceStats = (pins: Pin[]) => {
 // Filtrar pins por tempo de persistência
 export const filterPinsByPersistence = (pins: Pin[], minDays: number, maxDays: number): Pin[] => {
   return pins.filter(pin => {
-    const days = pin.persistencedays || 0;
+    // Usar o valor mapeado de persistenceDays
+    const days = pin.persistenceDays || 0;
     return days >= minDays && (maxDays === 0 || days <= maxDays);
   });
 }; 

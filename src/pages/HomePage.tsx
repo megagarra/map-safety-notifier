@@ -178,6 +178,19 @@ class HomePage extends React.Component {
   }
   
   openReportModal() {
+    // Se não temos uma localização definida, usar o centro atual do mapa
+    if (!this.state.newPinLocation) {
+      const { center } = this.state;
+      if (center) {
+        this.setState({ 
+          newPinLocation: { lat: center[0], lng: center[1] },
+          reportModalOpen: true 
+        });
+        return;
+      }
+    }
+    
+    // Se já temos uma localização ou não temos centro, apenas abrir o modal
     this.setState({ reportModalOpen: true });
   }
   

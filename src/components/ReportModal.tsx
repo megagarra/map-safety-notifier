@@ -26,18 +26,29 @@ const ReportModal: React.FC<ReportModalProps> = ({
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleClose = () => {
     setType('infraestrutura');
     setDescription('');
     setImages([]);
+    setValidationError(null);
     onClose();
   };
 
   const handleSubmit = () => {
-    if (!location) return;
+    if (!location) {
+      setValidationError("É necessário definir uma localização. Clique no mapa para marcar o local.");
+      return;
+    }
+    
+    if (!description.trim()) {
+      setValidationError("Por favor, adicione uma descrição do problema.");
+      return;
+    }
     
     setIsSubmitting(true);
+    setValidationError(null);
     
     const data: CreatePinInput = {
       type,
@@ -51,6 +62,7 @@ const ReportModal: React.FC<ReportModalProps> = ({
       handleClose();
     } catch (error) {
       console.error('Erro ao enviar relatório:', error);
+      setValidationError("Ocorreu um erro ao enviar o relatório. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -93,10 +105,17 @@ const ReportModal: React.FC<ReportModalProps> = ({
           <DialogTitle className="text-lg font-medium text-white">Reportar Problema</DialogTitle>
           <DialogDescription className="text-gray-400 text-sm">
             Compartilhe informações sobre esta localização.
+            {!location && <div className="mt-2 text-yellow-400 text-xs">Clique no mapa para definir uma localização.</div>}
           </DialogDescription>
         </DialogHeader>
 
         <div className="p-6 space-y-5 bg-[#121212]">
+          {validationError && (
+            <div className="bg-red-900/20 border border-red-900 p-3 rounded-md text-red-400 text-sm">
+              {validationError}
+            </div>
+          )}
+          
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <Label className="text-sm font-medium text-white">Tipo de problema</Label>
@@ -106,7 +125,7 @@ const ReportModal: React.FC<ReportModalProps> = ({
                     {convertToDMS(location.lat, true)}, {convertToDMS(location.lng, false)}
                   </>
                 ) : (
-                  "Localização não definida"
+                  <span className="text-yellow-400">Localização não definida</span>
                 )}
               </div>
             </div>
@@ -190,6 +209,7 @@ const ReportModal: React.FC<ReportModalProps> = ({
             onClick={handleSubmit} 
             disabled={isSubmitting || !description || !location}
             className="bg-white text-black hover:bg-white/90 ml-2"
+            title={!location ? "Clique no mapa para definir uma localização" : !description ? "Adicione uma descrição" : ""}
           >
             {isSubmitting ? (
               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
