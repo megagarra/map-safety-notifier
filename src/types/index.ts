@@ -22,7 +22,7 @@ export interface Pin {
   };
   description: string;
   images: string[];
-  reportedAt: string | Date;
+  reportedAt: string;
   address?: string;
   history: PinHistoryEntry[];
   status: PinStatus;

@@ -67,7 +67,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Todos
               </button>
               <button 
-                onClick={() => onTypeChange('flood' as PinType)}
+                onClick={() => onTypeChange('flood')}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'flood' 
@@ -78,7 +78,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Alagamento
               </button>
               <button 
-                onClick={() => onTypeChange('pothole' as PinType)}
+                onClick={() => onTypeChange('pothole')}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'pothole' 
@@ -89,7 +89,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Buracos
               </button>
               <button 
-                onClick={() => onTypeChange('passable' as PinType)}
+                onClick={() => onTypeChange('passable')}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'passable' 
@@ -100,7 +100,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Passável
               </button>
               <button 
-                onClick={() => onTypeChange('robbery' as PinType)}
+                onClick={() => onTypeChange('robbery')}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'robbery' 

@@ -59,7 +59,7 @@ L.Icon.Default.mergeOptions({
 
 interface MapProps {
   pins: Pin[];
-  onPinClick: (pin: Pin) => void;
+  onPinClick: (pin: Pin | null) => void;
   onMapClick: (lat: number, lng: number) => void;
   onMapMove?: (center: [number, number], zoom: number) => void;
   selectedPinTypes: PinType[] | null;
@@ -67,8 +67,8 @@ interface MapProps {
   center: [number, number];
   zoom: number;
   onVote: (pinId: string) => void;
-  showSecurityPanel?: boolean;
-  securityMode?: boolean;
+  initialShowSecurityPanel?: boolean;
+  initialSecurityMode?: boolean;
 }
 
 // Mapa com tema escuro similar à imagem
@@ -809,8 +809,8 @@ const Map = ({
   center,
   zoom,
   onVote,
-  showSecurityPanel,
-  securityMode
+  initialShowSecurityPanel,
+  initialSecurityMode
 }) => {
   // Estados para heatmap e recursos visuais
   const [showHeatmap, setShowHeatmap] = useState(false);
@@ -843,9 +843,9 @@ const Map = ({
     };
   }, []);
   
-  // Security panel states
-  const [showSecurityPanel, setShowSecurityPanel] = useState(false);
-  const [securityMode, setSecurityMode] = useState(false);
+  // Security panel states - now using different names to avoid conflicts
+  const [showSecurityPanel, setShowSecurityPanel] = useState(initialShowSecurityPanel || false);
+  const [securityMode, setSecurityMode] = useState(initialSecurityMode || false);
   
   // Filtra pins se necessário
   const filteredPins = selectedPinTypes?.length 
@@ -872,7 +872,7 @@ const Map = ({
   }, [selectedPin]);
 
   // Handler para mapMoveEnd para salvar o estado do mapa
-  const handleMapMoveEnd = (center, zoom) => {
+  const handleMapMoveEnd = (center: [number, number], zoom: number) => {
     if (onMapMove) {
       onMapMove(center, zoom);
     }
