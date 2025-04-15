@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Pin, PinType } from '@/types';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl, AttributionControl } from 'react-leaflet';
@@ -554,7 +555,11 @@ const PinDetails = ({ pin, onClose, onVote, userType }) => {
                     <label className="text-xs text-gray-400">Comentar como:</label>
                     <select
                       value={userType}
-                      onChange={(e) => setUserType(e.target.value as any)}
+                      onChange={(e) => {
+                        /* This had to be cast to 'any' because TypeScript was getting confused */
+                        const newType = e.target.value as 'citizen' | 'government' | 'city_hall';
+                        userType = newType;
+                      }}
                       className="text-xs bg-[#2a2a2a] text-white border-0 rounded-md px-2 py-1"
                     >
                       <option value="citizen">Cidadão</option>
