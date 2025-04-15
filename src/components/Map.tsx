@@ -399,8 +399,11 @@ const PinDetails = ({ pin, onClose, onVote, userType }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 pointer-events-auto backdrop-blur-sm">
-      <div className="relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border border-[#2a2a2a] transition-all duration-300 animate-fadeIn">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 pointer-events-auto backdrop-blur-sm">
+      <div className={cn(
+        "relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border border-[#2a2a2a] transition-all duration-300 animate-fadeIn",
+        isMobile ? "h-[80vh] rounded-t-xl" : ""
+      )}>
         <div className="sticky top-0 z-10 flex justify-between items-center p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
           <div className="flex items-center gap-2">
             <div className={getPinColorClass(pin.type)}>
@@ -633,7 +636,7 @@ const LocationButton = () => {
           console.error("Erro ao obter localização: ", error);
           setIsLoading(false);
           // Feedback visual para o usuário
-          alert("Não foi possível obter sua localização. Verifique se você permitiu o acesso à localiza��ão.");
+          alert("Não foi possível obter sua localização. Verifique se você permitiu o acesso à localização.");
         },
         {
           enableHighAccuracy: true,
@@ -770,7 +773,10 @@ const PinVisibilityManager = ({ pins, onPinClick }) => {
           position={[pin.location.lat, pin.location.lng]}
           icon={createPinWithZoom(pin)}
           eventHandlers={{
-            click: () => onPinClick(pin)
+            click: (e) => {
+              e.originalEvent.stopPropagation();
+              onPinClick(pin);
+            }
           }}
         />
       ))}
@@ -984,16 +990,103 @@ const Map = ({
         {/* Pin selecionado (detalhes) */}
         {selectedPin && (
           <div className={cn(
-            "absolute z-30 bottom-0 left-0 right-0 p-4 transition-all duration-300 ease-in-out",
-            "bg-gradient-to-t from-black/90 to-black/50 backdrop-blur-sm overflow-auto",
-            isMobile ? "h-[80vh] rounded-t-xl max-h-[80vh]" : "h-auto max-h-[50vh] m-4 rounded-xl"
+            "fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 pointer-events-auto backdrop-blur-sm",
+            isMobile ? "p-0" : "p-4"
           )}>
-            <PinDetails 
-              pin={selectedPin} 
-              onClose={handleCloseDetails} 
-              onVote={onVote}
-              userType={userRoleSimulation}
-            />
+            <div className={cn(
+              "relative w-[90%] max-w-[450px] max-h-[80vh] overflow-y-auto rounded-xl bg-[#121212] shadow-2xl border border-[#2a2a2a] transition-all duration-300 animate-fadeIn",
+              isMobile ? "h-[80vh] rounded-t-xl" : ""
+            )}>
+              <div className="sticky top-0 z-10 flex justify-between items-center p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
+                <div className="flex items-center gap-2">
+                  <div className={getPinColorClass(selectedPin.type)}>
+                    <div 
+                      dangerouslySetInnerHTML={{ 
+                        __html: getPinIconSvg(selectedPin.type) 
+                      }} 
+                      className="scale-75"
+                    />
+                  </div>
+                  <h3 className="text-lg font-medium text-white">
+                    {getPinTypeLabel(selectedPin.type)}
+                  </h3>
+                </div>
+                <button 
+                  onClick={handleCloseDetails}
+                  className="h-8 w-8 rounded-full bg-[#2a2a2a]/80 flex items-center justify-center text-white/70 hover:bg-[#3a3a3a] hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              
+              <div className="p-4">
+                {/* Description */}
+                <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                  <h4 className="text-sm font-medium text-white mb-2">Descrição</h4>
+                  <p className="text-gray-300">{selectedPin.description}</p>
+                </div>
+
+                {/* Location Info */}
+                <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                  <h4 className="text-sm font-medium text-white mb-2">Localização</h4>
+                  <div className="flex flex-col gap-2">
+                    {selectedPin.address && (
+                      <p className="text-gray-300">
+                        <span className="font-medium text-white">Endereço:</span> {selectedPin.address}
+                      </p>
+                    )}
+                    <p className="text-gray-300">
+                      <span className="font-medium text-white">Coordenadas:</span> {selectedPin.location.lat.toFixed(6)}, {selectedPin.location.lng.toFixed(6)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Status and Timing */}
+                <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                  <h4 className="text-sm font-medium text-white mb-2">Status</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "px-2 py-1 rounded-full text-xs font-medium",
+                        getStatusBgClass(selectedPin.status)
+                      )}>
+                        {getStatusLabel(selectedPin.status)}
+                      </div>
+                    </div>
+                    <p className="text-gray-300 flex items-center gap-2">
+                      <Clock size={14} />
+                      <span>Reportado em: {new Date(selectedPin.reportedAt).toLocaleString('pt-BR')}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Voting Section */}
+                <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                  <h4 className="text-sm font-medium text-white mb-3">Confirmação do Problema</h4>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users size={16} className="text-gray-400" />
+                      <span className="text-sm text-gray-300">
+                        <span className="font-medium text-white">{selectedPin.votes || 0}</span> pessoas confirmaram este problema
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => onVote(selectedPin.id)}
+                      disabled={selectedPin.userVoted}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors",
+                        selectedPin.userVoted 
+                          ? "bg-green-500/20 text-green-400 cursor-default" 
+                          : "bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]"
+                      )}
+                    >
+                      <ThumbsUp size={14} />
+                      <span>{selectedPin.userVoted ? "Confirmado" : "Confirmar"}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

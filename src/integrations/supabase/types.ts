@@ -56,7 +56,7 @@ export type Database = {
           images: string[] | null
           location: Json
           persistencedays: number | null
-          reportedat: string | null
+          reportedAt: string | null
           status: string | null
           type: string
           uservoted: boolean | null
@@ -70,7 +70,7 @@ export type Database = {
           images?: string[] | null
           location: Json
           persistencedays?: number | null
-          reportedat?: string | null
+          reportedAt?: string | null
           status?: string | null
           type: string
           uservoted?: boolean | null
@@ -84,7 +84,7 @@ export type Database = {
           images?: string[] | null
           location?: Json
           persistencedays?: number | null
-          reportedat?: string | null
+          reportedAt?: string | null
           status?: string | null
           type?: string
           uservoted?: boolean | null
@@ -250,3 +250,48 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+export interface Pin {
+  id: string
+  type: string
+  location: string
+  description: string
+  images: string[]
+  reportedAt: string | null
+  address: string | null
+  history: History[]
+  status: string
+  persistencedays: number
+  votes: number
+  uservoted: boolean
+}
+
+export interface PinInsert {
+  id?: string
+  type: string
+  location: string
+  description: string
+  images: string[]
+  reportedAt?: string | null
+  address?: string | null
+  history: History[]
+  status: string
+  persistencedays: number
+  votes: number
+  uservoted: boolean
+}
+
+export interface PinUpdate {
+  id?: string
+  type?: string
+  location?: string
+  description?: string
+  images?: string[]
+  reportedAt?: string | null
+  address?: string | null
+  history?: History[]
+  status?: string
+  persistencedays?: number
+  votes?: number
+  uservoted?: boolean
+}

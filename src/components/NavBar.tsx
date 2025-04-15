@@ -33,6 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useToast } from '@/components/ui/use-toast';
 
 // Componente personalizado para o ícone de sirene
 const SirenIcon = ({ size = 16, className = "" }) => (
@@ -102,6 +103,7 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [touchStartX, setTouchStartX] = useState(0);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   // Detectar tela móvel
   useEffect(() => {
@@ -152,6 +154,9 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
     )
     .sort((a, b) => {
       if (sortBy === 'recent') {
+        if (!a.reportedAt && !b.reportedAt) return 0;
+        if (!a.reportedAt) return 1;
+        if (!b.reportedAt) return -1;
         return new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime();
       } else if (sortBy === 'votes') {
         return (b.votes || 0) - (a.votes || 0);
@@ -196,7 +201,12 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
       setSelectedTypes([...selectedTypes, type]);
     }
   };
-  
+
+  const handlePinClick = (pin: Pin) => {
+    onPinClick(pin);
+    if (isMobile) setMobileMenuOpen(false);
+  };
+
   return (
     <>
       {/* Overlay para telas móveis quando o menu está aberto */}
@@ -488,7 +498,7 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    onClick={() => onPinClick(pin)}
+                                    onClick={() => handlePinClick(pin)}
                                     className={cn(
                                       "w-10 h-10 rounded-full flex items-center justify-center relative",
                                       pin.type === 'crime' ? "bg-[#1a1a1a] border-2 border-red-500/30" : "bg-[#1a1a1a] border-2 border-yellow-500/30",
@@ -524,11 +534,7 @@ const NavBar: React.FC<NavBarProps> = ({ onNewReport, pins = [], onPinClick = ()
                             <PinCard 
                               key={pin.id} 
                               pin={pin} 
-                              onClick={() => {
-                                onPinClick(pin);
-                                // Fechar menu móvel após clicar
-                                if (isMobile) setMobileMenuOpen(false);
-                              }}
+                              onClick={() => handlePinClick(pin)}
                               expanded={isExpanded}
                               isMobile={isMobile}
                             />
@@ -666,10 +672,10 @@ const SortButton = ({ label, active, onClick }) => {
 };
 
 const PinCard = ({ pin, onClick, expanded, isMobile = false }) => {
-  const timeAgo = formatDistanceToNow(new Date(pin.reportedAt), {
+  const timeAgo = pin.reportedAt ? formatDistanceToNow(new Date(pin.reportedAt), {
     addSuffix: true,
     locale: ptBR,
-  });
+  }) : 'Data desconhecida';
   
   return (
     <button

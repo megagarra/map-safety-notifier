@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Pin, PinType } from '@/types';
 import { DropletIcon, CircleOff, CheckCircle, AlertCircle, ExternalLink, Clock } from 'lucide-react';
@@ -25,6 +24,9 @@ const PinList: React.FC<PinListProps> = ({ pins, selectedPin, onPinClick }) => {
   }
 
   const sortedPins = [...pins].sort((a, b) => {
+    if (!a.reportedAt && !b.reportedAt) return 0;
+    if (!a.reportedAt) return 1;
+    if (!b.reportedAt) return -1;
     return new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime();
   });
 
@@ -47,7 +49,12 @@ const PinList: React.FC<PinListProps> = ({ pins, selectedPin, onPinClick }) => {
             <div className="flex-1">
               <div className="font-medium">{getPinTypeLabel(pin.type)}</div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR })}</span>
+                <span>
+                  {pin.reportedAt 
+                    ? formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR })
+                    : 'Data desconhecida'
+                  }
+                </span>
                 <span>•</span>
                 <span className="truncate max-w-[120px]">
                   {pin.address || `${pin.location.lat.toFixed(4)}, ${pin.location.lng.toFixed(4)}`}

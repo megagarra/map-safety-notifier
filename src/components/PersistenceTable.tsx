@@ -46,7 +46,7 @@ const PersistenceTable: React.FC<PersistenceTableProps> = ({ pins, onSelectPin }
   });
   
   // Ordenar pins
-  const sortedPins = [...filteredPins].sort((a, b) => {
+  const sortedPins = filteredPins.sort((a, b) => {
     let comparison = 0;
     
     switch (sortField) {
@@ -60,7 +60,10 @@ const PersistenceTable: React.FC<PersistenceTableProps> = ({ pins, onSelectPin }
         comparison = (a.persistenceDays || 0) - (b.persistenceDays || 0);
         break;
       case 'reportedAt':
-        comparison = new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime();
+        if (!a.reportedAt && !b.reportedAt) comparison = 0;
+        else if (!a.reportedAt) comparison = 1;
+        else if (!b.reportedAt) comparison = -1;
+        else comparison = new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime();
         break;
       default:
         comparison = 0;
@@ -183,7 +186,10 @@ const PersistenceTable: React.FC<PersistenceTableProps> = ({ pins, onSelectPin }
                 </TableCell>
                 <TableCell>
                   <span className="text-xs text-gray-400">
-                    {format(new Date(pin.reportedAt), "dd/MM/yyyy", { locale: ptBR })}
+                    {pin.reportedAt 
+                      ? format(new Date(pin.reportedAt), "dd/MM/yyyy", { locale: ptBR })
+                      : 'Data desconhecida'
+                    }
                   </span>
                 </TableCell>
                 <TableCell>

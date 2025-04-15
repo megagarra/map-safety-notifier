@@ -4,8 +4,9 @@ import Map from '@/components/Map';
 import NavBar from '@/components/NavBar';
 import ReportModal from '@/components/ReportModal';
 import { Pin, PinType } from '@/types';
-import { generatePins, getCurrentLocation } from '@/lib/helpers';
+import { getCurrentLocation } from '@/lib/helpers';
 import { toast } from '@/components/ui/use-toast';
+import * as PinsController from '@/controllers/pins';
 
 // Componente usando abordagem de classe para evitar problemas com hooks
 class HomePage extends React.Component {
@@ -21,7 +22,8 @@ class HomePage extends React.Component {
       zoom: 12,
       reportModalOpen: false,
       newPinLocation: null,
-      isLoadingUserLocation: true // Começar com carregamento ativado
+      isLoadingUserLocation: true, // Começar com carregamento ativado
+      isLoadingPins: true // Adicionar estado para carregamento de pins
     };
     
     // Bind de métodos
@@ -89,14 +91,8 @@ class HomePage extends React.Component {
   
   // Lifecycle methods
   componentDidMount() {
-    // Carregar pins iniciais
-    try {
-      const initialPins = generatePins(15);
-      this.setState({ pins: initialPins });
-    } catch (error) {
-      console.error("Error loading pins:", error);
-      this.setState({ pins: [] });
-    }
+    // Carregar pins do Supabase
+    this.loadPins();
     
     // Verificar URL para coordenadas
     const urlParams = new URLSearchParams(this.location.search);
@@ -114,6 +110,23 @@ class HomePage extends React.Component {
     } else {
       // Se não houver coordenadas na URL, tentar obter localização do usuário
       this.getUserLocation();
+    }
+  }
+  
+  // Método para carregar pins do Supabase
+  async loadPins() {
+    try {
+      this.setState({ isLoadingPins: true });
+      const pins = await PinsController.fetchPins(50); // Limitando a 50 pins
+      this.setState({ pins, isLoadingPins: false });
+    } catch (error) {
+      console.error('Erro ao carregar pins:', error);
+      toast({
+        title: 'Erro ao carregar pins',
+        description: 'Não foi possível carregar os dados do mapa',
+        variant: 'destructive'
+      });
+      this.setState({ pins: [], isLoadingPins: false });
     }
   }
   
@@ -175,80 +188,75 @@ class HomePage extends React.Component {
     });
   }
   
-  handleReportSubmit(data) {
-    const newPin = {
-      id: `pin-${Date.now()}`,
-      type: data.type,
-      location: data.location,
-      description: data.description,
-      images: data.images,
-      reportedAt: new Date().toISOString(),
-      address: 'Franco da Rocha',
-      status: 'reported',
-      votes: 0,
-      userVoted: false,
-      history: [
-        {
-          status: 'reported',
-          date: new Date().toISOString(),
-          description: 'Problema reportado por usuário'
-        }
-      ],
-      persistenceDays: 0
-    };
-    
-    this.setState(prevState => ({
-      pins: [...prevState.pins, newPin]
-    }));
-    
-    toast({
-      title: "Relatório enviado",
-      description: "Seu relatório foi enviado com sucesso.",
-      variant: "success"
-    });
+  async handleReportSubmit(data) {
+    try {
+      const newPin = await PinsController.createPin({
+        type: data.type,
+        location: data.location,
+        description: data.description,
+        images: data.images
+      });
+      
+      if (newPin) {
+        // Adicionar o novo pin ao estado
+        this.setState(prevState => ({
+          pins: [...prevState.pins, newPin]
+        }));
+        
+        toast({
+          title: "Relatório enviado",
+          description: "Seu relatório foi enviado com sucesso.",
+          variant: "success"
+        });
+      } else {
+        throw new Error('Falha ao criar pin');
+      }
+    } catch (error) {
+      console.error('Erro ao enviar relatório:', error);
+      toast({
+        title: "Erro ao enviar relatório",
+        description: "Não foi possível enviar seu relatório. Tente novamente.",
+        variant: "destructive"
+      });
+    }
   }
   
   // Método para lidar com votos
-  handleVote(pinId) {
-    // Atualizar estado local
-    this.setState(prevState => {
-      const updatedPins = prevState.pins.map(pin => {
-        if (pin.id === pinId) {
-          // Se o usuário já votou, não permitir voto duplo
-          if (pin.userVoted) return pin;
+  async handleVote(pinId) {
+    try {
+      const updatedPin = await PinsController.voteOnPin(pinId);
+      
+      if (updatedPin) {
+        // Atualizar estado local
+        this.setState(prevState => {
+          const updatedPins = prevState.pins.map(pin => {
+            if (pin.id === pinId) {
+              return updatedPin;
+            }
+            return pin;
+          });
           
-          // Atualizar o pin com o voto
-          return {
-            ...pin,
-            votes: (pin.votes || 0) + 1,
-            userVoted: true
+          return { 
+            pins: updatedPins,
+            selectedPin: updatedPin.id === prevState.selectedPin?.id ? updatedPin : prevState.selectedPin
           };
-        }
-        return pin;
-      });
-      
-      // Também atualizar o pin selecionado se estiver aberto
-      let updatedSelectedPin = prevState.selectedPin;
-      if (updatedSelectedPin && updatedSelectedPin.id === pinId) {
-        updatedSelectedPin = {
-          ...updatedSelectedPin,
-          votes: (updatedSelectedPin.votes || 0) + 1,
-          userVoted: true
-        };
+        });
+        
+        // Mostrar feedback ao usuário
+        toast({
+          title: "Voto registrado",
+          description: "Obrigado por confirmar este problema.",
+          variant: "success"
+        });
       }
-      
-      return { 
-        pins: updatedPins,
-        selectedPin: updatedSelectedPin
-      };
-    });
-    
-    // Mostrar feedback ao usuário
-    toast({
-      title: "Voto registrado",
-      description: "Obrigado por confirmar este problema.",
-      variant: "success"
-    });
+    } catch (error) {
+      console.error('Erro ao registrar voto:', error);
+      toast({
+        title: "Erro ao registrar voto",
+        description: "Não foi possível registrar seu voto. Tente novamente.",
+        variant: "destructive"
+      });
+    }
   }
   
   render() {
@@ -260,17 +268,22 @@ class HomePage extends React.Component {
       zoom, 
       reportModalOpen, 
       newPinLocation,
-      isLoadingUserLocation
+      isLoadingUserLocation,
+      isLoadingPins
     } = this.state;
     
-    // Mostrar carregando enquanto obtém a localização
-    if (isLoadingUserLocation || !center) {
+    // Mostrar carregando enquanto obtém a localização ou carrega os pins
+    if (isLoadingUserLocation || !center || isLoadingPins) {
       return (
         <div className="h-screen w-full flex items-center justify-center bg-[#121212] fixed inset-0">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-t-blue-500 border-blue-300/30 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-white text-lg">Obtendo sua localização...</p>
-            <p className="text-gray-400 text-sm mt-2">Permita o acesso à localização quando solicitado</p>
+            <p className="text-white text-lg">
+              {isLoadingPins ? "Carregando dados do mapa..." : "Obtendo sua localização..."}
+            </p>
+            <p className="text-gray-400 text-sm mt-2">
+              {isLoadingUserLocation ? "Permita o acesso à localização quando solicitado" : "Aguarde um momento"}
+            </p>
           </div>
         </div>
       );

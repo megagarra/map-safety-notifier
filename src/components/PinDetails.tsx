@@ -150,10 +150,83 @@ const PinDetails = ({ pin, onClose, onVote }: PinDetailsProps) => {
         </div>
         
         <div className="p-4">
-          {/* ... (conteúdo existente) ... */}
-          
-          {/* Seção de votação */}
-          <div className="my-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+          {/* Description */}
+          <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+            <h4 className="text-sm font-medium text-white mb-2">Descrição</h4>
+            <p className="text-gray-300">{pin.description}</p>
+          </div>
+
+          {/* Location Info */}
+          <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+            <h4 className="text-sm font-medium text-white mb-2">Localização</h4>
+            <div className="flex flex-col gap-2">
+              {pin.address && (
+                <p className="text-gray-300">
+                  <span className="font-medium text-white">Endereço:</span> {pin.address}
+                </p>
+              )}
+              <p className="text-gray-300">
+                <span className="font-medium text-white">Coordenadas:</span> {pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}
+              </p>
+              <button 
+                onClick={copyLocationLink}
+                className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                <Copy size={14} />
+                <span>Copiar link da localização</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Status and Timing */}
+          <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+            <h4 className="text-sm font-medium text-white mb-2">Status</h4>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "px-2 py-1 rounded-full text-xs font-medium",
+                  pin.status === 'reported' && "bg-yellow-500/20 text-yellow-400",
+                  pin.status === 'acknowledged' && "bg-blue-500/20 text-blue-400",
+                  pin.status === 'in_progress' && "bg-purple-500/20 text-purple-400",
+                  pin.status === 'resolved' && "bg-green-500/20 text-green-400"
+                )}>
+                  {pin.status === 'reported' && "Reportado"}
+                  {pin.status === 'acknowledged' && "Reconhecido"}
+                  {pin.status === 'in_progress' && "Em Progresso"}
+                  {pin.status === 'resolved' && "Resolvido"}
+                </div>
+              </div>
+              <p className="text-gray-300 flex items-center gap-2">
+                <Clock size={14} />
+                <span>Reportado em: {new Date(pin.reportedAt).toLocaleString('pt-BR')}</span>
+              </p>
+              {pin.persistenceDays && (
+                <p className="text-gray-300">
+                  <span className="font-medium text-white">Dias de persistência:</span> {pin.persistenceDays}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Images */}
+          {pin.images && pin.images.length > 0 && (
+            <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+              <h4 className="text-sm font-medium text-white mb-2">Imagens</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {pin.images.map((image, index) => (
+                  <img 
+                    key={index}
+                    src={image}
+                    alt={`Imagem ${index + 1} do problema`}
+                    className="w-full h-32 object-cover rounded-lg"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Voting Section */}
+          <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
             <h4 className="text-sm font-medium text-white mb-3">Confirmação do Problema</h4>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -182,8 +255,36 @@ const PinDetails = ({ pin, onClose, onVote }: PinDetailsProps) => {
               </p>
             )}
           </div>
-          
-          {/* ... (resto do conteúdo existente) ... */}
+
+          {/* History */}
+          <div className="p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="w-full flex items-center justify-between text-sm font-medium text-white"
+            >
+              <span>Histórico de Atualizações</span>
+              <div className={cn(
+                "transform transition-transform",
+                showHistory ? "rotate-180" : ""
+              )}>
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <path
+                    d="M2 4L6 8L10 4"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
+              </div>
+            </button>
+            {showHistory && (
+              <div className="mt-4">
+                <PinHistory history={pin.history} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

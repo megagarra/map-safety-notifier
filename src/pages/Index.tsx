@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMapData } from '@/hooks/useMapData';
@@ -11,65 +10,68 @@ import { ArrowLeft, ArrowRight, Loader2, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { generatePins } from '@/lib/helpers';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import * as PinsController from '@/controllers/pins';
 
 // Variável para armazenar o timeout fora do componente
 let urlUpdateTimeout: number | undefined;
 
 const Index = () => {
-  const { pins, loading, addPin, filterPins } = useMapData();
-  const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [center, setCenter] = useState<[number, number]>([-23.5505, -46.6333]); // São Paulo como padrão
+  const [zoom, setZoom] = useState(13);
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [selectedPinTypes, setSelectedPinTypes] = useState<PinType[] | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { toast } = useToast();
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
   const isMobile = useIsMobile();
+  const [isNavOpen, setIsNavOpen] = useState(!isMobile);
   const navigate = useNavigate();
   const location = useLocation();
-  const [center, setCenter] = useState<[number, number]>([-23.3268, -46.7263]);
-  const [zoom, setZoom] = useState<number>(14);
+  const { toast } = useToast();
+  const { pins, loading, addPin } = useMapData();
 
-  const filteredPins = selectedPinTypes ? filterPins(selectedPinTypes) : pins;
-  
-  const handleMapClick = (lat: number, lng: number) => {
-    setSelectedLocation({ lat, lng });
-    setReportModalOpen(true);
-    updateUrlWithCoordinates(lat, lng);
+  // Function to open the sidebar on mobile
+  const openNav = () => {
+    setIsNavOpen(true);
   };
-  
+
+  // Function to close the sidebar on mobile
+  const closeNav = () => {
+    setIsNavOpen(false);
+  };
+
+  // Open report modal
+  const handleOpenReportModal = () => {
+    setIsReportModalOpen(true);
+  };
+
+  // Close report modal
+  const handleCloseReportModal = () => {
+    setIsReportModalOpen(false);
+    setNewPinLocation(null);
+  };
+
+  // When a pin is clicked on the map
   const handlePinClick = (pin: Pin) => {
-    setSelectedPin(pin === selectedPin ? null : pin);
-    if (pin) {
-      updateUrlWithCoordinates(pin.location.lat, pin.location.lng);
-    }
+    setSelectedPin(pin);
   };
-  
-  const handleReportSubmit = (data: CreatePinInput) => {
+
+  // When user clicks on map to add a new report
+  const handleMapClick = (lat: number, lng: number) => {
+    setNewPinLocation({ lat, lng });
+    setIsReportModalOpen(true);
+  };
+
+  // Handle form submission for new report
+  const handleReportSubmit = async (data: CreatePinInput) => {
     try {
-      const newPin = addPin(data);
-      setSelectedPin(newPin);
+      await addPin(data);
+      setIsReportModalOpen(false);
+      setNewPinLocation(null);
     } catch (error) {
-      console.error('Error adding pin:', error);
+      console.error('Error submitting report:', error);
     }
-  };
-
-  const handleNewReport = () => {    
-    if (!selectedLocation) {
-      toast({
-        title: "Selecione uma localização",
-        description: "Clique no mapa para selecionar onde o problema está localizado",
-      });
-      return;
-    }
-    
-    setReportModalOpen(true);
-  };
-
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
   };
   
   // Handle voting on pins
@@ -83,15 +85,22 @@ const Index = () => {
   };
 
   useEffect(() => {
-    setSelectedPinTypes(generatePins(20).map(pin => pin.type));
+    // Carregar tipos de pins disponíveis
+    const fetchPinTypes = async () => {
+      try {
+        const allPins = await PinsController.fetchPins(100);
+        // Extrair tipos únicos dos pins
+        const uniqueTypes = Array.from(new Set(allPins.map(pin => pin.type))) as PinType[];
+        setSelectedPinTypes(uniqueTypes.length > 0 ? uniqueTypes : null);
+      } catch (error) {
+        console.error('Erro ao carregar tipos de pins:', error);
+      }
+    };
+    
+    fetchPinTypes();
   }, []);
 
   useEffect(() => {
-    // Carregar pins
-    const initialPins = generatePins(8);
-    // This line was causing an error - setPins is not in scope
-    // setPins(initialPins);
-    
     // Verificar URL para coordenadas
     const urlParams = new URLSearchParams(location.search);
     const lat = parseFloat(urlParams.get('lat') || '');
@@ -136,7 +145,7 @@ const Index = () => {
   return (
     <div className="flex h-screen w-full overflow-hidden">
       <NavBar 
-        onNewReport={handleNewReport} 
+        onNewReport={handleOpenReportModal} 
         pins={pins}
         onPinClick={handlePinClick}
       />
@@ -159,15 +168,12 @@ const Index = () => {
         />
       </div>
       
-      {reportModalOpen && (
+      {isReportModalOpen && (
         <ReportModal
-          isOpen={reportModalOpen}
-          onClose={() => {
-            setReportModalOpen(false);
-            setSelectedLocation(null);
-          }}
+          isOpen={isReportModalOpen}
+          onClose={handleCloseReportModal}
           onSubmit={handleReportSubmit}
-          location={selectedLocation}
+          location={newPinLocation}
         />
       )}
     </div>
