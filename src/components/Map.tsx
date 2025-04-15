@@ -8,7 +8,6 @@ import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import PinHistory from '@/components/PinHistory';
-import useMapCache from '@/hooks/useMapCache';
 import { 
   Clock, 
   X, 
@@ -100,7 +99,7 @@ const CustomPin = ({ pin, onClick }) => {
       className={cn(
         "absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all",
         "pin-pulse-yellow",
-        hasHighVotes ? "scale-110 z-20" : "z-10"
+        hasHighVotes ? "z-20" : "z-10"
       )}
       onClick={(e) => {
         e.stopPropagation();
@@ -108,11 +107,17 @@ const CustomPin = ({ pin, onClick }) => {
       }}
     >
       {/* Apenas o ícone do pin, sem badge de status */}
-      <div className={cn(
-        "rounded-full flex items-center justify-center shadow-lg",
-        "bg-[#1a1a1a] border-2 border-yellow-500/30 text-yellow-400",
-        hasHighVotes ? "w-10 h-10 border-[3px]" : "w-8 h-8"
-      )}>
+      <div 
+        className={cn(
+          "rounded-full flex items-center justify-center shadow-lg",
+          "bg-[#1a1a1a] border-2 border-yellow-500/30 text-yellow-400",
+          hasHighVotes ? "border-[3px]" : ""
+        )}
+        style={{
+          width: hasHighVotes ? '40px' : '32px',
+          height: hasHighVotes ? '40px' : '32px'
+        }}
+      >
         <div 
           dangerouslySetInnerHTML={{ 
             __html: getPinIconSvg(pin.type) 
@@ -122,7 +127,13 @@ const CustomPin = ({ pin, onClick }) => {
         
         {/* Badge para votos */}
         {(pin.votes && pin.votes > 0) && (
-          <div className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full shadow-md border border-[#333]">
+          <div 
+            className="absolute -top-1 -right-1 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full shadow-md border border-[#333]"
+            style={{
+              width: hasHighVotes ? '16px' : '14px',
+              height: hasHighVotes ? '16px' : '14px'
+            }}
+          >
             {pin.votes}
           </div>
         )}
@@ -685,6 +696,110 @@ const LocationButton = () => {
   return null;
 };
 
+// Componente para gerenciar a visibilidade dos pins com base no zoom
+const PinVisibilityManager = ({ pins, onPinClick }) => {
+  const map = useMap();
+  const [currentZoom, setCurrentZoom] = useState(map.getZoom());
+  
+  // Adicionar listener para mudanças de zoom
+  useEffect(() => {
+    const handleZoomChange = () => {
+      setCurrentZoom(map.getZoom());
+    };
+    
+    map.on('zoom', handleZoomChange);
+    map.on('zoomend', handleZoomChange);
+    
+    return () => {
+      map.off('zoom', handleZoomChange);
+      map.off('zoomend', handleZoomChange);
+    };
+  }, [map]);
+  
+  // Definir o limiar de zoom para mostrar pins (zoom < 8 oculta os pins)
+  const MIN_ZOOM_TO_SHOW_PINS = 9;
+  
+  // Não renderizar pins se o zoom for muito baixo
+  if (currentZoom < MIN_ZOOM_TO_SHOW_PINS) {
+    return (
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[100] pointer-events-none">
+        <div className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm">
+          Aproxime para ver os problemas reportados
+        </div>
+      </div>
+    );
+  }
+  
+  // Função para criar o HTML dos pins com base no nível de zoom
+  const createPinWithZoom = (pin) => {
+    const hasHighVotes = (pin.votes || 0) > 5;
+    
+    // Calcular tamanho com base no zoom
+    const getScaleBasedOnZoom = () => {
+      // Definir zoom mínimo e máximo para escala
+      const minZoom = 9;  // Muito afastado
+      const maxZoom = 18; // Muito aproximado (rua)
+      const baseScale = hasHighVotes ? 1.1 : 1.0;
+      
+      // Se o zoom for menor que o mínimo, use a escala mínima
+      if (currentZoom <= minZoom) return baseScale * 0.5; // 50% do tamanho em zooms mais distantes
+      
+      // Se o zoom for maior que o máximo, use a escala máxima
+      if (currentZoom >= maxZoom) return baseScale;
+      
+      // Cálculo de escala proporcional entre min e max zoom
+      const zoomRatio = (currentZoom - minZoom) / (maxZoom - minZoom);
+      return baseScale * (0.5 + (0.5 * zoomRatio));
+    };
+    
+    const scale = getScaleBasedOnZoom();
+    
+    return L.divIcon({
+      className: `custom-div-icon leaflet-zoom-${Math.floor(currentZoom)}`,
+      html: createPinHTML(pin),
+      iconSize: [30 * scale, 30 * scale],
+      iconAnchor: [15 * scale, 15 * scale]
+    });
+  };
+  
+  // Renderizar pins normalmente quando o zoom for adequado
+  return (
+    <>
+      {pins.map(pin => (
+        <Marker 
+          key={pin.id}
+          position={[pin.location.lat, pin.location.lng]}
+          icon={createPinWithZoom(pin)}
+          eventHandlers={{
+            click: () => onPinClick(pin)
+          }}
+        />
+      ))}
+    </>
+  );
+};
+
+// Componente de botão de configurações
+const SettingsButton = ({ onClick, active = false }) => {
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={onClick}
+      className={cn(
+        "w-10 h-10 rounded-full bg-black/70 border-gray-800 hover:bg-gray-900 shadow-lg",
+        active && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
+      )}
+      title="Configurações"
+    >
+      <Settings 
+        size={18} 
+        className={active ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} 
+      />
+    </Button>
+  );
+};
+
 const Map = ({ 
   pins, 
   onPinClick, 
@@ -710,8 +825,6 @@ const Map = ({
   const mapRef = useRef(null);
   const [userRoleSimulation, setUserRoleSimulation] = useState<'citizen' | 'government' | 'city_hall'>('citizen');
   const [mapLoaded, setMapLoaded] = useState(false);
-  // Usar o hook de cache do mapa
-  const { cachedState, saveToCache } = useMapCache();
   
   const [mapInstance, setMapInstance] = useState(null);
   
@@ -762,8 +875,6 @@ const Map = ({
     if (onMapMove) {
       onMapMove(center, zoom);
     }
-    // Usar a função do hook para salvar no cache
-    saveToCache(center, zoom);
   };
 
   // Função explícita para lidar com o fechamento do modal
@@ -773,9 +884,9 @@ const Map = ({
   
   // Coordenadas padrão se center for null
   const defaultCenter: [number, number] = [-23.5505, -46.6333]; // São Paulo como padrão
-  // Usar coordenadas do cache se disponíveis e não houver centro definido
-  const effectiveCenter = center || (cachedState?.lastCenter) || defaultCenter;
-  const effectiveZoom = zoom || (cachedState?.lastZoom) || 12;
+  // Usar apenas as coordenadas passadas ou as padrão, remover referência ao cache
+  const effectiveCenter = center || defaultCenter;
+  const effectiveZoom = zoom || 12;
   
   // Função para forçar atualização do tamanho do mapa, especialmente útil em mobile
   const forceMapUpdate = () => {
@@ -849,16 +960,6 @@ const Map = ({
             // Forçar nova atualização do tamanho após o placeholder ser removido
             setTimeout(() => {
               mapEvt.target.invalidateSize(true);
-              
-              // Pré-carregar tiles ao redor do centro visível
-              setTimeout(() => {
-                // Ajustar o zoom um nível para baixo e de volta para acionar carregamento de tiles
-                const currentZoom = mapEvt.target.getZoom();
-                mapEvt.target.setZoom(currentZoom - 1, { animate: false });
-                setTimeout(() => {
-                  mapEvt.target.setZoom(currentZoom, { animate: false });
-                }, 100);
-              }, 200);
             }, 500);
           }, 300);
         }}
@@ -866,94 +967,133 @@ const Map = ({
         <TileLayer
           url={customTileLayer}
           attribution={attribution}
-          // Configurações para melhorar o cache e desempenho
           detectRetina={true}
           maxZoom={19}
           maxNativeZoom={18}
-          keepBuffer={15} // Aumentado para manter mais tiles em cache
           updateWhenIdle={true}
           updateWhenZooming={false}
           className="custom-tile-layer"
         />
         
         <MapEvents onMapClick={onMapClick} onMapMove={handleMapMoveEnd} />
+        
+        {/* Adicionar componente para gerenciar visibilidade de pins baseada no zoom */}
+        <PinVisibilityManager pins={filteredPins} onPinClick={onPinClick} />
+
+        {/* Pin selecionado (detalhes) */}
+        {selectedPin && (
+          <div className={cn(
+            "absolute z-30 bottom-0 left-0 right-0 p-4 transition-all duration-300 ease-in-out",
+            "bg-gradient-to-t from-black/90 to-black/50 backdrop-blur-sm overflow-auto",
+            isMobile ? "h-[80vh] rounded-t-xl max-h-[80vh]" : "h-auto max-h-[50vh] m-4 rounded-xl"
+          )}>
+            <PinDetails 
+              pin={selectedPin} 
+              onClose={handleCloseDetails} 
+              onVote={onVote}
+              userType={userRoleSimulation}
+            />
+          </div>
+        )}
+
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
-        <ZoomControl position="bottomright" />
-        <AttributionControl position="bottomleft" />
+        <ZoomControl position="topright" />
+        <AttributionControl prefix={false} position="bottomright" />
         
-        {/* Botão de localização atual */}
-        <LocationButton />
-        
-        {/* Pins filtrados - Apenas renderizar se o mapa estiver carregado */}
-        {mapLoaded && filteredPins.map(pin => (
-          <Marker 
-            key={pin.id}
-            position={[pin.location.lat, pin.location.lng]}
-            icon={L.divIcon({
-              className: 'custom-div-icon',
-              html: createPinHTML(pin),
-              iconSize: [30, 30],
-              iconAnchor: [15, 15]
-            })}
-            eventHandlers={{
-              click: () => onPinClick(pin)
-            }}
+        {/* Botão de localização e de configurações */}
+        <div className="absolute bottom-5 right-5 flex flex-col gap-2 z-[400]">
+          <LocationButton />
+          <SettingsButton 
+            onClick={() => setShowControls(!showControls)} 
+            active={showControls} 
           />
-        ))}
+        </div>
+        
+        {/* Menu de configurações e estatísticas */}
+        {showControls && (
+          <div className="absolute bottom-[70px] right-5 p-3 bg-black/80 rounded-lg backdrop-blur z-[400] flex flex-col gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowStats(!showStats)}
+              className={cn(
+                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
+                showStats && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
+              )}
+              title="Estatísticas"
+            >
+              <BarChart3 size={16} />
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowPersistenceStats(!showPersistenceStats)}
+              className={cn(
+                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
+                showPersistenceStats && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
+              )}
+              title="Gráfico de persistência"
+            >
+              <LineChart size={16} />
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowTimeline(!showTimeline)}
+              className={cn(
+                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
+                showTimeline && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
+              )}
+              title="Linha do tempo"
+            >
+              <Clock size={16} />
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowPersistenceFilter(!showPersistenceFilter)}
+              className={cn(
+                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
+                showPersistenceFilter && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
+              )}
+              title="Filtrar por persistência"
+            >
+              <AlertTriangle size={16} />
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSecurityMode(!securityMode)}
+              className={cn(
+                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
+                securityMode && "bg-blue-900/30 text-blue-500 border-blue-900"
+              )}
+              title="Modo segurança"
+            >
+              <Shield size={16} />
+            </Button>
+            
+            {securityMode && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowSecurityPanel(!showSecurityPanel)}
+                className={cn(
+                  "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
+                  showSecurityPanel && "bg-blue-900/30 text-blue-500 border-blue-900"
+                )}
+                title="Painel de segurança"
+              >
+                <User size={16} />
+              </Button>
+            )}
+          </div>
+        )}
       </MapContainer>
-      
-      {/* Modal de detalhes do pin */}
-      {selectedPin && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
-          <PinDetails 
-            pin={selectedPin} 
-            onClose={handleCloseDetails} 
-            onVote={onVote}
-            userType="citizen"
-          />
-        </div>
-      )}
-      
-      {/* Security Panel if enabled */}
-      {showSecurityPanel && (
-        <div className="absolute bottom-24 left-4 right-4 z-[1000] bg-[#121212]/90 backdrop-blur-sm border border-[#2a2a2a] rounded-lg p-4 flex flex-col gap-2">
-          <h3 className="text-white font-medium flex items-center gap-2">
-            <Shield size={18} className="text-green-400" />
-            SecureMe - {securityMode ? 'Modo segurança' : 'Solicitar escolta'}
-          </h3>
-          {securityMode ? (
-            <p className="text-sm text-gray-300">Você está no modo segurança. Esteja atento a solicitações próximas.</p>
-          ) : (
-            <p className="text-sm text-gray-300">Clique no mapa para selecionar o local para solicitar escolta.</p>
-          )}
-          <Button variant="outline" className="bg-green-600 hover:bg-green-700 text-white border-none w-full">
-            {securityMode ? 'Ficar disponível' : 'Solicitar agora'}
-          </Button>
-        </div>
-      )}
-      
-      {/* Heatmap Controls */}
-      {/* Removed HeatmapControl component since it was removed from imports */}
-      
-      {/* Persistence Filter */}
-      {showPersistenceFilter && (
-        <div className="absolute top-4 left-[calc(72px+1rem)] z-[1000]">
-          <PersistenceFilter 
-            pins={pins} 
-            onFilter={handlePersistenceFilter} 
-          />
-        </div>
-      )}
-      
-      {/* Mobile: botão para mostrar/ocultar controles */}
-      {isMobile && (
-        <button
-          onClick={() => setShowControls(!showControls)}
-          className="absolute bottom-4 left-4 z-[1000] bg-[#121212]/90 backdrop-blur-sm border border-[#2a2a2a] p-2 rounded-full shadow-lg text-white"
-        >
-          <Settings size={20} className={showControls ? "rotate-45 transition-transform" : "transition-transform"} />
-        </button>
-      )}
     </div>
   );
 };
@@ -1035,11 +1175,12 @@ const createPinHTML = (pin) => {
   
   return `
     <div class="pin-wrapper-simple">
-      <div class="pin-container pin-pulse-yellow ${hasHighVotes ? 'scale-110' : ''}">
-        <div class="custom-pin infra-pin rounded-full flex items-center justify-center shadow-lg ${hasHighVotes ? 'h-10 w-10' : 'h-8 w-8'}">
+      <div class="pin-container pin-pulse-yellow ${hasHighVotes ? 'pin-high-votes' : ''}">
+        <div class="custom-pin infra-pin rounded-full flex items-center justify-center shadow-lg bg-[#1a1a1a] border-2 border-yellow-500/30 text-yellow-400
+           ${hasHighVotes ? 'border-[3px]' : ''}">
           ${getPinIconSvg(pin.type)}
           ${(pin.votes && pin.votes > 0) 
-            ? `<div class="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full border border-gray-700">${pin.votes}</div>` 
+            ? `<div class="absolute -top-1 -right-1 flex items-center justify-center text-[9px] font-bold bg-yellow-400 text-black rounded-full border border-gray-700 vote-badge">${pin.votes}</div>` 
             : ''}
         </div>
       </div>
