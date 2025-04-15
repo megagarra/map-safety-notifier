@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -7,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Shield } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useSecurityData } from '@/hooks/useSecurityData';
+import { GoogleSignIn } from '@/components/GoogleSignIn';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -186,13 +186,8 @@ const LoginPage = () => {
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <Button variant="outline" className="border-[#333] text-white">
-                Google
-              </Button>
-              <Button variant="outline" className="border-[#333] text-white">
-                Facebook
-              </Button>
+            <div className="mt-6">
+              <GoogleSignIn />
             </div>
           </div>
 
