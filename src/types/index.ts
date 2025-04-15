@@ -1,5 +1,5 @@
 
-export type PinType = 'infraestrutura' | 'crime' | 'security' | 'client';
+export type PinType = 'flood' | 'pothole' | 'passable' | 'robbery' | 'infraestrutura' | 'crime' | 'security' | 'client';
 
 export type PinStatus = 'reported' | 'acknowledged' | 'in_progress' | 'resolved';
 
@@ -7,8 +7,10 @@ export type SecurityServiceStatus = 'requested' | 'accepted' | 'in_progress' | '
 
 export interface PinHistoryEntry {
   status: PinStatus;
-  date: string;
+  timestamp: string;
+  date?: string; // Keeping for backward compatibility
   description?: string;
+  comment?: string;
 }
 
 export interface Pin {
@@ -20,7 +22,7 @@ export interface Pin {
   };
   description: string;
   images: string[];
-  reportedAt: string;
+  reportedAt: string | Date;
   address?: string;
   history: PinHistoryEntry[];
   status: PinStatus;

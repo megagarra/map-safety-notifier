@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Pin, PinType } from '@/types';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl, AttributionControl } from 'react-leaflet';
@@ -38,9 +37,7 @@ import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 // At the top of your file, add these type declarations
 declare module 'leaflet' {
   interface IconDefaultType {
-    prototype: {
-      _getIconUrl?: string;
-    };
+    prototype: Record<string, unknown>;
     mergeOptions(options: any): void;
   }
   
@@ -53,10 +50,7 @@ declare module 'leaflet' {
   }
 }
 
-// Delete the default icon
-delete L.Icon.Default.prototype._getIconUrl;
-
-// Set up the default icon
+// Set up the default icon properly
 L.Icon.Default.mergeOptions({
   iconRetinaUrl,
   iconUrl,
@@ -639,7 +633,7 @@ const LocationButton = () => {
           console.error("Erro ao obter localização: ", error);
           setIsLoading(false);
           // Feedback visual para o usuário
-          alert("Não foi possível obter sua localização. Verifique se você permitiu o acesso à localização.");
+          alert("Não foi possível obter sua localização. Verifique se você permitiu o acesso à localiza��ão.");
         },
         {
           enableHighAccuracy: true,
@@ -814,7 +808,9 @@ const Map = ({
   selectedPin,
   center,
   zoom,
-  onVote
+  onVote,
+  showSecurityPanel,
+  securityMode
 }) => {
   // Estados para heatmap e recursos visuais
   const [showHeatmap, setShowHeatmap] = useState(false);

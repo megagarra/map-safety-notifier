@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Pin, PinType } from '@/types';
 import { DropletIcon, CircleOff, CheckCircle, AlertCircle, ExternalLink, Clock } from 'lucide-react';
@@ -113,6 +114,10 @@ const getPinTypeLabel = (type: PinType): string => {
     case 'pothole': return 'Buraco';
     case 'passable': return 'Passável';
     case 'robbery': return 'Assalto';
+    case 'infraestrutura': return 'Infraestrutura';
+    case 'crime': return 'Crime';
+    case 'security': return 'Segurança';
+    case 'client': return 'Cliente';
     default: return type;
   }
 };
@@ -133,6 +138,10 @@ const getPinColorClass = (type: PinType): string => {
     case 'pothole': return 'bg-pothole';
     case 'passable': return 'bg-passable';
     case 'robbery': return 'bg-robbery';
+    case 'infraestrutura': return 'bg-blue-500';
+    case 'crime': return 'bg-red-500';
+    case 'security': return 'bg-green-500';
+    case 'client': return 'bg-purple-500';
     default: return 'bg-gray-500';
   }
 };

@@ -16,35 +16,35 @@ export function useMapData() {
     const mockPins: Pin[] = [
       {
         id: uuidv4(),
-        type: 'flood',
+        type: 'flood' as PinType,
         location: { lat: -23.5489, lng: -46.6388 }, // São Paulo
         description: 'Rua completamente alagada após chuva forte',
         images: ['/placeholder.svg'],
-        reportedAt: new Date(Date.now() - 1000 * 60 * 60 * 2) // 2 hours ago
+        reportedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() // 2 hours ago
       },
       {
         id: uuidv4(),
-        type: 'pothole',
+        type: 'pothole' as PinType,
         location: { lat: -23.5589, lng: -46.6488 }, // São Paulo
         description: 'Buraco enorme na pista, cuidado ao passar',
         images: ['/placeholder.svg'],
-        reportedAt: new Date(Date.now() - 1000 * 60 * 60 * 24) // 1 day ago
+        reportedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString() // 1 day ago
       },
       {
         id: uuidv4(),
-        type: 'robbery',
+        type: 'robbery' as PinType,
         location: { lat: -23.5389, lng: -46.6288 }, // São Paulo
         description: 'Assalto a mão armada nesta esquina ontem à noite',
         images: ['/placeholder.svg'],
-        reportedAt: new Date(Date.now() - 1000 * 60 * 60 * 12) // 12 hours ago
+        reportedAt: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString() // 12 hours ago
       },
       {
         id: uuidv4(),
-        type: 'passable',
+        type: 'passable' as PinType,
         location: { lat: -23.5489, lng: -46.6288 }, // São Paulo
         description: 'Rua liberada após obras, tráfego fluindo normalmente',
         images: ['/placeholder.svg'],
-        reportedAt: new Date(Date.now() - 1000 * 60 * 30) // 30 minutes ago
+        reportedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString() // 30 minutes ago
       }
     ];
 
@@ -59,7 +59,9 @@ export function useMapData() {
       const newPin: Pin = {
         id: uuidv4(),
         ...pin,
-        reportedAt: new Date()
+        reportedAt: new Date().toISOString(),
+        history: [],
+        status: 'reported'
       };
       
       setPins((prev) => [newPin, ...prev]);

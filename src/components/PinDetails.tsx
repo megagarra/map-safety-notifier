@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Copy, Clock, AlertCircle, CheckCircle, Wrench, ThumbsUp, Users } from 'lucide-react';
-import { cn } from '../lib/utils';
-import { Pin } from '@/types';
+import { cn } from '@/lib/utils';
+import { Pin, PinType } from '@/types';
 import PinHistory from './PinHistory';
 
 // Componente personalizado para o ícone de sirene
@@ -28,6 +28,49 @@ const SirenIcon = ({ size = 16, className = "" }) => (
     <path d="M12 12v6"/>
   </svg>
 );
+
+// Helper functions to fix type errors
+const getPinColorClass = (type: PinType): string => {
+  switch (type) {
+    case 'flood': return 'bg-flood';
+    case 'pothole': return 'bg-pothole';
+    case 'passable': return 'bg-passable';
+    case 'robbery': return 'bg-robbery';
+    case 'infraestrutura': return 'bg-blue-500';
+    case 'crime': return 'bg-red-500';
+    case 'security': return 'bg-green-500';
+    case 'client': return 'bg-purple-500';
+    default: return 'bg-gray-500';
+  }
+};
+
+const getPinIconSvg = (type: PinType): string => {
+  // Simplified SVG for all types
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="6" width="20" height="8" rx="1"/>
+    <path d="M17 14v7"/>
+    <path d="M7 14v7"/>
+    <path d="M17 3v3"/>
+    <path d="M7 3v3"/>
+    <path d="M10 14 2.3 6.3"/>
+    <path d="m14 6 7.7 7.7"/>
+    <path d="m8 6 8 8"/>
+  </svg>`;
+};
+
+const getPinTypeLabel = (type: PinType): string => {
+  switch (type) {
+    case 'flood': return 'Alagamento';
+    case 'pothole': return 'Buraco';
+    case 'passable': return 'Passável';
+    case 'robbery': return 'Assalto';
+    case 'infraestrutura': return 'Problema de Infraestrutura';
+    case 'crime': return 'Crime';
+    case 'security': return 'Segurança';
+    case 'client': return 'Cliente';
+    default: return type;
+  }
+};
 
 interface PinDetailsProps {
   pin: Pin;
@@ -147,4 +190,4 @@ const PinDetails = ({ pin, onClose, onVote }: PinDetailsProps) => {
   );
 };
 
-export default PinDetails; 
+export default PinDetails;

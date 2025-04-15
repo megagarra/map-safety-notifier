@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { PinHistoryEntry } from '@/types';
 import { format } from 'date-fns';
@@ -13,7 +14,8 @@ interface PinHistoryProps {
 const PinHistory: React.FC<PinHistoryProps> = ({ history, persistenceDays }) => {
   // Ordenar histórico do mais antigo para o mais recente
   const sortedHistory = [...history].sort((a, b) => 
-    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    new Date(a.timestamp || a.date || '').getTime() - 
+    new Date(b.timestamp || b.date || '').getTime()
   );
   
   // Verificar se o problema está resolvido
@@ -55,11 +57,11 @@ const PinHistory: React.FC<PinHistoryProps> = ({ history, persistenceDays }) => 
                   {getStatusLabel(entry.status)}
                 </span>
                 <span className="text-xs text-gray-400">
-                  {format(new Date(entry.timestamp), "dd 'de' MMMM, yyyy", { locale: ptBR })}
+                  {format(new Date(entry.timestamp || entry.date || ''), "dd 'de' MMMM, yyyy", { locale: ptBR })}
                 </span>
               </div>
-              {entry.comment && (
-                <p className="text-xs text-gray-400 mt-1">{entry.comment}</p>
+              {(entry.comment || entry.description) && (
+                <p className="text-xs text-gray-400 mt-1">{entry.comment || entry.description}</p>
               )}
             </div>
           </div>
@@ -131,4 +133,4 @@ const getStatusLabel = (status: string): string => {
   }
 };
 
-export default PinHistory; 
+export default PinHistory;

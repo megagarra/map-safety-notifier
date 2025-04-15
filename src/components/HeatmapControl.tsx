@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -66,7 +67,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Todos
               </button>
               <button 
-                onClick={() => onTypeChange('flood')}
+                onClick={() => onTypeChange('flood' as PinType)}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'flood' 
@@ -77,7 +78,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Alagamento
               </button>
               <button 
-                onClick={() => onTypeChange('pothole')}
+                onClick={() => onTypeChange('pothole' as PinType)}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'pothole' 
@@ -88,7 +89,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Buracos
               </button>
               <button 
-                onClick={() => onTypeChange('passable')}
+                onClick={() => onTypeChange('passable' as PinType)}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'passable' 
@@ -99,7 +100,7 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
                 Passável
               </button>
               <button 
-                onClick={() => onTypeChange('robbery')}
+                onClick={() => onTypeChange('robbery' as PinType)}
                 className={cn(
                   "text-xs px-2 py-1 rounded-md transition-colors",
                   activeType === 'robbery' 
@@ -135,4 +136,4 @@ const HeatmapControl: React.FC<HeatmapControlProps> = ({
   );
 };
 
-export default HeatmapControl; 
+export default HeatmapControl;

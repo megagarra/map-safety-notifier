@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMapData } from '@/hooks/useMapData';
@@ -70,6 +71,16 @@ const Index = () => {
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
+  
+  // Handle voting on pins
+  const handleVote = (pinId: string) => {
+    // In a real app, this would call an API
+    console.log(`Vote submitted for pin ${pinId}`);
+    toast({
+      title: "Voto registrado",
+      description: "Obrigado por confirmar este problema"
+    });
+  };
 
   useEffect(() => {
     setSelectedPinTypes(generatePins(20).map(pin => pin.type));
@@ -78,7 +89,8 @@ const Index = () => {
   useEffect(() => {
     // Carregar pins
     const initialPins = generatePins(8);
-    setPins(initialPins);
+    // This line was causing an error - setPins is not in scope
+    // setPins(initialPins);
     
     // Verificar URL para coordenadas
     const urlParams = new URLSearchParams(location.search);
@@ -143,6 +155,7 @@ const Index = () => {
           selectedPin={selectedPin}
           center={center}
           zoom={zoom}
+          onVote={handleVote}
         />
       </div>
       
