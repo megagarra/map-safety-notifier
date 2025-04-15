@@ -2,9 +2,11 @@
 import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
 
 export const GoogleSignIn = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
 
   const handleGoogleSignIn = async () => {
     try {
@@ -12,15 +14,28 @@ export const GoogleSignIn = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
           redirectTo: `${window.location.origin}/dashboard`
         }
       });
 
       if (error) {
-        throw error;
+        toast({
+          title: "Erro ao fazer login",
+          description: error.message,
+          variant: "destructive"
+        });
       }
     } catch (error) {
-      console.error('Error signing in with Google:', error);
+      console.error('Erro ao fazer login com Google:', error);
+      toast({
+        title: "Erro ao fazer login",
+        description: "Ocorreu um erro ao tentar fazer login com Google",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
