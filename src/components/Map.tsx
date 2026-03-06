@@ -122,22 +122,15 @@ function MapEvents({ onMapClick, onMapMove }: { onMapClick: (lat: number, lng: n
 
 function MapCenterUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
-  const firstRender = useRef(true);
+  const prevCenter = useRef(center);
+  const prevZoom = useRef(zoom);
 
   useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      setTimeout(() => {
-        map.invalidateSize(true);
-        map.setView(center, zoom, { animate: false });
-      }, 500);
-      return;
-    }
-    const cur = map.getCenter();
-    if (Math.abs(cur.lat - center[0]) > 0.0001 || Math.abs(cur.lng - center[1]) > 0.0001 || map.getZoom() !== zoom) {
-      if (map.isUserInteraction) map.isUserInteraction.current = false;
-      map.setView(center, zoom, { animate: false });
-    }
+    if (prevCenter.current[0] === center[0] && prevCenter.current[1] === center[1] && prevZoom.current === zoom) return;
+    prevCenter.current = center;
+    prevZoom.current = zoom;
+    if (map.isUserInteraction) map.isUserInteraction.current = false;
+    map.setView(center, zoom, { animate: false });
   }, [center, zoom, map]);
 
   return null;
@@ -166,6 +159,19 @@ function createPinHTML(pin: Pin, currentZoom: number) {
   };
 }
 
+const iconCache = new Map<string, L.DivIcon>();
+
+function getOrCreateIcon(pin: Pin, currentZoom: number): L.DivIcon {
+  const key = `${pin.type}-${pin.votes || 0}-${Math.floor(currentZoom)}`;
+  let icon = iconCache.get(key);
+  if (!icon) {
+    const { html, size } = createPinHTML(pin, currentZoom);
+    icon = L.divIcon({ className: 'custom-div-icon', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+    iconCache.set(key, icon);
+  }
+  return icon;
+}
+
 function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) => void }) {
   const map = useMap();
   const [currentZoom, setCurrentZoom] = useState(map.getZoom());
@@ -178,23 +184,14 @@ function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) 
 
   return (
     <>
-      {pins.map((pin) => {
-        const { html, size } = createPinHTML(pin, currentZoom);
-        const icon = L.divIcon({
-          className: 'custom-div-icon',
-          html,
-          iconSize: [size, size],
-          iconAnchor: [size / 2, size / 2],
-        });
-        return (
-          <Marker
-            key={pin.id}
-            position={[pin.location.lat, pin.location.lng]}
-            icon={icon}
-            eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); onPinClick(pin); } }}
-          />
-        );
-      })}
+      {pins.map((pin) => (
+        <Marker
+          key={pin.id}
+          position={[pin.location.lat, pin.location.lng]}
+          icon={getOrCreateIcon(pin, currentZoom)}
+          eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); onPinClick(pin); } }}
+        />
+      ))}
     </>
   );
 }
@@ -388,14 +385,8 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
   const effectiveZoom = zoom || 13;
 
   useEffect(() => {
-    if (mapLoaded && mapInstance) {
-      setTimeout(() => { mapInstance.invalidateSize(true); }, 500);
-    }
-  }, [mapLoaded, mapInstance]);
-
-  useEffect(() => {
     if (!mapInstance) return;
-    const handler = () => setTimeout(() => mapInstance.invalidateSize(true), 250);
+    const handler = () => { mapInstance.invalidateSize(false); };
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, [mapInstance]);
@@ -424,6 +415,17 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
         attributionControl={false}
         ref={mapRef}
         className="map-container"
+        preferCanvas
+        zoomSnap={0.5}
+        zoomDelta={1}
+        wheelPxPerZoomLevel={80}
+        inertia
+        inertiaDeceleration={3000}
+        inertiaMaxSpeed={1500}
+        easeLinearity={0.25}
+        zoomAnimation
+        markerZoomAnimation
+        fadeAnimation
         whenReady={(evt) => {
           setMapLoaded(true);
           setMapInstance(evt.target);
@@ -431,11 +433,18 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
           evt.target.setView(effectiveCenter, effectiveZoom, { animate: false });
           setTimeout(() => {
             document.querySelector('.map-loading-placeholder')?.remove();
-            setTimeout(() => evt.target.invalidateSize(true), 300);
-          }, 400);
+          }, 300);
         }}
       >
-        <TileLayer url={TILE_URL} maxZoom={19} maxNativeZoom={18} updateWhenIdle detectRetina className="custom-tile-layer" />
+        <TileLayer
+          url={TILE_URL}
+          maxZoom={19}
+          maxNativeZoom={18}
+          updateWhenIdle
+          updateWhenZooming={false}
+          keepBuffer={6}
+          className="custom-tile-layer"
+        />
         <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} />
         <UserLocationDot />
         <PinMarkers pins={filteredPins} onPinClick={onPinClick} />
@@ -448,18 +457,18 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
         <PinDetailsModal pin={selectedPin} onClose={() => onPinClick(null)} onVote={onVote} isMobile={isMobile} />
       )}
 
-      {/* Location button */}
-      <div className="absolute bottom-28 right-3 z-[400]">
+      {/* Location button — above zoom: mobile zoom is at bottom-24px, height 88px (2×44); desktop zoom is at bottom-100px, height 80px (2×40) */}
+      <div className="absolute bottom-[124px] md:bottom-[196px] right-[22px] md:right-[24px] z-[400]">
         <button
           onClick={() => {
             if (!("geolocation" in navigator)) return;
             navigator.geolocation.getCurrentPosition(
-              (pos) => mapInstance?.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 1.5 }),
+              (pos) => mapInstance?.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 0.8 }),
               () => {},
               { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
             );
           }}
-          className="w-10 h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
+          className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
           title="Minha localização"
         >
           <Navigation size={18} />
