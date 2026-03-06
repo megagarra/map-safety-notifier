@@ -1,12 +1,11 @@
 
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Shield } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { useSecurityData } from '@/hooks/useSecurityData';
 
 const SignupPage = () => {
   const [name, setName] = useState('');
@@ -17,8 +16,6 @@ const SignupPage = () => {
   const [role, setRole] = useState<'client' | 'security'>('client');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
-  const { setCurrentUser } = useSecurityData();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,28 +39,15 @@ const SignupPage = () => {
     }
     
     setIsLoading(true);
-    
+
     try {
-      // Simulando cadastro (em uma aplicação real, isso seria uma chamada de API)
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock signup
-      setCurrentUser({
-        id: Math.random().toString(36).substring(2, 11),
-        name,
-        email,
-        phone,
-        role,
-        rating: role === 'security' ? 5.0 : undefined
-      });
-      
+      // TODO: integrar com backend real (Supabase)
       toast({
-        title: "Conta criada",
-        description: "Sua conta foi criada com sucesso!",
+        title: "Indisponível",
+        description: "Cadastro ainda não configurado. Aguarde a integração com o backend.",
+        variant: "destructive"
       });
-      
-      navigate('/dashboard');
-    } catch (error) {
+    } catch {
       toast({
         title: "Erro",
         description: "Falha ao criar conta. Tente novamente.",

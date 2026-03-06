@@ -84,7 +84,6 @@ const DashboardPage = () => {
   const handleRequestService = async (data: Partial<ServiceRequest>) => {
     try {
       setIsLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
       requestService(data);
       setShowRequestForm(false);
       setSelectedLocation(null);
@@ -143,9 +142,6 @@ const DashboardPage = () => {
           <div className="flex items-center gap-4">
             <button className="relative p-2 text-gray-400 hover:text-white">
               <Bell size={20} />
-              <span className="absolute top-0 right-0 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white flex items-center justify-center">
-                3
-              </span>
             </button>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-400">

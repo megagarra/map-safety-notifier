@@ -1,19 +1,13 @@
-import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 
 export const GoogleSignIn = () => {
-  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsLoading(false);
-
+  const handleGoogleSignIn = () => {
     toast({
-      title: "Em breve",
-      description: "Login com Google será implementado em breve.",
+      title: "Indisponível",
+      description: "Login com Google será implementado com a integração do backend.",
     });
   };
 
@@ -21,7 +15,6 @@ export const GoogleSignIn = () => {
     <Button
       variant="outline"
       onClick={handleGoogleSignIn}
-      disabled={isLoading}
       className="w-full flex items-center justify-center gap-2 bg-white text-gray-600 hover:bg-gray-50"
     >
       <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -42,7 +35,7 @@ export const GoogleSignIn = () => {
           d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
         />
       </svg>
-      {isLoading ? 'Conectando...' : 'Continuar com Google'}
+      Continuar com Google
     </Button>
   );
 };

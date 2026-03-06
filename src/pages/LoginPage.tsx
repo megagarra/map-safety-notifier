@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Shield } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { useSecurityData } from '@/hooks/useSecurityData';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
 
 const LoginPage = () => {
@@ -13,8 +12,6 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
-  const { setCurrentUser } = useSecurityData();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,52 +26,15 @@ const LoginPage = () => {
     }
     
     setIsLoading(true);
-    
+
     try {
-      // Simulando login (em uma aplicação real, isso seria uma chamada de API)
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock login logic - in a real app this would validate with a backend
-      if (email === 'cliente@secureme.com' && password === 'senha123') {
-        setCurrentUser({
-          id: '1',
-          name: 'João Silva',
-          email: 'cliente@secureme.com',
-          phone: '(11) 91234-5678',
-          role: 'client'
-        });
-        
-        toast({
-          title: "Login bem-sucedido",
-          description: "Bem-vindo de volta!",
-        });
-        
-        navigate('/dashboard');
-      } else if (email === 'seguranca@secureme.com' && password === 'senha123') {
-        setCurrentUser({
-          id: '101',
-          name: 'Carlos Oliveira',
-          email: 'seguranca@secureme.com',
-          phone: '(11) 98765-4321',
-          role: 'security',
-          rating: 4.8,
-          image: '/images/security1.jpg'
-        });
-        
-        toast({
-          title: "Login bem-sucedido",
-          description: "Bem-vindo de volta!",
-        });
-        
-        navigate('/dashboard');
-      } else {
-        toast({
-          title: "Erro de autenticação",
-          description: "Email ou senha incorretos",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
+      // TODO: integrar com backend real (Supabase)
+      toast({
+        title: "Indisponível",
+        description: "Autenticação ainda não configurada. Aguarde a integração com o backend.",
+        variant: "destructive"
+      });
+    } catch {
       toast({
         title: "Erro",
         description: "Falha ao fazer login. Tente novamente.",
@@ -159,12 +119,6 @@ const LoginPage = () => {
               </div>
             </div>
             
-            <div className="text-sm text-gray-400 text-center">
-              <p>Teste com:</p>
-              <p>cliente@secureme.com / senha123 (cliente)</p>
-              <p>seguranca@secureme.com / senha123 (segurança)</p>
-            </div>
-
             <div>
               <Button
                 type="submit"

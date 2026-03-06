@@ -3,65 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_KEY = 'map-safety-pins';
 
-const defaultPins: Pin[] = [
-  {
-    id: uuidv4(),
-    type: 'infraestrutura',
-    location: { lat: -23.3285, lng: -46.7270 },
-    description: 'Alagamento na Av. Dr. Mário Moura após forte chuva, bueiro entupido',
-    images: [],
-    reportedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-    address: 'Av. Dr. Mário Moura, Franco da Rocha',
-    history: [{ status: 'reported', timestamp: new Date(Date.now() - 2 * 86400000).toISOString(), description: 'Problema reportado por usuário' }],
-    status: 'reported',
-    persistenceDays: 2,
-    votes: 5,
-    userVoted: false,
-  },
-  {
-    id: uuidv4(),
-    type: 'infraestrutura',
-    location: { lat: -23.3614, lng: -46.7407 },
-    description: 'Buraco grande na pista, risco de acidente para veículos e pedestres',
-    images: [],
-    reportedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-    address: 'Av. Brasil, Caieiras',
-    history: [{ status: 'reported', timestamp: new Date(Date.now() - 7 * 86400000).toISOString(), description: 'Problema reportado por usuário' }],
-    status: 'acknowledged',
-    persistenceDays: 7,
-    votes: 12,
-    userVoted: false,
-  },
-  {
-    id: uuidv4(),
-    type: 'crime',
-    location: { lat: -23.2816, lng: -46.7450 },
-    description: 'Assalto a pedestres frequente nesta área à noite',
-    images: [],
-    reportedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
-    address: 'Centro, Francisco Morato',
-    history: [{ status: 'reported', timestamp: new Date(Date.now() - 1 * 86400000).toISOString(), description: 'Problema reportado por usuário' }],
-    status: 'reported',
-    persistenceDays: 1,
-    votes: 8,
-    userVoted: false,
-  },
-  {
-    id: uuidv4(),
-    type: 'infraestrutura',
-    location: { lat: -23.3186, lng: -46.5872 },
-    description: 'Via com obras na estrada, poste caído bloqueando faixa',
-    images: [],
-    reportedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-    address: 'Estrada de Santa Inês, Mairiporã',
-    history: [{ status: 'reported', timestamp: new Date(Date.now() - 14 * 86400000).toISOString(), description: 'Problema reportado por usuário' }],
-    status: 'in_progress',
-    persistenceDays: 14,
-    votes: 3,
-    userVoted: false,
-  },
-];
-
 function loadPinsFromStorage(): Pin[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -69,8 +10,7 @@ function loadPinsFromStorage(): Pin[] {
   } catch {
     // ignore parse errors
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultPins));
-  return [...defaultPins];
+  return [];
 }
 
 function savePinsToStorage(pins: Pin[]) {
@@ -78,7 +18,6 @@ function savePinsToStorage(pins: Pin[]) {
 }
 
 export const fetchPins = async (_limit: number = 50): Promise<Pin[]> => {
-  await new Promise(r => setTimeout(r, 300));
   return loadPinsFromStorage();
 };
 
