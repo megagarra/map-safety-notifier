@@ -1,9 +1,13 @@
 import { Pin, PinType, PinStatus, CreatePinInput } from '@/types';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
+function apiUrl(path: string): string {
+  return API_URL ? `${API_URL}${path.startsWith('/') ? path : `/${path}`}` : path;
+}
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(apiUrl(path), {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });
@@ -47,7 +51,7 @@ export const voteOnPin = async (pinId: string): Promise<Pin | null> => {
 export const uploadImage = async (file: File): Promise<string> => {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch(`${API_URL}/api/images/upload`, {
+  const res = await fetch(apiUrl('/api/images/upload'), {
     method: 'POST',
     body: formData,
   });
@@ -56,7 +60,8 @@ export const uploadImage = async (file: File): Promise<string> => {
     throw new Error(body.detail || 'Erro ao enviar imagem');
   }
   const data = await res.json();
-  return `${API_URL}${data.url}`;
+  const url = data.url as string;
+  return API_URL ? `${API_URL}${url.startsWith('/') ? url : `/${url}`}` : url;
 };
 
 export const filterPinsByType = (pins: Pin[], types: PinType[] | null): Pin[] => {
