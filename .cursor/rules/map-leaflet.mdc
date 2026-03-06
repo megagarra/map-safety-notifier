@@ -10,7 +10,10 @@ alwaysApply: false
 
 - Use `react-leaflet` components: `MapContainer`, `TileLayer`, `Marker`, `Popup`
 - Tile provider: CARTO dark tiles (`{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`)
-- Default center: São Paulo `[-23.5505, -46.6333]`, zoom `13`
+- Default center: Franco da Rocha `[-23.3343, -46.6953]`, zoom `13`
+- Bounds locked to: Franco da Rocha, Caieiras, Mairiporã, Francisco Morato
+- `maxBoundsViscosity: 1.0` — hard limit, user cannot pan outside
+- `minZoom: 12` — prevents zooming out beyond the region
 
 ## Pin Rendering
 

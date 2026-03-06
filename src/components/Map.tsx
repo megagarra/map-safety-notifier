@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Pin, PinType } from '@/types';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl, AttributionControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -71,9 +71,17 @@ interface MapProps {
   initialSecurityMode?: boolean;
 }
 
-// Mapa com tema escuro similar à imagem
 const customTileLayer = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const attribution = '';
+
+// Bounds: Franco da Rocha, Caieiras, Mairiporã, Francisco Morato
+const MAP_BOUNDS: L.LatLngBoundsExpression = [
+  [-23.45, -46.82], // SW
+  [-23.18, -46.48], // NE
+];
+const MAP_CENTER: [number, number] = [-23.3343, -46.6953];
+const MAP_MIN_ZOOM = 12;
+const MAP_MAX_ZOOM = 19;
 
 // Componente para detectar clicks no mapa
 const MapClickHandler = ({ onMapClick }) => {
@@ -615,88 +623,7 @@ const ConstructionIcon = ({ size = 16, className = "" }) => (
   </svg>
 );
 
-// Componente para localização atual do usuário
-const LocationButton = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const map = useMap();
-
-  const handleLocateUser = () => {
-    setIsLoading(true);
-    
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          map.flyTo([latitude, longitude], 16, {
-            duration: 1.5
-          });
-          setIsLoading(false);
-        },
-        (error) => {
-          console.error("Erro ao obter localização: ", error);
-          setIsLoading(false);
-          // Feedback visual para o usuário
-          alert("Não foi possível obter sua localização. Verifique se você permitiu o acesso à localização.");
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
-      );
-    } else {
-      setIsLoading(false);
-      alert("Geolocalização não é suportada neste navegador.");
-    }
-  };
-
-  useEffect(() => {
-    // Adicionar o botão de localização ao container de zoom existente
-    const zoomControl = document.querySelector('.leaflet-control-zoom');
-    if (zoomControl) {
-      // Criar o elemento do botão
-      const locationButton = document.createElement('a');
-      locationButton.className = 'leaflet-control-location';
-      locationButton.href = '#';
-      locationButton.title = 'Usar minha localização atual';
-      locationButton.innerHTML = `
-        <span class="location-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
-          </svg>
-        </span>
-      `;
-      
-      // Adicionar evento de clique
-      locationButton.addEventListener('click', (e) => {
-        e.preventDefault();
-        handleLocateUser();
-        
-        // Adicionar classe de carregamento
-        locationButton.classList.add('loading');
-        
-        // Remover a classe de carregamento após a conclusão
-        setTimeout(() => {
-          locationButton.classList.remove('loading');
-        }, 3000);
-      });
-      
-      // Inserir o botão antes do controle de zoom
-      zoomControl.insertBefore(locationButton, zoomControl.firstChild);
-    }
-    
-    // Limpeza quando o componente for desmontado
-    return () => {
-      const locationButton = document.querySelector('.leaflet-control-location');
-      if (locationButton) {
-        locationButton.remove();
-      }
-    };
-  }, [map]);
-
-  // Este componente não renderiza nada no DOM, pois manipula o DOM diretamente
-  return null;
-};
+const LocationButton = () => null;
 
 // Componente para gerenciar a visibilidade dos pins com base no zoom
 const PinVisibilityManager = ({ pins, onPinClick }) => {
@@ -784,24 +711,28 @@ const PinVisibilityManager = ({ pins, onPinClick }) => {
   );
 };
 
-// Componente de botão de configurações
-const SettingsButton = ({ onClick, active = false }) => {
+const ToolButton = ({ icon, label, active, onClick, color = "yellow" }: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  color?: "yellow" | "blue";
+}) => {
+  const activeClass = color === "blue"
+    ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+    : "bg-yellow-500/20 text-yellow-400 border-yellow-500/40";
+
   return (
-    <Button
-      variant="outline"
-      size="icon"
+    <button
       onClick={onClick}
       className={cn(
-        "w-10 h-10 rounded-full bg-black/70 border-gray-800 hover:bg-gray-900 shadow-lg",
-        active && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
+        "w-9 h-9 rounded-lg flex items-center justify-center transition-all border",
+        active ? activeClass : "border-transparent text-gray-400 hover:text-white hover:bg-white/10"
       )}
-      title="Configurações"
+      title={label}
     >
-      <Settings 
-        size={18} 
-        className={active ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} 
-      />
-    </Button>
+      {icon}
+    </button>
   );
 };
 
@@ -889,11 +820,8 @@ const Map = ({
     onPinClick(null);
   };
   
-  // Coordenadas padrão se center for null
-  const defaultCenter: [number, number] = [-23.5505, -46.6333]; // São Paulo como padrão
-  // Usar apenas as coordenadas passadas ou as padrão, remover referência ao cache
-  const effectiveCenter = center || defaultCenter;
-  const effectiveZoom = zoom || 12;
+  const effectiveCenter = center || MAP_CENTER;
+  const effectiveZoom = zoom || 13;
   
   // Função para forçar atualização do tamanho do mapa, especialmente útil em mobile
   const forceMapUpdate = () => {
@@ -939,6 +867,10 @@ const Map = ({
       <MapContainer
         center={effectiveCenter}
         zoom={effectiveZoom}
+        minZoom={MAP_MIN_ZOOM}
+        maxZoom={MAP_MAX_ZOOM}
+        maxBounds={MAP_BOUNDS}
+        maxBoundsViscosity={1.0}
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
         attributionControl={false}
@@ -1091,103 +1023,52 @@ const Map = ({
         )}
 
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
-        <ZoomControl position="topright" />
-        <AttributionControl prefix={false} position="bottomright" />
-        
-        {/* Botão de localização e de configurações */}
-        <div className="absolute bottom-5 right-5 flex flex-col gap-2 z-[400]">
-          <LocationButton />
-          <SettingsButton 
-            onClick={() => setShowControls(!showControls)} 
-            active={showControls} 
-          />
-        </div>
-        
-        {/* Menu de configurações e estatísticas */}
+        <ZoomControl position="bottomright" />
+      </MapContainer>
+
+      {/* Botão de localização — canto inferior direito, acima do zoom */}
+      <div className="absolute bottom-28 right-3 z-[400]">
+        <button
+          onClick={() => {
+            if (!("geolocation" in navigator)) return;
+            navigator.geolocation.getCurrentPosition(
+              (pos) => mapInstance?.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 1.5 }),
+              () => {},
+              { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+          }}
+          className="w-10 h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
+          title="Minha localização"
+        >
+          <Navigation size={18} />
+        </button>
+      </div>
+
+      {/* Botão de ferramentas — canto inferior esquerdo */}
+      <div className="absolute bottom-6 left-4 z-[400] flex flex-col-reverse items-start gap-2">
+        <button
+          onClick={() => setShowControls(!showControls)}
+          className={cn(
+            "w-11 h-11 rounded-xl flex items-center justify-center transition-all shadow-lg",
+            showControls
+              ? "bg-white text-black"
+              : "bg-[#1a1a1a]/90 backdrop-blur border border-white/10 text-white hover:bg-[#2a2a2a]"
+          )}
+          title="Ferramentas"
+        >
+          <Settings size={20} className={cn("transition-transform duration-300", showControls && "rotate-90")} />
+        </button>
+
         {showControls && (
-          <div className="absolute bottom-[70px] right-5 p-3 bg-black/80 rounded-lg backdrop-blur z-[400] flex flex-col gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowStats(!showStats)}
-              className={cn(
-                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
-                showStats && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
-              )}
-              title="Estatísticas"
-            >
-              <BarChart3 size={16} />
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowPersistenceStats(!showPersistenceStats)}
-              className={cn(
-                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
-                showPersistenceStats && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
-              )}
-              title="Gráfico de persistência"
-            >
-              <LineChart size={16} />
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowTimeline(!showTimeline)}
-              className={cn(
-                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
-                showTimeline && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
-              )}
-              title="Linha do tempo"
-            >
-              <Clock size={16} />
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowPersistenceFilter(!showPersistenceFilter)}
-              className={cn(
-                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
-                showPersistenceFilter && "bg-yellow-900/30 text-yellow-500 border-yellow-900"
-              )}
-              title="Filtrar por persistência"
-            >
-              <AlertTriangle size={16} />
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setSecurityMode(!securityMode)}
-              className={cn(
-                "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
-                securityMode && "bg-blue-900/30 text-blue-500 border-blue-900"
-              )}
-              title="Modo segurança"
-            >
-              <Shield size={16} />
-            </Button>
-            
-            {securityMode && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setShowSecurityPanel(!showSecurityPanel)}
-                className={cn(
-                  "w-8 h-8 rounded-full bg-black/50 border-gray-800 hover:bg-gray-900",
-                  showSecurityPanel && "bg-blue-900/30 text-blue-500 border-blue-900"
-                )}
-                title="Painel de segurança"
-              >
-                <User size={16} />
-              </Button>
-            )}
+          <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-[#1a1a1a]/90 backdrop-blur border border-white/10 shadow-lg animate-fadeIn">
+            <ToolButton icon={<BarChart3 size={16} />} label="Estatísticas" active={showStats} onClick={() => setShowStats(!showStats)} />
+            <ToolButton icon={<LineChart size={16} />} label="Persistência" active={showPersistenceStats} onClick={() => setShowPersistenceStats(!showPersistenceStats)} />
+            <ToolButton icon={<Clock size={16} />} label="Linha do tempo" active={showTimeline} onClick={() => setShowTimeline(!showTimeline)} />
+            <ToolButton icon={<AlertTriangle size={16} />} label="Filtro" active={showPersistenceFilter} onClick={() => setShowPersistenceFilter(!showPersistenceFilter)} />
+            <ToolButton icon={<Shield size={16} />} label="Segurança" active={securityMode} onClick={() => setSecurityMode(!securityMode)} color="blue" />
           </div>
         )}
-      </MapContainer>
+      </div>
     </div>
   );
 };

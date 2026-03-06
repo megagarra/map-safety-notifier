@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,8 +6,31 @@ import { Textarea } from "@/components/ui/textarea";
 import { PinType, CreatePinInput } from '@/types';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle, DropletIcon, CircleOff, Image as ImageIcon, X, BarChart3, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle, DropletIcon, CircleOff, Image as ImageIcon, X, BarChart3, Upload, MapPin, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`,
+      { headers: { 'User-Agent': 'MapSafetyNotifier/1.0' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const addr = data.address;
+    if (!addr) return data.display_name || null;
+
+    const parts: string[] = [];
+    if (addr.road) parts.push(addr.road);
+    if (addr.house_number) parts[0] = `${parts[0]}, ${addr.house_number}`;
+    if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
+    if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
+
+    return parts.length > 0 ? parts.join(' - ') : data.display_name || null;
+  } catch {
+    return null;
+  }
+}
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -27,11 +50,23 @@ const ReportModal: React.FC<ReportModalProps> = ({
   const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+
+  useEffect(() => {
+    if (!location) { setAddress(null); return; }
+    setIsLoadingAddress(true);
+    reverseGeocode(location.lat, location.lng).then((result) => {
+      setAddress(result);
+      setIsLoadingAddress(false);
+    });
+  }, [location?.lat, location?.lng]);
 
   const handleClose = () => {
     setType('infraestrutura');
     setDescription('');
     setImages([]);
+    setAddress(null);
     setValidationError(null);
     onClose();
   };
@@ -54,7 +89,8 @@ const ReportModal: React.FC<ReportModalProps> = ({
       type,
       location,
       description,
-      images
+      images,
+      ...(address && { address }),
     };
     
     try {
@@ -120,12 +156,14 @@ const ReportModal: React.FC<ReportModalProps> = ({
             <div className="flex justify-between items-center">
               <Label className="text-sm font-medium text-white">Tipo de problema</Label>
               <div className="text-xs text-gray-400">
-                {location ? (
-                  <>
-                    {convertToDMS(location.lat, true)}, {convertToDMS(location.lng, false)}
-                  </>
-                ) : (
+                {!location ? (
                   <span className="text-yellow-400">Localização não definida</span>
+                ) : isLoadingAddress ? (
+                  <span className="flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Buscando endereço...</span>
+                ) : address ? (
+                  <span className="flex items-center gap-1"><MapPin size={12} /> {address}</span>
+                ) : (
+                  <>{convertToDMS(location.lat, true)}, {convertToDMS(location.lng, false)}</>
                 )}
               </div>
             </div>

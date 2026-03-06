@@ -39,6 +39,7 @@ export interface CreatePinInput {
   };
   description: string;
   images: string[];
+  address?: string;
 }
 
 export interface User {

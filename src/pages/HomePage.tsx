@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Map from '@/components/Map';
-import NavBar from '@/components/NavBar';
 import ReportModal from '@/components/ReportModal';
 import { Pin, PinType } from '@/types';
 import { getCurrentLocation } from '@/lib/helpers';
@@ -51,18 +50,16 @@ class HomePage extends React.Component {
           const { latitude, longitude } = position.coords;
           this.setState({ 
             center: [latitude, longitude],
+            zoom: 16,
             isLoadingUserLocation: false 
           });
-          
-          // Atualizar URL com as novas coordenadas
-          this.updateUrlWithCoordinates(latitude, longitude, this.state.zoom);
         },
         (error) => {
           console.error("Erro ao obter localização:", error);
           this.setState({ 
             isLoadingUserLocation: false,
             // Usar coordenadas de fallback em caso de erro
-            center: [-23.5505, -46.6333] // São Paulo como fallback
+            center: [-23.3343, -46.6953] // Franco da Rocha como fallback
           });
           toast({
             title: "Localização indisponível",
@@ -79,7 +76,7 @@ class HomePage extends React.Component {
     } else {
       this.setState({ 
         isLoadingUserLocation: false,
-        center: [-23.5505, -46.6333] // São Paulo como fallback
+        center: [-23.3343, -46.6953] // Franco da Rocha como fallback
       });
       toast({
         title: "Localização indisponível",
@@ -91,26 +88,8 @@ class HomePage extends React.Component {
   
   // Lifecycle methods
   componentDidMount() {
-    // Carregar pins
     this.loadPins();
-    
-    // Verificar URL para coordenadas
-    const urlParams = new URLSearchParams(this.location.search);
-    const lat = parseFloat(urlParams.get('lat') || '');
-    const lng = parseFloat(urlParams.get('lng') || '');
-    const z = parseInt(urlParams.get('z') || '');
-    
-    if (!isNaN(lat) && !isNaN(lng)) {
-      this.setState({ center: [lat, lng] });
-      if (!isNaN(z)) {
-        this.setState({ zoom: z });
-      }
-      // Se encontrou coordenadas na URL, não precisa carregar localização
-      this.setState({ isLoadingUserLocation: false });
-    } else {
-      // Se não houver coordenadas na URL, tentar obter localização do usuário
-      this.getUserLocation();
-    }
+    this.getUserLocation();
   }
   
   // Método para carregar pins
@@ -303,26 +282,18 @@ class HomePage extends React.Component {
     }
     
     return (
-      <div className="flex h-screen w-full overflow-hidden fixed inset-0">
-        <NavBar 
-          onNewReport={this.openReportModal} 
+      <div className="h-screen w-full overflow-hidden fixed inset-0">
+        <Map
           pins={pins}
           onPinClick={this.handlePinClick}
+          onMapClick={this.handleMapClick}
+          onMapMove={this.handleMapMove}
+          selectedPinTypes={selectedPinTypes}
+          selectedPin={selectedPin}
+          center={center}
+          zoom={zoom}
+          onVote={this.handleVote}
         />
-        
-        <div className="flex-1 relative h-full">
-          <Map
-            pins={pins}
-            onPinClick={this.handlePinClick}
-            onMapClick={this.handleMapClick}
-            onMapMove={this.handleMapMove}
-            selectedPinTypes={selectedPinTypes}
-            selectedPin={selectedPin}
-            center={center}
-            zoom={zoom}
-            onVote={this.handleVote}
-          />
-        </div>
         
         {reportModalOpen && (
           <ReportModal
