@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Pin, PinType } from '@/types';
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, CircleMarker, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { formatDistanceToNow } from 'date-fns';
@@ -339,6 +339,31 @@ function PinDetailsModal({ pin, onClose, onVote, isMobile }: { pin: Pin; onClose
   );
 }
 
+// --- User location blue dot ---
+
+function UserLocationDot() {
+  const [pos, setPos] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return;
+    const id = navigator.geolocation.watchPosition(
+      ({ coords }) => setPos([coords.latitude, coords.longitude]),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+
+  if (!pos) return null;
+
+  return (
+    <>
+      <CircleMarker center={pos} radius={24} pathOptions={{ color: 'transparent', fillColor: 'rgba(66,133,244,0.15)', fillOpacity: 1 }} />
+      <CircleMarker center={pos} radius={8} pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#4285F4', fillOpacity: 1 }} />
+    </>
+  );
+}
+
 // --- Main Map component ---
 
 const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinTypes, selectedPin, center, zoom, onVote }: MapComponentProps) => {
@@ -412,6 +437,7 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
       >
         <TileLayer url={TILE_URL} maxZoom={19} maxNativeZoom={18} updateWhenIdle detectRetina className="custom-tile-layer" />
         <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} />
+        <UserLocationDot />
         <PinMarkers pins={filteredPins} onPinClick={onPinClick} />
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
         <ZoomControl position="bottomright" />
