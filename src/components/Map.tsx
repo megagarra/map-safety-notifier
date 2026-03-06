@@ -461,11 +461,17 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
       <div className="absolute bottom-[124px] md:bottom-[196px] right-[22px] md:right-[24px] z-[400]">
         <button
           onClick={() => {
-            if (!("geolocation" in navigator)) return;
+            if (!("geolocation" in navigator) || !mapInstance) return;
             navigator.geolocation.getCurrentPosition(
-              (pos) => mapInstance?.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 0.8 }),
-              () => {},
-              { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+              (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 0.8 }),
+              () => {
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 0.8 }),
+                  () => {},
+                  { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+                );
+              },
+              { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
             );
           }}
           className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"

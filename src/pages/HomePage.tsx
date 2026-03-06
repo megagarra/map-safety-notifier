@@ -42,22 +42,39 @@ export default function HomePage() {
     if (!('geolocation' in navigator)) {
       setCenter(FALLBACK_CENTER);
       setIsLoadingLocation(false);
-      toast({ title: 'Localização indisponível', description: 'Seu navegador não suporta geolocalização.', variant: 'destructive' });
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setCenter([coords.latitude, coords.longitude]);
-        setZoom(16);
-        setIsLoadingLocation(false);
-      },
-      () => {
+
+    let resolved = false;
+
+    const onSuccess = ({ coords }: GeolocationPosition) => {
+      if (resolved) return;
+      resolved = true;
+      setCenter([coords.latitude, coords.longitude]);
+      setZoom(16);
+      setIsLoadingLocation(false);
+    };
+
+    // Try high accuracy first (GPS)
+    navigator.geolocation.getCurrentPosition(onSuccess, () => {
+      // If high accuracy fails, try low accuracy (network/wifi)
+      navigator.geolocation.getCurrentPosition(onSuccess, () => {
+        if (resolved) return;
+        resolved = true;
         setCenter(FALLBACK_CENTER);
         setIsLoadingLocation(false);
-        toast({ title: 'Localização indisponível', description: 'Não foi possível obter sua localização atual.', variant: 'destructive' });
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
-    );
+      }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+
+    // Safety timeout — don't block forever
+    const safetyTimer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      setCenter(FALLBACK_CENTER);
+      setIsLoadingLocation(false);
+    }, 15000);
+
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   const updateUrl = useCallback((lat: number, lng: number, z: number) => {
