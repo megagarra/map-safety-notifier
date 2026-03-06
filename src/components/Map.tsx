@@ -358,8 +358,8 @@ function UserLocationDot() {
 
   return (
     <>
-      <CircleMarker center={pos} radius={24} pathOptions={{ color: 'transparent', fillColor: 'rgba(66,133,244,0.15)', fillOpacity: 1 }} />
-      <CircleMarker center={pos} radius={8} pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#4285F4', fillOpacity: 1 }} />
+      <CircleMarker center={pos} radius={12} pathOptions={{ color: 'transparent', fillColor: 'rgba(66,133,244,0.15)', fillOpacity: 1 }} />
+      <CircleMarker center={pos} radius={5} pathOptions={{ color: '#fff', weight: 2, fillColor: '#4285F4', fillOpacity: 1 }} />
     </>
   );
 }
