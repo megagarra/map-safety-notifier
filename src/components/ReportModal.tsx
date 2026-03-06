@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { PinType, CreatePinInput } from '@/types';
+import { uploadImage } from '@/controllers/pins';
 import {
   Image as ImageIcon,
   X,
@@ -106,16 +107,17 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImages((prev) => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    for (const file of Array.from(files)) {
+      try {
+        const url = await uploadImage(file);
+        setImages((prev) => [...prev, url]);
+      } catch {
+        setValidationError('Erro ao enviar imagem. Tente novamente.');
+      }
+    }
     e.target.value = '';
   };
 

@@ -1,79 +1,62 @@
 import { Pin, PinType, PinStatus, CreatePinInput } from '@/types';
-import { v4 as uuidv4 } from 'uuid';
 
-const STORAGE_KEY = 'map-safety-pins';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
-function loadPinsFromStorage(): Pin[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    // ignore parse errors
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `API error ${res.status}`);
   }
-  return [];
+  return res.json();
 }
 
-function savePinsToStorage(pins: Pin[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
-}
-
-export const fetchPins = async (_limit: number = 50): Promise<Pin[]> => {
-  return loadPinsFromStorage();
+export const fetchPins = async (limit: number = 200): Promise<Pin[]> => {
+  return api<Pin[]>(`/api/pins?limit=${limit}`);
 };
 
 export const fetchPinById = async (id: string): Promise<Pin | null> => {
-  const pins = loadPinsFromStorage();
-  return pins.find(p => p.id === id) ?? null;
+  try {
+    return await api<Pin>(`/api/pins/${id}`);
+  } catch {
+    return null;
+  }
 };
 
 export const createPin = async (pin: CreatePinInput): Promise<Pin | null> => {
-  const pins = loadPinsFromStorage();
-
-  const newPin: Pin = {
-    id: uuidv4(),
-    ...pin,
-    reportedAt: new Date().toISOString(),
-    status: 'reported',
-    votes: 0,
-    userVoted: false,
-    history: [
-      {
-        status: 'reported',
-        timestamp: new Date().toISOString(),
-        description: 'Problema reportado por usuário',
-      },
-    ],
-    persistenceDays: 0,
-  };
-
-  pins.unshift(newPin);
-  savePinsToStorage(pins);
-  return newPin;
+  return api<Pin>('/api/pins', {
+    method: 'POST',
+    body: JSON.stringify(pin),
+  });
 };
 
 export const updatePin = async (id: string, updates: Partial<Pin>): Promise<Pin | null> => {
-  const pins = loadPinsFromStorage();
-  const index = pins.findIndex(p => p.id === id);
-  if (index === -1) return null;
-
-  pins[index] = { ...pins[index], ...updates };
-  savePinsToStorage(pins);
-  return pins[index];
+  return api<Pin>(`/api/pins/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
 };
 
 export const voteOnPin = async (pinId: string): Promise<Pin | null> => {
-  const pins = loadPinsFromStorage();
-  const index = pins.findIndex(p => p.id === pinId);
-  if (index === -1) return null;
+  return api<Pin>(`/api/pins/${pinId}/vote`, { method: 'POST' });
+};
 
-  pins[index] = {
-    ...pins[index],
-    votes: (pins[index].votes || 0) + 1,
-    userVoted: true,
-  };
-
-  savePinsToStorage(pins);
-  return pins[index];
+export const uploadImage = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${API_URL}/api/images/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || 'Erro ao enviar imagem');
+  }
+  const data = await res.json();
+  return `${API_URL}${data.url}`;
 };
 
 export const filterPinsByType = (pins: Pin[], types: PinType[] | null): Pin[] => {
