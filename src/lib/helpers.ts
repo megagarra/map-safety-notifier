@@ -1,31 +1,27 @@
 import { Pin, PinType } from '@/types';
 
 // Função para obter a localização atual do usuário
+const FALLBACK_LOCATION = { lat: -23.3343, lng: -46.6953 };
+
 export const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
-  return new Promise((resolve, reject) => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.error("Erro ao obter localização:", error);
-          resolve(getCurrentLocation());
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
-      );
-    } else {
-      console.error("Geolocalização não suportada");
-      // Coordenadas padrão para São Paulo como fallback
-      resolve({ lat: -23.5505, lng: -46.6333 });
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(FALLBACK_LOCATION);
+      return;
     }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {
+        resolve(FALLBACK_LOCATION);
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
+    );
   });
 };
 

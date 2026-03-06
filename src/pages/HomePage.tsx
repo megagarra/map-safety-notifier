@@ -14,7 +14,7 @@ export default function HomePage() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [center, setCenter] = useState<[number, number] | null>(null);
-  const [zoom, setZoom] = useState(12);
+  const [zoom, setZoom] = useState(13);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
@@ -51,7 +51,6 @@ export default function HomePage() {
       if (resolved) return;
       resolved = true;
       setCenter([coords.latitude, coords.longitude]);
-      setZoom(16);
       setIsLoadingLocation(false);
     };
 

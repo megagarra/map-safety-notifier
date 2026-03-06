@@ -463,10 +463,10 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
           onClick={() => {
             if (!("geolocation" in navigator) || !mapInstance) return;
             navigator.geolocation.getCurrentPosition(
-              (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 0.8 }),
+              (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
               () => {
                 navigator.geolocation.getCurrentPosition(
-                  (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 0.8 }),
+                  (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
                   () => {},
                   { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
                 );
