@@ -54,6 +54,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   const [type, setType] = useState<PinType>('infraestrutura');
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [previewImg, setPreviewImg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
@@ -72,6 +73,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
     setType('infraestrutura');
     setDescription('');
     setImages([]);
+    setPreviewImg(null);
     setAddress(null);
     setValidationError(null);
     onClose();
@@ -182,24 +184,57 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
           {/* Images */}
           <div className="space-y-2">
             <Label className="text-sm font-medium text-white">Fotos {images.length > 0 && `(${images.length})`}</Label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="flex flex-col gap-3">
               {images.map((img, i) => (
-                <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-[#2a2a2a] bg-[#252525] group">
-                  <img src={img} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
+                <div key={i} className="relative flex gap-2 items-start">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewImg(img)}
+                    className="flex-1 min-w-0 relative aspect-video rounded-lg overflow-hidden border border-[#2a2a2a] bg-[#252525] hover:border-[#444] transition-colors cursor-pointer"
+                  >
+                    <img
+                      src={img}
+                      alt={`Foto ${i + 1}`}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-contain"
+                    />
+                  </button>
                   <button
                     onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}
-                    className="absolute top-1 right-1 p-1 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="shrink-0 p-1.5 rounded-full bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-colors"
+                    title="Remover"
                   >
-                    <X size={12} className="text-white" />
+                    <X size={14} />
                   </button>
                 </div>
               ))}
-              <label className="flex flex-col items-center justify-center aspect-square rounded-lg border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors">
+              <label className="flex flex-col items-center justify-center aspect-video rounded-lg border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors">
                 <ImageIcon size={18} className="text-gray-500 mb-1" />
-                <span className="text-[10px] text-gray-500">Adicionar</span>
+                <span className="text-[10px] text-gray-500">Adicionar foto</span>
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
               </label>
             </div>
+            {previewImg && (
+              <div
+                className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/95 p-4"
+                onClick={() => setPreviewImg(null)}
+              >
+                <button
+                  onClick={() => setPreviewImg(null)}
+                  className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                  aria-label="Fechar"
+                >
+                  <X size={24} />
+                </button>
+                <img
+                  src={previewImg}
+                  alt="Preview"
+                  className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
           </div>
         </div>
 

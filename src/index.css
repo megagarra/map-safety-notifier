@@ -78,6 +78,11 @@
   background-color: #333333 !important;
 }
 
+/* Tema escuro do mapa - clareia os tiles para melhor visibilidade */
+.map-theme-dark .leaflet-tile-pane img {
+  filter: brightness(1.25) contrast(1.05);
+}
+
 /* Ensure map parent container has proper height */
 .h-full {
   height: 100% !important;

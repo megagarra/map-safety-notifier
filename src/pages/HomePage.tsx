@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Map from '@/components/Map';
 import ReportModal from '@/components/ReportModal';
 import { Pin, PinType, CreatePinInput } from '@/types';
@@ -11,31 +12,27 @@ const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
 export default function HomePage() {
   const navigate = useNavigate();
 
-  const [pins, setPins] = useState<Pin[]>([]);
+  const { data: pins = [], isLoading: isLoadingPins, isError } = useQuery({
+    queryKey: ['pins'],
+    queryFn: () => PinsController.fetchPins(50),
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (isError) {
+      toast({ title: 'Erro ao carregar pins', description: 'Não foi possível carregar os dados do mapa', variant: 'destructive' });
+    }
+  }, [isError]);
+
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [center, setCenter] = useState<[number, number] | null>(null);
   const [zoom, setZoom] = useState(13);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const [isLoadingPins, setIsLoadingPins] = useState(true);
 
   const urlTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setIsLoadingPins(true);
-        const data = await PinsController.fetchPins(50);
-        setPins(data);
-      } catch {
-        toast({ title: 'Erro ao carregar pins', description: 'Não foi possível carregar os dados do mapa', variant: 'destructive' });
-        setPins([]);
-      } finally {
-        setIsLoadingPins(false);
-      }
-    })();
-  }, []);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     setIsLoadingLocation(true);
@@ -104,26 +101,28 @@ export default function HomePage() {
     try {
       const newPin = await PinsController.createPin(data);
       if (newPin) {
-        setPins((prev) => [newPin, ...prev]);
+        queryClient.setQueryData<Pin[]>(['pins'], (prev) => (prev ? [newPin, ...prev] : [newPin]));
         toast({ title: 'Relatório enviado', description: 'Seu relatório foi enviado com sucesso.' });
       }
     } catch {
       toast({ title: 'Erro ao enviar relatório', description: 'Tente novamente.', variant: 'destructive' });
     }
-  }, []);
+  }, [queryClient]);
 
   const handleVote = useCallback(async (pinId: string) => {
     try {
       const updated = await PinsController.voteOnPin(pinId);
       if (updated) {
-        setPins((prev) => prev.map((p) => (p.id === pinId ? updated : p)));
+        queryClient.setQueryData<Pin[]>(['pins'], (prev) =>
+          prev ? prev.map((p) => (p.id === pinId ? updated : p)) : prev
+        );
         setSelectedPin((prev) => (prev?.id === pinId ? updated : prev));
         toast({ title: 'Voto registrado', description: 'Obrigado por confirmar este problema.' });
       }
     } catch {
       toast({ title: 'Erro ao registrar voto', description: 'Tente novamente.', variant: 'destructive' });
     }
-  }, []);
+  }, [queryClient]);
 
   if (isLoadingLocation || !center || isLoadingPins) {
     return (

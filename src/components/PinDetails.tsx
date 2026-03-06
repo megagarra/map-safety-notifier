@@ -3,6 +3,7 @@ import { X, Copy, Clock, AlertCircle, CheckCircle, Wrench, ThumbsUp, Users } fro
 import { cn } from '@/lib/utils';
 import { Pin, PinType } from '@/types';
 import PinHistory from './PinHistory';
+import { ImageGallery } from './ImageGallery';
 
 // Componente personalizado para o ícone de sirene
 const SirenIcon = ({ size = 16, className = "" }) => (
@@ -211,17 +212,7 @@ const PinDetails = ({ pin, onClose, onVote }: PinDetailsProps) => {
           {/* Images */}
           {pin.images && pin.images.length > 0 && (
             <div className="mb-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-              <h4 className="text-sm font-medium text-white mb-2">Imagens</h4>
-              <div className="grid grid-cols-2 gap-2">
-                {pin.images.map((image, index) => (
-                  <img 
-                    key={index}
-                    src={image}
-                    alt={`Imagem ${index + 1} do problema`}
-                    className="w-full h-32 object-cover rounded-lg"
-                  />
-                ))}
-              </div>
+              <ImageGallery images={pin.images} altPrefix="Imagem do problema" layout="separate" />
             </div>
           )}
 

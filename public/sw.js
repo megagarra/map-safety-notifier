@@ -10,8 +10,8 @@ const STATIC_ASSETS = [
   '/manifest.json'
 ];
 
-// Padrão para reconhecer URLs de tiles do mapa
-const TILE_URL_PATTERN = /^https?:\/\/[a-z]\.\w+\.cartocdn\.com\/[\w-]+\/\d+\/\d+\/\d+/;
+// Padrão para reconhecer URLs de tiles do mapa (CARTO, OSM, etc.)
+const TILE_URL_PATTERN = /^https?:\/\/([a-z]\.)?(tile\.openstreetmap\.org|basemaps\.cartocdn\.com)\/.+\/\d+\/\d+\/\d+/;
 
 // Lista de URLs de tiles que devem ser pré-carregados para melhorar a experiência inicial
 // Estes valores devem corresponder ao centro inicial do mapa e zoom

@@ -15,7 +15,10 @@ import {
   MapPin,
   AlertTriangle,
   Loader2,
+  Sun,
+  Moon,
 } from 'lucide-react';
+import { ImageGallery } from './ImageGallery';
 
 declare module 'leaflet' {
   interface Map {
@@ -35,7 +38,13 @@ interface MapComponentProps {
   onVote: (pinId: string) => void;
 }
 
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const TILE_URLS = {
+  /** Claro: OpenStreetMap - boa visibilidade */
+  light: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  /** Escuro: Dark Matter - tema escuro */
+  dark: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
+};
+const MAP_THEME_KEY = 'map-safety-theme';
 
 const MAP_BOUNDS: L.LatLngBoundsExpression = [
   [-23.45, -46.82],
@@ -296,12 +305,8 @@ function PinDetailsModal({ pin, onClose, onVote, isMobile }: { pin: Pin; onClose
 
           {/* Images */}
           {pin.images && pin.images.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              {pin.images.map((img, i) => (
-                <div key={i} className="aspect-square rounded-lg overflow-hidden bg-[#252525]">
-                  <img src={img} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
-              ))}
+            <div className="space-y-2">
+              <ImageGallery images={pin.images} altPrefix="Foto" layout="separate" />
             </div>
           )}
 
@@ -363,11 +368,39 @@ function UserLocationDot() {
 
 // --- Main Map component ---
 
+type MapTheme = 'light' | 'dark';
+
+const THEME_ORDER: MapTheme[] = ['light', 'dark'];
+const THEME_LABELS: Record<MapTheme, string> = {
+  light: 'Claro',
+  dark: 'Escuro',
+};
+
 const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinTypes, selectedPin, center, zoom, onVote }: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
+    try {
+      const saved = localStorage.getItem(MAP_THEME_KEY);
+      return (saved === 'light' || saved === 'dark') ? saved : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
   const mapRef = useRef(null);
+  const tileUrl = TILE_URLS[mapTheme];
+
+  const cycleMapTheme = () => {
+    const idx = THEME_ORDER.indexOf(mapTheme);
+    const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+    setMapTheme(next);
+    try {
+      localStorage.setItem(MAP_THEME_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -400,7 +433,7 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
   };
 
   return (
-    <div className="h-full w-full relative overflow-hidden map-wrapper">
+    <div className={cn("h-full w-full relative overflow-hidden map-wrapper", mapTheme === 'dark' && "map-theme-dark")}>
       {!mapLoaded && <div className="map-loading-placeholder absolute inset-0 bg-[#121212] z-[5]" />}
 
       <MapContainer
@@ -437,7 +470,7 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
         }}
       >
         <TileLayer
-          url={TILE_URL}
+          url={tileUrl}
           maxZoom={19}
           maxNativeZoom={18}
           updateWhenIdle
@@ -456,6 +489,17 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
       {selectedPin && (
         <PinDetailsModal pin={selectedPin} onClose={() => onPinClick(null)} onVote={onVote} isMobile={isMobile} />
       )}
+
+      {/* Theme toggle — claro / médio / escuro */}
+      <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
+        <button
+          onClick={cycleMapTheme}
+          className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
+          title={`Tema do mapa: ${THEME_LABELS[mapTheme]}. Clique para alternar.`}
+        >
+          {mapTheme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+      </div>
 
       {/* Location button — above zoom: mobile zoom is at bottom-24px, height 88px (2×44); desktop zoom is at bottom-100px, height 80px (2×40) */}
       <div className="absolute bottom-[124px] md:bottom-[196px] right-[22px] md:right-[24px] z-[400]">
