@@ -1,0 +1,54 @@
+---
+description: Core project standards for Map Safety Notifier - always active
+alwaysApply: true
+---
+
+# Map Safety Notifier - Project Standards
+
+## Project Overview
+
+Community safety map app (Brazilian Portuguese) for reporting urban issues (flood, pothole, robbery, etc.) on an interactive map. Users can report, vote, and track persistence of unresolved problems.
+
+## Tech Stack
+
+- **Framework**: React 18 + TypeScript + Vite (SWC)
+- **UI**: shadcn/ui (Radix primitives) + Tailwind CSS 3
+- **Maps**: Leaflet + react-leaflet (CARTO dark tiles)
+- **State**: TanStack React Query v5 (local/mock data por enquanto)
+- **Routing**: React Router DOM v6
+- **Forms**: React Hook Form + Zod
+- **Icons**: Lucide React
+- **Charts**: Recharts
+- **Dates**: date-fns (ptBR locale)
+
+> **Nota**: Projeto 100% front-end por enquanto. Dados são mock/local. Backend (Supabase) será integrado futuramente.
+
+## Architecture
+
+```
+src/
+  pages/          → Route-level components
+  components/     → Feature components
+  components/ui/  → shadcn/ui primitives (do NOT modify manually)
+  hooks/          → Custom React hooks (dados mock/local)
+  controllers/    → Business logic (mock data por enquanto)
+  lib/            → Utility functions
+  types/          → Shared TypeScript types
+```
+
+## Code Style
+
+- Functional components only, no classes
+- Named exports for all components and hooks
+- Path alias: `@/` maps to `src/`
+- Descriptive variable names with auxiliary verbs: `isLoading`, `hasError`, `canSubmit`
+- File naming: PascalCase for components (`PinDetails.tsx`), camelCase for utilities (`helpers.ts`)
+- Locale: Brazilian Portuguese for all user-facing text
+
+## Key Conventions
+
+- Never modify files inside `src/components/ui/` directly — use shadcn CLI
+- Keep page components thin: delegate logic to hooks and controllers
+- Use `cn()` from `@/lib/utils` for conditional class merging
+- Default map center: São Paulo (-23.5505, -46.6333)
+- Pin types: `flood`, `pothole`, `passable`, `robbery`

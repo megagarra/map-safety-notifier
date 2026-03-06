@@ -1,0 +1,50 @@
+---
+description: React Query data fetching and caching conventions
+globs: src/hooks/**
+alwaysApply: false
+---
+
+# React Query Conventions
+
+## Hook Naming
+
+- Query hooks: `use[Feature]Data` or `use[Feature]Query` (e.g., `useMapData`, `useSecurityData`)
+- Mutation hooks: `use[Action][Feature]` (e.g., `useCreatePin`, `useVotePin`)
+
+## Query Keys
+
+Use structured arrays for cache management:
+
+```typescript
+// ❌ BAD
+useQuery({ queryKey: ["pins"] })
+
+// ✅ GOOD
+useQuery({ queryKey: ["pins", "list"] })
+useQuery({ queryKey: ["pins", "detail", pinId] })
+useQuery({ queryKey: ["comments", pinId] })
+```
+
+## Patterns
+
+- Wrap data access in controller functions, then use them in hooks
+- Use mock/local data until backend is integrated
+- Enable `staleTime` for data that doesn't change frequently (e.g., pin types)
+- Use `queryClient.invalidateQueries` after mutations to refetch stale data
+- Implement optimistic updates for votes and comments
+
+```typescript
+export function useMapData() {
+  return useQuery({
+    queryKey: ["pins", "list"],
+    queryFn: fetchPins,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+```
+
+## Error & Loading States
+
+- Return `isLoading`, `isError`, `data` from hooks
+- Handle loading with `Skeleton` components from shadcn/ui
+- Show errors via `toast` or inline `Alert` components

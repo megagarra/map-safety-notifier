@@ -1,0 +1,51 @@
+---
+description: TypeScript coding standards and type safety
+globs: "**/*.ts,**/*.tsx"
+alwaysApply: false
+---
+
+# TypeScript Standards
+
+## Type Definitions
+
+- Define shared types in `src/types/index.ts`
+- Use `interface` for object shapes, `type` for unions/intersections
+- Avoid `any` — use `unknown` with type guards when type is uncertain
+- Avoid `enum` — use `as const` objects or union types instead
+
+```typescript
+// ❌ BAD
+enum PinType { FLOOD, POTHOLE }
+
+// ✅ GOOD
+const PIN_TYPES = ["flood", "pothole", "passable", "robbery"] as const;
+type PinType = (typeof PIN_TYPES)[number];
+```
+
+## Error Handling
+
+```typescript
+// ❌ BAD
+try { await fetchPins(); } catch (e) {}
+
+// ✅ GOOD
+try {
+  await fetchPins();
+} catch (error) {
+  console.error("Failed to fetch pins:", error);
+  toast.error("Erro ao carregar os pontos");
+  throw error;
+}
+```
+
+## Imports
+
+- Use path alias `@/` for all project imports
+- Group: external libraries → `@/` project imports → relative imports
+- Use named imports, avoid default exports
+
+## Zod Schemas
+
+- Define Zod schemas alongside form components or in `src/types/`
+- Infer TypeScript types from schemas: `type FormData = z.infer<typeof formSchema>`
+- Use `.safeParse()` for validation with error messages in Portuguese

@@ -91,7 +91,7 @@ class HomePage extends React.Component {
   
   // Lifecycle methods
   componentDidMount() {
-    // Carregar pins do Supabase
+    // Carregar pins
     this.loadPins();
     
     // Verificar URL para coordenadas
@@ -113,7 +113,7 @@ class HomePage extends React.Component {
     }
   }
   
-  // Método para carregar pins do Supabase
+  // Método para carregar pins
   async loadPins() {
     try {
       this.setState({ isLoadingPins: true });

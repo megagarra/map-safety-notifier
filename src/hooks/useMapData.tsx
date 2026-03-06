@@ -9,7 +9,7 @@ export function useMapData() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Carrega os pins do Supabase
+  // Carrega os pins do armazenamento local
   useEffect(() => {
     const loadPins = async () => {
       try {

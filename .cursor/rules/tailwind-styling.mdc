@@ -1,0 +1,43 @@
+---
+description: Tailwind CSS styling conventions and custom theme
+globs: "**/*.tsx,tailwind.config.ts,src/index.css"
+alwaysApply: false
+---
+
+# Tailwind CSS Conventions
+
+## Dark Mode
+
+- Strategy: `class` (toggle via className on `<html>`)
+- Design primarily for dark theme — CARTO dark tiles set the tone
+
+## Custom Theme Colors
+
+Use the project-specific colors for pin types:
+
+- `flood` — water/flood incidents
+- `pothole` — road damage
+- `passable` — passable but risky areas
+- `robbery` — crime incidents
+
+```tsx
+<Badge className="bg-flood/20 text-flood">Alagamento</Badge>
+<Badge className="bg-robbery/20 text-robbery">Assalto</Badge>
+```
+
+## Custom Animations
+
+Available animations: `fadeIn`, `slideUp`, `pulse`, `float`, `shimmer`
+
+```tsx
+<div className="animate-fadeIn">...</div>
+```
+
+## Best Practices
+
+- Use `cn()` from `@/lib/utils` for conditional classes
+- Prefer Tailwind utilities over custom CSS
+- Use `@apply` sparingly — only in `index.css` for global base styles
+- Use responsive prefixes: `sm:`, `md:`, `lg:` for layout
+- Use `tailwind-merge` (via `cn()`) to avoid class conflicts
+- Keep spacing consistent: `p-4`, `gap-4`, `space-y-4`

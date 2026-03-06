@@ -1,0 +1,54 @@
+---
+description: React component patterns and conventions
+globs: src/**/*.tsx
+alwaysApply: false
+---
+
+# React Component Patterns
+
+## Component Structure
+
+Order sections consistently within each component file:
+
+1. Imports (external → internal → types → styles)
+2. Types/interfaces (prefix with component name: `PinDetailsProps`)
+3. Component function (named export)
+4. Sub-components (if small and co-located)
+
+```tsx
+// ❌ BAD
+export default function Pin({ data }) { ... }
+
+// ✅ GOOD
+interface PinDetailsProps {
+  pin: Pin;
+  onClose: () => void;
+}
+
+export function PinDetails({ pin, onClose }: PinDetailsProps) { ... }
+```
+
+## Patterns
+
+- Use `interface` for props, not `type`
+- Destructure props in function signature
+- Extract complex logic into custom hooks (`useMapData`, `useSecurityData`)
+- Use early returns for loading/error states
+- Prefer composition over prop drilling — use context or pass components as children
+
+## shadcn/ui Usage
+
+- Import from `@/components/ui/` — never copy-paste raw Radix code
+- Compose shadcn primitives to build feature components
+- Use `Sonner` (toast) for user feedback, `Dialog` for confirmations
+
+## Styling
+
+- Use Tailwind classes, avoid inline styles or CSS modules
+- Use `cn()` for conditional classes:
+
+```tsx
+<div className={cn("rounded-lg p-4", isActive && "bg-primary/10")} />
+```
+
+- Use custom theme colors: `flood`, `pothole`, `passable`, `robbery`

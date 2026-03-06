@@ -1,0 +1,37 @@
+---
+description: Leaflet map integration patterns
+globs: src/components/Map.tsx,src/components/HeatmapControl.tsx,src/hooks/useMapCache.ts,src/lib/helpers.ts,public/sw.js
+alwaysApply: false
+---
+
+# Leaflet Map Conventions
+
+## Setup
+
+- Use `react-leaflet` components: `MapContainer`, `TileLayer`, `Marker`, `Popup`
+- Tile provider: CARTO dark tiles (`{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`)
+- Default center: São Paulo `[-23.5505, -46.6333]`, zoom `13`
+
+## Pin Rendering
+
+- Map pins by type with distinct colors matching Tailwind config: `flood`, `pothole`, `passable`, `robbery`
+- Use custom Leaflet `divIcon` or `L.icon` for styled markers
+- Attach click handlers to markers to show `PinDetails` panel
+
+## Performance
+
+- Use Service Worker (`public/sw.js`) for tile caching
+- Avoid re-rendering the entire map — use `React.memo` on marker components
+- Use `useMemo` for filtered pin arrays
+- Limit heatmap data points for performance
+
+## Geolocation
+
+- Use `navigator.geolocation` via helper in `@/lib/helpers.ts`
+- Always handle permission denied gracefully with fallback to default center
+- Convert coordinates with DMS helpers when needed
+
+## Map Events
+
+- Handle `moveend`, `zoomend` for dynamic data loading
+- Use `useMapEvents` hook from react-leaflet for event binding
