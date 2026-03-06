@@ -1,19 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { PinType, CreatePinInput } from '@/types';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle, DropletIcon, CircleOff, Image as ImageIcon, X, BarChart3, Upload, MapPin, Loader2 } from 'lucide-react';
+import {
+  Image as ImageIcon,
+  X,
+  MapPin,
+  Loader2,
+  Construction,
+  AlertTriangle,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`,
-      { headers: { 'User-Agent': 'MapSafetyNotifier/1.0' } }
+      { headers: { 'User-Agent': 'MapSafetyNotifier/1.0' } },
     );
     if (!res.ok) return null;
     const data = await res.json();
@@ -22,11 +27,11 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
 
     const parts: string[] = [];
     if (addr.road) parts.push(addr.road);
-    if (addr.house_number) parts[0] = `${parts[0]}, ${addr.house_number}`;
+    if (addr.house_number && parts.length) parts[0] = `${parts[0]}, ${addr.house_number}`;
     if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
     if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
 
-    return parts.length > 0 ? parts.join(' - ') : data.display_name || null;
+    return parts.length > 0 ? parts.join(' — ') : data.display_name || null;
   } catch {
     return null;
   }
@@ -39,12 +44,12 @@ interface ReportModalProps {
   location: { lat: number; lng: number } | null;
 }
 
-const ReportModal: React.FC<ReportModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
-  location 
-}) => {
+const TYPE_OPTIONS: { value: PinType; label: string; desc: string; icon: React.ReactNode; activeClass: string }[] = [
+  { value: 'infraestrutura', label: 'Infraestrutura', desc: 'Problemas de estrutura urbana', icon: <Construction size={18} />, activeClass: 'border-orange-500 bg-orange-500/10' },
+  { value: 'crime', label: 'Crime', desc: 'Ocorrências de segurança', icon: <AlertTriangle size={18} />, activeClass: 'border-red-500 bg-red-500/10' },
+];
+
+const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, location }) => {
   const [type, setType] = useState<PinType>('infraestrutura');
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -73,18 +78,16 @@ const ReportModal: React.FC<ReportModalProps> = ({
 
   const handleSubmit = () => {
     if (!location) {
-      setValidationError("É necessário definir uma localização. Clique no mapa para marcar o local.");
+      setValidationError('É necessário definir uma localização. Clique no mapa para marcar o local.');
       return;
     }
-    
     if (!description.trim()) {
-      setValidationError("Por favor, adicione uma descrição do problema.");
+      setValidationError('Por favor, adicione uma descrição do problema.');
       return;
     }
-    
     setIsSubmitting(true);
     setValidationError(null);
-    
+
     const data: CreatePinInput = {
       type,
       location,
@@ -92,171 +95,122 @@ const ReportModal: React.FC<ReportModalProps> = ({
       images,
       ...(address && { address }),
     };
-    
+
     try {
       onSubmit(data);
       handleClose();
-    } catch (error) {
-      console.error('Erro ao enviar relatório:', error);
-      setValidationError("Ocorreu um erro ao enviar o relatório. Tente novamente.");
+    } catch {
+      setValidationError('Ocorreu um erro ao enviar o relatório. Tente novamente.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      const file = e.target.files[0];
+    const files = e.target.files;
+    if (!files?.length) return;
+    Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImages([...images, reader.result as string]);
+        setImages((prev) => [...prev, reader.result as string]);
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  const removeImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
-  };
-
-  // Função para converter coordenadas decimais para formato DMS (graus, minutos, segundos)
-  const convertToDMS = (coordinate, isLatitude) => {
-    const absolute = Math.abs(coordinate);
-    const degrees = Math.floor(absolute);
-    const minutesNotTruncated = (absolute - degrees) * 60;
-    const minutes = Math.floor(minutesNotTruncated);
-    const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(1);
-    
-    const direction = isLatitude 
-      ? (coordinate >= 0 ? "N" : "S") 
-      : (coordinate >= 0 ? "E" : "W");
-    
-    return `${degrees}°${minutes}'${seconds}"${direction}`;
+    });
+    e.target.value = '';
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-[425px] p-0 overflow-hidden rounded-lg border-0 bg-[#121212] shadow-2xl">
-        <DialogHeader className="p-6 pb-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
-          <DialogTitle className="text-lg font-medium text-white">Reportar Problema</DialogTitle>
+      <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden rounded-2xl border-0 bg-[#121212] shadow-2xl">
+        <DialogHeader className="p-5 pb-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
+          <DialogTitle className="text-lg font-semibold text-white">Reportar Problema</DialogTitle>
           <DialogDescription className="text-gray-400 text-sm">
-            Compartilhe informações sobre esta localização.
-            {!location && <div className="mt-2 text-yellow-400 text-xs">Clique no mapa para definir uma localização.</div>}
+            {!location ? (
+              <span className="text-yellow-400">Clique no mapa para definir uma localização.</span>
+            ) : isLoadingAddress ? (
+              <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Buscando endereço...</span>
+            ) : address ? (
+              <span className="flex items-center gap-1.5"><MapPin size={13} /> {address}</span>
+            ) : (
+              <span>{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-6 space-y-5 bg-[#121212]">
+        <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
           {validationError && (
-            <div className="bg-red-900/20 border border-red-900 p-3 rounded-md text-red-400 text-sm">
-              {validationError}
-            </div>
+            <div className="bg-red-900/20 border border-red-900/50 p-3 rounded-lg text-red-400 text-sm">{validationError}</div>
           )}
-          
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <Label className="text-sm font-medium text-white">Tipo de problema</Label>
-              <div className="text-xs text-gray-400">
-                {!location ? (
-                  <span className="text-yellow-400">Localização não definida</span>
-                ) : isLoadingAddress ? (
-                  <span className="flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Buscando endereço...</span>
-                ) : address ? (
-                  <span className="flex items-center gap-1"><MapPin size={12} /> {address}</span>
-                ) : (
-                  <>{convertToDMS(location.lat, true)}, {convertToDMS(location.lng, false)}</>
-                )}
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <div onClick={() => setType('infraestrutura')} className={cn(
-                "flex items-center rounded-md border p-3 cursor-pointer transition-colors",
-                type === 'infraestrutura' 
-                  ? "bg-[#1a1a1a] border-[#45a0f8]" 
-                  : "border-[#2a2a2a] hover:border-[#45a0f8]/50 bg-[#1e1e1e]"
-              )}>
-                <div className="h-8 w-8 mr-3 rounded-full bg-blue-500/10 flex items-center justify-center">
-                  <BarChart3 className="h-4 w-4 text-blue-500" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-white">Infraestrutura</div>
-                  <div className="text-xs text-gray-400">Problemas de estrutura urbana</div>
-                </div>
-              </div>
 
-              <div onClick={() => setType('crime')} className={cn(
-                "flex items-center rounded-md border p-3 cursor-pointer transition-colors",
-                type === 'crime' 
-                  ? "bg-[#1a1a1a] border-[#f43f5e]" 
-                  : "border-[#2a2a2a] hover:border-[#f43f5e]/50 bg-[#1e1e1e]"
-              )}>
-                <div className="h-8 w-8 mr-3 rounded-full bg-red-500/10 flex items-center justify-center">
-                  <AlertCircle className="h-4 w-4 text-red-500" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-white">Crime</div>
-                  <div className="text-xs text-gray-400">Ocorrências de segurança</div>
-                </div>
-              </div>
+          {/* Type selector */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-white">Tipo de problema</Label>
+            <div className="grid grid-cols-2 gap-3">
+              {TYPE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setType(opt.value)}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-xl border transition-all text-left',
+                    type === opt.value ? opt.activeClass : 'border-[#2a2a2a] bg-[#1e1e1e] hover:border-[#444]',
+                  )}
+                >
+                  <span className={cn('transition-colors', type === opt.value ? 'text-white' : 'text-gray-400')}>{opt.icon}</span>
+                  <div>
+                    <span className={cn('text-sm font-medium block', type === opt.value ? 'text-white' : 'text-gray-400')}>{opt.label}</span>
+                    <span className="text-[11px] text-gray-500">{opt.desc}</span>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
 
+          {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="description" className="text-sm font-medium text-white">Descrição</Label>
-            <Textarea 
-              id="description" 
+            <Textarea
+              id="description"
               placeholder="Descreva o problema ou situação..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="min-h-[100px] resize-none bg-[#1e1e1e] border-[#2a2a2a] focus:border-white focus:ring-0 text-white placeholder-gray-500"
+              className="min-h-[100px] resize-none bg-[#1e1e1e] border-[#2a2a2a] focus:border-white focus:ring-0 text-white placeholder-gray-500 rounded-xl"
             />
           </div>
 
+          {/* Images */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-white">Fotos</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {images.map((img, index) => (
-                <div key={index} className="relative aspect-square rounded-md overflow-hidden border border-[#2a2a2a] bg-[#252525]">
-                  <img src={img} alt={`Foto ${index + 1}`} className="w-full h-full object-cover" />
-                  <button 
-                    onClick={() => removeImage(index)}
-                    className="absolute top-1 right-1 p-1.5 bg-[#121212]/80 rounded-full hover:bg-[#333333]"
+            <Label className="text-sm font-medium text-white">Fotos {images.length > 0 && `(${images.length})`}</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {images.map((img, i) => (
+                <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-[#2a2a2a] bg-[#252525] group">
+                  <img src={img} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="absolute top-1 right-1 p-1 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                   >
-                    <X size={14} className="text-gray-400" />
+                    <X size={12} className="text-white" />
                   </button>
                 </div>
               ))}
-              <label className="flex flex-col items-center justify-center aspect-square rounded-md border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e]">
-                <ImageIcon size={20} className="mb-1 text-gray-400" />
-                <span className="text-xs text-gray-400">Adicionar</span>
+              <label className="flex flex-col items-center justify-center aspect-square rounded-lg border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors">
+                <ImageIcon size={18} className="text-gray-500 mb-1" />
+                <span className="text-[10px] text-gray-500">Adicionar</span>
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
               </label>
             </div>
           </div>
         </div>
 
-        <DialogFooter className="p-6 pt-2 border-t border-[#2a2a2a] flex justify-end bg-[#1a1a1a]">
-          <Button 
-            variant="outline" 
-            onClick={handleClose} 
-            className="border-[#2a2a2a] bg-[#252525] text-white hover:bg-[#333333]"
-          >
+        <DialogFooter className="p-5 pt-3 border-t border-[#2a2a2a] flex justify-end gap-2 bg-[#1a1a1a]">
+          <Button variant="outline" onClick={handleClose} className="border-[#2a2a2a] bg-[#252525] text-white hover:bg-[#333]">
             Cancelar
           </Button>
-          <Button 
-            onClick={handleSubmit} 
+          <Button
+            onClick={handleSubmit}
             disabled={isSubmitting || !description || !location}
-            className="bg-white text-black hover:bg-white/90 ml-2"
-            title={!location ? "Clique no mapa para definir uma localização" : !description ? "Adicione uma descrição" : ""}
+            className="bg-white text-black hover:bg-white/90 font-medium"
           >
-            {isSubmitting ? (
-              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            ) : (
-              "Enviar Relatório"
-            )}
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Enviar'}
           </Button>
         </DialogFooter>
       </DialogContent>

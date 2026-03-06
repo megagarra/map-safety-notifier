@@ -6,9 +6,9 @@ const STORAGE_KEY = 'map-safety-pins';
 const defaultPins: Pin[] = [
   {
     id: uuidv4(),
-    type: 'flood',
+    type: 'infraestrutura',
     location: { lat: -23.3285, lng: -46.7270 },
-    description: 'Alagamento na Av. Dr. Mário Moura após forte chuva',
+    description: 'Alagamento na Av. Dr. Mário Moura após forte chuva, bueiro entupido',
     images: [],
     reportedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
     address: 'Av. Dr. Mário Moura, Franco da Rocha',
@@ -20,9 +20,9 @@ const defaultPins: Pin[] = [
   },
   {
     id: uuidv4(),
-    type: 'pothole',
+    type: 'infraestrutura',
     location: { lat: -23.3614, lng: -46.7407 },
-    description: 'Buraco grande na pista, risco de acidente',
+    description: 'Buraco grande na pista, risco de acidente para veículos e pedestres',
     images: [],
     reportedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
     address: 'Av. Brasil, Caieiras',
@@ -34,7 +34,7 @@ const defaultPins: Pin[] = [
   },
   {
     id: uuidv4(),
-    type: 'robbery',
+    type: 'crime',
     location: { lat: -23.2816, lng: -46.7450 },
     description: 'Assalto a pedestres frequente nesta área à noite',
     images: [],
@@ -48,9 +48,9 @@ const defaultPins: Pin[] = [
   },
   {
     id: uuidv4(),
-    type: 'passable',
+    type: 'infraestrutura',
     location: { lat: -23.3186, lng: -46.5872 },
-    description: 'Via com obras na estrada, transitável com cautela',
+    description: 'Via com obras na estrada, poste caído bloqueando faixa',
     images: [],
     reportedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
     address: 'Estrada de Santa Inês, Mairiporã',

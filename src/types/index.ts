@@ -1,5 +1,5 @@
 
-export type PinType = 'flood' | 'pothole' | 'passable' | 'robbery' | 'infraestrutura' | 'crime' | 'security' | 'client';
+export type PinType = 'infraestrutura' | 'crime';
 
 export type PinStatus = 'reported' | 'acknowledged' | 'in_progress' | 'resolved';
 
