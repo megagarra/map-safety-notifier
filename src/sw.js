@@ -11,8 +11,9 @@ precacheAndRoute(self.__WB_MANIFEST);
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/favicon.ico',
-  '/manifest.json'
+  '/manifest.json',
+  '/pwa-192x192.png',
+  '/pwa-512x512.png'
 ];
 
 // Padrão para reconhecer URLs de tiles do mapa (CARTO, OSM, etc.)

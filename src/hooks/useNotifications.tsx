@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { urlBase64ToUint8Array } from '@/lib/helpers';
 import { toast } from '@/components/ui/use-toast';
+import { ToastAction } from '@/components/ui/toast';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -59,14 +60,18 @@ export function useNotifications() {
             if (Notification.permission === 'default') {
                 toast({
                     title: "🔔 Ativar notificações?",
-                    description: "Clique aqui para receber alertas de novos riscos próximos a você.",
-                    onClick: () => {
-                        Notification.requestPermission().then(permission => {
-                            if (permission === 'granted') {
-                                subscribeUser();
-                            }
-                        });
-                    }
+                    description: "Receba alertas de novos riscos próximos a você.",
+                    action: (
+                        <ToastAction altText="Ativar" onClick={() => {
+                            Notification.requestPermission().then(permission => {
+                                if (permission === 'granted') {
+                                    subscribeUser();
+                                }
+                            });
+                        }}>
+                            Ativar
+                        </ToastAction>
+                    ),
                 });
             } else if (Notification.permission === 'granted') {
                 // Se já tem permissão, tenta garantir que a inscrição está atualizada no backend
