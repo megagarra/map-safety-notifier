@@ -125,8 +125,8 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden rounded-2xl border-0 bg-[#121212] shadow-2xl">
-        <DialogHeader className="p-5 pb-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
+      <DialogContent className="w-[95vw] sm:max-w-[480px] sm:w-full p-0 overflow-hidden rounded-2xl border-0 bg-[#121212] shadow-2xl">
+        <DialogHeader className="p-4 sm:p-5 pb-3 sm:pb-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
           <DialogTitle className="text-lg font-semibold text-white">Reportar Problema</DialogTitle>
           <DialogDescription className="text-gray-400 text-sm">
             {!location ? (
@@ -141,7 +141,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+        <div className="p-4 sm:p-5 space-y-4 sm:space-y-5 max-h-[70vh] sm:max-h-[60vh] overflow-y-auto custom-scrollbar">
           {validationError && (
             <div className="bg-red-900/20 border border-red-900/50 p-3 rounded-lg text-red-400 text-sm">{validationError}</div>
           )}
@@ -177,7 +177,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
               placeholder="Descreva o problema ou situação..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="min-h-[100px] resize-none bg-[#1e1e1e] border-[#2a2a2a] focus:border-white focus:ring-0 text-white placeholder-gray-500 rounded-xl"
+              className="min-h-[100px] resize-none bg-[#1e1e1e] border-[#2a2a2a] focus:border-white focus:ring-0 text-white placeholder-gray-500 rounded-xl text-[16px] sm:text-sm"
             />
           </div>
 
@@ -190,14 +190,14 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                   <button
                     type="button"
                     onClick={() => setPreviewImg(img)}
-                    className="flex-1 min-w-0 relative aspect-video rounded-lg overflow-hidden border border-[#2a2a2a] bg-[#252525] hover:border-[#444] transition-colors cursor-pointer"
+                    className="flex-1 min-w-0 relative h-28 sm:h-32 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#252525] hover:border-[#444] transition-colors cursor-pointer group"
                   >
                     <img
                       src={img}
                       alt={`Foto ${i + 1}`}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   </button>
                   <button
@@ -209,9 +209,11 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                   </button>
                 </div>
               ))}
-              <label className="flex flex-col items-center justify-center aspect-video rounded-lg border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors">
-                <ImageIcon size={18} className="text-gray-500 mb-1" />
-                <span className="text-[10px] text-gray-500">Adicionar foto</span>
+              <label className="flex flex-col items-center justify-center h-24 sm:h-28 rounded-xl border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors group">
+                <div className="flex flex-col items-center text-gray-500 group-hover:text-gray-400 transition-colors">
+                  <ImageIcon size={20} className="mb-2" />
+                  <span className="text-xs font-medium">Adicionar foto</span>
+                </div>
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
               </label>
             </div>
@@ -238,7 +240,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
           </div>
         </div>
 
-        <DialogFooter className="p-5 pt-3 border-t border-[#2a2a2a] flex justify-end gap-2 bg-[#1a1a1a]">
+        <DialogFooter className="p-4 sm:p-5 pt-3 border-t border-[#2a2a2a] flex justify-end gap-2 bg-[#1a1a1a]">
           <Button variant="outline" onClick={handleClose} className="border-[#2a2a2a] bg-[#252525] text-white hover:bg-[#333]">
             Cancelar
           </Button>

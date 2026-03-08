@@ -48,18 +48,18 @@ export function ImageGallery({ images, altPrefix = 'Foto', layout = 'separate', 
                 key={index}
                 type="button"
                 onClick={() => openLightbox(index)}
-                className="relative w-full aspect-video rounded-lg overflow-hidden bg-[#252525] border border-[#2a2a2a] hover:border-[#444] transition-colors cursor-pointer group"
+                className="relative flex w-full h-48 sm:h-56 rounded-xl overflow-hidden bg-[#252525] border border-[#2a2a2a] hover:border-[#444] transition-all cursor-pointer group"
               >
                 <img
                   src={src}
                   alt={`${altPrefix} ${index + 1}`}
                   loading="lazy"
                   decoding="async"
-                  className="w-full h-full object-contain"
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                  <span className="opacity-0 group-hover:opacity-100 text-white text-sm font-medium transition-opacity">
-                    Clique para ampliar
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-4 z-10">
+                  <span className="text-white text-xs font-medium px-4 py-1.5 bg-black/40 backdrop-blur-md rounded-full shadow-lg border border-white/10">
+                    Ampliar foto
                   </span>
                 </div>
               </button>
@@ -72,15 +72,16 @@ export function ImageGallery({ images, altPrefix = 'Foto', layout = 'separate', 
                 key={index}
                 type="button"
                 onClick={() => openLightbox(index)}
-                className="relative aspect-square rounded-lg overflow-hidden bg-[#252525] border border-[#2a2a2a] hover:border-[#444] transition-colors cursor-pointer"
+                className="relative aspect-square rounded-xl overflow-hidden bg-[#252525] border border-[#2a2a2a] hover:border-[#444] transition-all cursor-pointer group"
               >
                 <img
                   src={src}
                   alt={`${altPrefix} ${index + 1}`}
                   loading="lazy"
                   decoding="async"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
               </button>
             ))}
           </div>

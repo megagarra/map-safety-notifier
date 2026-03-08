@@ -6,6 +6,7 @@ import ReportModal from '@/components/ReportModal';
 import { Pin, PinType, CreatePinInput } from '@/types';
 import { toast } from '@/components/ui/use-toast';
 import * as PinsController from '@/controllers/pins';
+import { useNotifications } from '@/hooks/useNotifications';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
 
@@ -14,15 +15,11 @@ export default function HomePage() {
 
   const { data: pins = [], isLoading: isLoadingPins, isError } = useQuery({
     queryKey: ['pins'],
-    queryFn: () => PinsController.fetchPins(50),
+    queryFn: () => PinsController.fetchPins(100), // Aumentado para 100 para pegar mais alertas recentes
     staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true, // Importante para notificações com o app minimizado
   });
-
-  useEffect(() => {
-    if (isError) {
-      toast({ title: 'Erro ao carregar pins', description: 'Não foi possível carregar os dados do mapa', variant: 'destructive' });
-    }
-  }, [isError]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [center, setCenter] = useState<[number, number] | null>(null);
@@ -30,6 +27,15 @@ export default function HomePage() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+
+  // Ativa as notificações push
+  useNotifications();
+
+  useEffect(() => {
+    if (isError) {
+      toast({ title: 'Erro ao carregar pins', description: 'Não foi possível carregar os dados do mapa', variant: 'destructive' });
+    }
+  }, [isError]);
 
   const urlTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();

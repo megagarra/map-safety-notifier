@@ -27,7 +27,7 @@ const PRELOAD_TILES = [
   'https://a.basemaps.cartocdn.com/dark_all/12/1491/2272.png',
   'https://a.basemaps.cartocdn.com/dark_all/12/1492/2272.png',
   'https://a.basemaps.cartocdn.com/dark_all/12/1493/2272.png',
-  
+
   // Adicione variações para b. e c. subdomains
   'https://b.basemaps.cartocdn.com/dark_all/12/1491/2270.png',
   'https://b.basemaps.cartocdn.com/dark_all/12/1492/2270.png',
@@ -38,7 +38,7 @@ const PRELOAD_TILES = [
   'https://b.basemaps.cartocdn.com/dark_all/12/1491/2272.png',
   'https://b.basemaps.cartocdn.com/dark_all/12/1492/2272.png',
   'https://b.basemaps.cartocdn.com/dark_all/12/1493/2272.png',
-  
+
   'https://c.basemaps.cartocdn.com/dark_all/12/1491/2270.png',
   'https://c.basemaps.cartocdn.com/dark_all/12/1492/2270.png',
   'https://c.basemaps.cartocdn.com/dark_all/12/1493/2270.png',
@@ -79,14 +79,14 @@ const preloadMapTiles = async () => {
       }
     }
   });
-  
+
   return Promise.all(promises);
 };
 
 // Instalação do service worker
 self.addEventListener('install', event => {
   console.log('[Service Worker] Installing Service Worker...');
-  
+
   event.waitUntil(
     Promise.all([
       // Cachear recursos estáticos
@@ -100,14 +100,14 @@ self.addEventListener('install', event => {
         console.log('[Service Worker] Preloaded map tiles');
       })
     ])
-    .then(() => self.skipWaiting()) // Ativar imediatamente
+      .then(() => self.skipWaiting()) // Ativar imediatamente
   );
 });
 
 // Ativação do service worker
 self.addEventListener('activate', event => {
   console.log('[Service Worker] Activating Service Worker...');
-  
+
   event.waitUntil(
     // Limpar caches antigos
     caches.keys()
@@ -131,10 +131,10 @@ const isTileUrl = (url) => {
 // Função avançada para gerenciar o cache de tiles
 const handleTileRequest = async (request) => {
   const cache = await caches.open(TILE_CACHE_NAME);
-  
+
   // Verificar se temos este tile em cache
   const cachedResponse = await cache.match(request);
-  
+
   // Se temos resposta em cache, retorná-la imediatamente
   if (cachedResponse) {
     // Ainda assim, atualiza o cache em segundo plano para próxima visita
@@ -147,28 +147,28 @@ const handleTileRequest = async (request) => {
       .catch(() => {
         // Falha silenciosa para atualizações em segundo plano
       });
-    
+
     return cachedResponse;
   }
-  
+
   // Se não temos em cache, busca da rede
   try {
     const networkResponse = await fetch(request);
-    
+
     // Se a resposta for válida, armazena no cache
     if (networkResponse.ok) {
       // Clone a resposta antes de armazenar no cache
       await cache.put(request, networkResponse.clone());
-      
+
       // Limitar o tamanho do cache periodicamente
       limitCacheSize(TILE_CACHE_NAME, 500);
     }
-    
+
     return networkResponse;
   } catch (error) {
     // Sem conexão, sem cache... não há muito o que fazer
     console.log('[Service Worker] Network request failed for tile');
-    
+
     // Retornar uma imagem transparente como fallback para evitar erros visuais
     // Isso criará um espaço vazio ao invés de um erro (melhor UX)
     return new Response(
@@ -178,14 +178,77 @@ const handleTileRequest = async (request) => {
   }
 };
 
+// Listener para eventos de Push
+self.addEventListener('push', event => {
+  console.log('[Service Worker] Push Received.');
+  let data = {};
+
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = { title: 'Novo Alerta', body: event.data.text() };
+    }
+  }
+
+  const title = data.title || 'Novo Alerta de Segurança';
+  const options = {
+    body: data.body || 'Um novo evento foi reportado no mapa.',
+    icon: '/pwa-192x192.png',
+    badge: '/favicon.ico',
+    data: data, // Armazena os dados para uso no clique
+    tag: data.pin_id || 'general-alert',
+    renotify: true,
+    vibrate: [100, 50, 100],
+    actions: [
+      { action: 'open', title: 'Ver no Mapa' }
+    ]
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Listener para clique na notificação
+self.addEventListener('notificationclick', event => {
+  console.log('[Service Worker] Notification click Received.');
+  const notification = event.notification;
+  const data = notification.data;
+
+  notification.close();
+
+  // URL para abrir (pode incluir lat/lng se disponível)
+  let urlToOpen = '/';
+  if (data && data.lat && data.lng) {
+    urlToOpen = `/?lat=${data.lat}&lng=${data.lng}&z=15`;
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then(windowClients => {
+        // Se já tiver uma aba aberta, foca nela e navega
+        for (let i = 0; i < windowClients.length; i++) {
+          const client = windowClients[i];
+          if (client.url.includes(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'NAVIGATE', url: urlToOpen });
+            return client.focus();
+          }
+        }
+        // Se não tiver, abre uma nova
+        if (clients.openWindow) {
+          return clients.openWindow(urlToOpen);
+        }
+      })
+  );
+});
+
 // Interceptar requisições
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  
+
   // Estratégia para tiles do mapa: Cache primeiro com atualização em background
   if (isTileUrl(event.request.url)) {
     event.respondWith(handleTileRequest(event.request));
-  } 
+  }
   // Estratégia para recursos estáticos: Cache First
   else if (url.origin === self.location.origin) {
     event.respondWith(

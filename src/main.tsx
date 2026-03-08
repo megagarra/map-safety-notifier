@@ -3,8 +3,10 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
-// Registrar o Service Worker para cache de tiles do mapa
-if ('serviceWorker' in navigator) {
+// Registrar o Service Worker para cache de tiles do mapa (Apenas no Navegador, não no Electron)
+const isElectron = navigator.userAgent.toLowerCase().includes('electron');
+
+if ('serviceWorker' in navigator && !isElectron) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {

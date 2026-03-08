@@ -145,6 +145,14 @@ function MapCenterUpdater({ center, zoom }: { center: [number, number]; zoom: nu
   return null;
 }
 
+function MapInstanceSetter({ setMapInstance }: { setMapInstance: (map: L.Map) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    setMapInstance(map);
+  }, [map, setMapInstance]);
+  return null;
+}
+
 // --- Pin marker rendering ---
 
 function createPinHTML(pin: Pin, currentZoom: number) {
@@ -252,7 +260,7 @@ function PinDetailsModal({ pin, onClose, onVote, isMobile }: { pin: Pin; onClose
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
-        className={cn("relative w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-w-full mx-3")}
+        className={cn("relative w-[95vw] sm:w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-h-[80vh] mx-auto")}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -350,7 +358,7 @@ function UserLocationDot() {
     if (!('geolocation' in navigator)) return;
     const id = navigator.geolocation.watchPosition(
       ({ coords }) => setPos([coords.latitude, coords.longitude]),
-      () => {},
+      () => { },
       { enableHighAccuracy: true, maximumAge: 5000 },
     );
     return () => navigator.geolocation.clearWatch(id);
@@ -459,16 +467,14 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
         zoomAnimation
         markerZoomAnimation
         fadeAnimation
-        whenReady={(evt) => {
+        whenReady={() => {
           setMapLoaded(true);
-          setMapInstance(evt.target);
-          evt.target.invalidateSize(true);
-          evt.target.setView(effectiveCenter, effectiveZoom, { animate: false });
           setTimeout(() => {
             document.querySelector('.map-loading-placeholder')?.remove();
           }, 300);
         }}
       >
+        <MapInstanceSetter setMapInstance={setMapInstance} />
         <TileLayer
           url={tileUrl}
           maxZoom={19}
@@ -490,7 +496,7 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
         <PinDetailsModal pin={selectedPin} onClose={() => onPinClick(null)} onVote={onVote} isMobile={isMobile} />
       )}
 
-      {/* Theme toggle — claro / médio / escuro */}
+      {/* Theme toggle */}
       <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
         <button
           onClick={cycleMapTheme}
@@ -501,8 +507,8 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
         </button>
       </div>
 
-      {/* Location button — above zoom: mobile zoom is at bottom-24px, height 88px (2×44); desktop zoom is at bottom-100px, height 80px (2×40) */}
-      <div className="absolute bottom-[124px] md:bottom-[196px] right-[22px] md:right-[24px] z-[400]">
+      {/* Location button — automatically adjusts for mobile and desktop zooms */}
+      <div className="absolute bottom-[130px] md:bottom-[196px] right-[16px] md:right-[24px] z-[400]">
         <button
           onClick={() => {
             if (!("geolocation" in navigator) || !mapInstance) return;
@@ -511,7 +517,7 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
               () => {
                 navigator.geolocation.getCurrentPosition(
                   (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
-                  () => {},
+                  () => { },
                   { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
                 );
               },

@@ -1,7 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
- 
+
 @layer base {
   :root {
     --background: #121212;
@@ -31,7 +31,7 @@
     --franco-altitude: 728m;
     --franco-area: 134.11km²;
   }
- 
+
   .dark {
     --background: 224 71.4% 4.1%;
     --foreground: 210 20% 98%;
@@ -54,11 +54,12 @@
     --ring: 263.4 70% 50.4%;
   }
 }
- 
+
 @layer base {
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     background-color: var(--background);
@@ -91,16 +92,19 @@
 /* Fix for mobile devices */
 @media (max-width: 767px) {
   .h-full {
-    height: 100% !important;
+    height: 100dvh !important;
   }
-  
-  html, body, #root, .app {
-    height: 100% !important;
+
+  html,
+  body,
+  #root,
+  .app {
+    height: 100dvh !important;
     overflow: hidden;
   }
-  
+
   .leaflet-container {
-    height: 100% !important;
+    height: 100dvh !important;
     position: absolute !important;
     top: 0;
     left: 0;
@@ -179,10 +183,12 @@
     transform: translate(-50%, -50%) scale(1);
     opacity: 0.7;
   }
+
   70% {
     transform: translate(-50%, -50%) scale(2);
     opacity: 0;
   }
+
   100% {
     transform: translate(-50%, -50%) scale(2);
     opacity: 0;
@@ -194,6 +200,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -222,20 +229,53 @@
 }
 
 /* Classes de cores para os pins */
-.bg-flood { background-color: var(--flood); }
-.bg-pothole { background-color: var(--pothole); }
-.bg-passable { background-color: var(--passable); }
-.bg-robbery { background-color: var(--robbery); }
+.bg-flood {
+  background-color: var(--flood);
+}
 
-.text-flood { color: var(--flood); }
-.text-pothole { color: var(--pothole); }
-.text-passable { color: var(--passable); }
-.text-robbery { color: var(--robbery); }
+.bg-pothole {
+  background-color: var(--pothole);
+}
 
-.border-flood { border-color: var(--flood); }
-.border-pothole { border-color: var(--pothole); }
-.border-passable { border-color: var(--passable); }
-.border-robbery { border-color: var(--robbery); }
+.bg-passable {
+  background-color: var(--passable);
+}
+
+.bg-robbery {
+  background-color: var(--robbery);
+}
+
+.text-flood {
+  color: var(--flood);
+}
+
+.text-pothole {
+  color: var(--pothole);
+}
+
+.text-passable {
+  color: var(--passable);
+}
+
+.text-robbery {
+  color: var(--robbery);
+}
+
+.border-flood {
+  border-color: var(--flood);
+}
+
+.border-pothole {
+  border-color: var(--pothole);
+}
+
+.border-passable {
+  border-color: var(--passable);
+}
+
+.border-robbery {
+  border-color: var(--robbery);
+}
 
 /* Adicione isso ao seu CSS para esconder a barra de filtros */
 .filter-bar-container {
@@ -287,6 +327,7 @@
   overflow: hidden;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
+
 /* Certifique-se de que estas classes estejam no seu CSS */
 .crime-pin {
   background-color: #1a1a1a;
@@ -312,9 +353,11 @@
   0% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
   }
+
   70% {
     box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
   }
@@ -324,9 +367,11 @@
   0% {
     box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4);
   }
+
   70% {
     box-shadow: 0 0 0 10px rgba(234, 179, 8, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(234, 179, 8, 0);
   }
@@ -371,9 +416,11 @@
   0% {
     box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.1);
   }
+
   70% {
     box-shadow: 0 0 0 5px rgba(255, 255, 255, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
   }
@@ -425,9 +472,11 @@
   0% {
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
   }
+
   70% {
     box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
   }
@@ -523,9 +572,11 @@
   0% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
   }
+
   70% {
     box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
   }
@@ -535,9 +586,11 @@
   0% {
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
   }
+
   70% {
     box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
   }
@@ -615,10 +668,12 @@
     transform: translate(-50%, -50%) scale(1);
     opacity: 0.5;
   }
+
   70% {
     transform: translate(-50%, -50%) scale(1.5);
     opacity: 0.2;
   }
+
   100% {
     transform: translate(-50%, -50%) scale(1);
     opacity: 0.5;
@@ -662,8 +717,13 @@
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -683,11 +743,17 @@
 /* Controles de zoom — estilo dark */
 .leaflet-control-zoom {
   border: none !important;
-  margin: 12px !important;
-  margin-bottom: 100px !important;
+  margin: 16px !important;
+  margin-bottom: calc(30px + env(safe-area-inset-bottom)) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
   border-radius: 10px !important;
   overflow: visible !important;
+}
+
+@media (min-width: 768px) {
+  .leaflet-control-zoom {
+    margin-bottom: 100px !important;
+  }
 }
 
 .leaflet-control-zoom a {
@@ -764,7 +830,10 @@
 
 /* Mobile */
 @media (max-width: 767px) {
-  body, html, #root {
+
+  body,
+  html,
+  #root {
     height: 100dvh !important;
     width: 100vw !important;
     overflow: hidden !important;
@@ -772,7 +841,8 @@
     inset: 0;
   }
 
-  .app-container, .h-full {
+  .app-container,
+  .h-full {
     height: 100% !important;
     width: 100% !important;
     position: absolute !important;
@@ -794,6 +864,7 @@
     width: 100% !important;
     z-index: 5;
     overflow: hidden !important;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .leaflet-control-container {
@@ -809,7 +880,7 @@
   }
 
   .leaflet-control-zoom {
-    margin-bottom: 24px !important;
+    margin-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
     margin-right: 10px !important;
     display: flex !important;
     flex-direction: column !important;
@@ -827,4 +898,3 @@
     transition-duration: 0.1s !important;
   }
 }
-
