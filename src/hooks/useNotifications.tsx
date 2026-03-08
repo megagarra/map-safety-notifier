@@ -3,7 +3,7 @@ import { urlBase64ToUint8Array } from '@/lib/helpers';
 import { toast } from '@/components/ui/use-toast';
 import { ToastAction } from '@/components/ui/toast';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 export function useNotifications() {
     const subscribeUser = useCallback(async () => {
