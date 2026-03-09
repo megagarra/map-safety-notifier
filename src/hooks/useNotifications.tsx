@@ -16,7 +16,7 @@ export function useNotifications() {
             const registration = await navigator.serviceWorker.ready;
 
             // 1. Pegar a chave pública do backendaaaaa
-            const response = await fetch(`${API_URL}api/notifications/vapid-public-key`);
+            const response = await fetch(`${API_URL}/api/notifications/vapid-public-key`);
             const { public_key } = await response.json();
 
             if (!public_key) {
