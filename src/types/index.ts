@@ -38,3 +38,46 @@ export interface CreatePinInput {
   images: string[];
   address?: string;
 }
+
+export interface UpdatePinInput {
+  status?: PinStatus;
+  description?: string;
+  address?: string | null;
+  comment?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface MapBounds {
+  lat_min: number;
+  lat_max: number;
+  lng_min: number;
+  lng_max: number;
+}
+
+export type UserRole = 'admin' | 'moderator';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+}
+
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export interface PinStats {
+  total: number;
+  unresolved: number;
+  averagePersistenceDays: number;
+  byStatus: Record<PinStatus, number>;
+  dayRanges: { label: string; count: number }[];
+}

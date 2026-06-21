@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { resolveImageUrl } from '@/lib/media';
 
 interface ImageGalleryProps {
   images: string[];
@@ -37,13 +38,15 @@ export function ImageGallery({ images, altPrefix = 'Foto', layout = 'separate', 
 
   if (!images?.length) return null;
 
+  const resolvedImages = images.map(resolveImageUrl);
+
   return (
     <>
       <div className={cn('space-y-3', className)}>
         <h4 className="text-sm font-medium text-white">Imagens ({images.length})</h4>
         {layout === 'separate' ? (
           <div className="flex flex-col gap-3">
-            {images.map((src, index) => (
+            {resolvedImages.map((src, index) => (
               <button
                 key={index}
                 type="button"
@@ -67,7 +70,7 @@ export function ImageGallery({ images, altPrefix = 'Foto', layout = 'separate', 
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            {images.map((src, index) => (
+            {resolvedImages.map((src, index) => (
               <button
                 key={index}
                 type="button"
@@ -126,7 +129,7 @@ export function ImageGallery({ images, altPrefix = 'Foto', layout = 'separate', 
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={images[lightboxIndex]}
+              src={resolvedImages[lightboxIndex]}
               alt={`${altPrefix} ${lightboxIndex + 1}`}
               className="max-w-full max-h-[90vh] object-contain rounded-lg"
               onClick={(e) => e.stopPropagation()}

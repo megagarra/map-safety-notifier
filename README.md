@@ -118,8 +118,8 @@ src/
 ├── controllers/         # Lógica de negócio e acesso a dados
 │   └── pins.ts          # CRUD de pins (localStorage)
 ├── hooks/               # Custom React hooks
-│   ├── useMapData.tsx   # Dados do mapa (pins, votos)
-│   ├── useSecurityData.tsx  # Dados de segurança (mock)
+│   ├── useNotifications.tsx  # Push notifications
+│   ├── useAuth.ts         # Hook de autenticação
 │   ├── useMapCache.ts   # Cache de tiles do mapa
 │   └── use-mobile.tsx   # Detecção de dispositivo móvel
 ├── lib/                 # Utilitários
@@ -143,20 +143,36 @@ src/
 | Rota | Página | Descrição |
 |------|--------|-----------|
 | `/` | HomePage | Mapa interativo com pins |
-| `/login` | LoginPage | Tela de login |
-| `/signup` | SignupPage | Tela de cadastro |
-| `/dashboard` | DashboardPage | Painel de segurança |
+| `/login` | LoginPage | Login de moderadores/admins (JWT) |
+| `/admin/users` | AdminUsersPage | Cadastro de moderadores (somente admin) |
+
+## API e autenticação
+
+O frontend consome a API REST configurada em `VITE_API_URL` (`.env`).
+
+### Setup inicial (backend)
+
+Antes do primeiro login, crie o admin no backend:
+
+```bash
+python scripts/create_admin.py --email admin@example.com --password senha12345
+```
+
+Use esse email e senha em `#/login`.
+
+### Funcionalidades integradas
+
+- Listagem paginada de pins (`GET /api/pins` → `{ items, total, limit, offset }`)
+- Filtro por área visível do mapa (bbox: `lat_min`, `lat_max`, `lng_min`, `lng_max`)
+- Upload de imagens via `POST /api/images/upload` (paths `/uploads/...` no create)
+- JWT com refresh automático em rotas protegidas (PATCH/DELETE)
+- Moderação: alterar status e comentário no modal do pin
+- Exclusão de pin (somente `role: admin`)
+- Push notifications (novos alertas e atualizações de status)
 
 ## Dados
 
-Atualmente o projeto é 100% front-end. Os dados são armazenados no `localStorage` do navegador com pins mock iniciais localizados em São Paulo. O controller `src/controllers/pins.ts` implementa todas as operações CRUD localmente.
-
-### Credenciais de teste (mock)
-
-| Perfil | Email | Senha |
-|--------|-------|-------|
-| Cliente | `cliente@secureme.com` | `senha123` |
-| Segurança | `seguranca@secureme.com` | `senha123` |
+Pins e estatísticas vêm da API. Tokens JWT ficam no `localStorage` (`map-safety-access-token`, `map-safety-refresh-token`).
 
 ## Scripts Disponíveis
 

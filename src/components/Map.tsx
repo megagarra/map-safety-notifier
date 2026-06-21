@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Pin, PinType } from '@/types';
+import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
 import { MapContainer, TileLayer, Marker, CircleMarker, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -17,8 +17,22 @@ import {
   Loader2,
   Sun,
   Moon,
+  Trash2,
+  Save,
 } from 'lucide-react';
 import { ImageGallery } from './ImageGallery';
+import PinHistory from './PinHistory';
+import { useAuth } from '@/hooks/useAuth';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 declare module 'leaflet' {
   interface Map {
@@ -31,11 +45,14 @@ interface MapComponentProps {
   onPinClick: (pin: Pin | null) => void;
   onMapClick: (lat: number, lng: number) => void;
   onMapMove?: (center: [number, number], zoom: number) => void;
+  onBoundsChange?: (bounds: MapBounds) => void;
   selectedPinTypes: PinType[] | null;
   selectedPin: Pin | null;
   center: [number, number];
   zoom: number;
   onVote: (pinId: string) => void;
+  onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
+  onDeletePin?: (pinId: string) => Promise<void>;
 }
 
 const TILE_URLS = {
@@ -103,9 +120,36 @@ function getStatusClass(status: string) {
 
 // --- Map sub-components ---
 
-function MapEvents({ onMapClick, onMapMove }: { onMapClick: (lat: number, lng: number) => void; onMapMove?: (center: [number, number], zoom: number) => void }) {
+function MapEvents({
+  onMapClick,
+  onMapMove,
+  onBoundsChange,
+}: {
+  onMapClick: (lat: number, lng: number) => void;
+  onMapMove?: (center: [number, number], zoom: number) => void;
+  onBoundsChange?: (bounds: MapBounds) => void;
+}) {
   const map = useMap();
   const isUserInteraction = useRef(true);
+  const boundsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const emitBounds = () => {
+    if (!onBoundsChange) return;
+    const b = map.getBounds();
+    onBoundsChange({
+      lat_min: b.getSouth(),
+      lat_max: b.getNorth(),
+      lng_min: b.getWest(),
+      lng_max: b.getEast(),
+    });
+  };
+
+  useEffect(() => {
+    emitBounds();
+    return () => {
+      if (boundsTimer.current) clearTimeout(boundsTimer.current);
+    };
+  }, [map]);
 
   useMapEvents({
     click: (e) => onMapClick(e.latlng.lat, e.latlng.lng),
@@ -115,6 +159,8 @@ function MapEvents({ onMapClick, onMapMove }: { onMapClick: (lat: number, lng: n
         onMapMove([c.lat, c.lng], map.getZoom());
       }
       isUserInteraction.current = true;
+      if (boundsTimer.current) clearTimeout(boundsTimer.current);
+      boundsTimer.current = setTimeout(emitBounds, 400);
     },
     zoomend: () => {
       if (isUserInteraction.current && onMapMove) {
@@ -122,6 +168,8 @@ function MapEvents({ onMapClick, onMapMove }: { onMapClick: (lat: number, lng: n
         onMapMove([c.lat, c.lng], map.getZoom());
       }
       isUserInteraction.current = true;
+      if (boundsTimer.current) clearTimeout(boundsTimer.current);
+      boundsTimer.current = setTimeout(emitBounds, 400);
     },
   });
 
@@ -240,10 +288,42 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
 
 // --- Pin details modal ---
 
-function PinDetailsModal({ pin, onClose, onVote, isMobile }: { pin: Pin; onClose: () => void; onVote: (id: string) => void; isMobile: boolean }) {
+const STATUS_OPTIONS: { value: PinStatus; label: string }[] = [
+  { value: 'reported', label: 'Reportado' },
+  { value: 'acknowledged', label: 'Reconhecido' },
+  { value: 'in_progress', label: 'Em andamento' },
+  { value: 'resolved', label: 'Resolvido' },
+];
+
+function PinDetailsModal({
+  pin,
+  onClose,
+  onVote,
+  onUpdatePin,
+  onDeletePin,
+  isMobile,
+}: {
+  pin: Pin;
+  onClose: () => void;
+  onVote: (id: string) => void;
+  onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
+  onDeletePin?: (pinId: string) => Promise<void>;
+  isMobile: boolean;
+}) {
+  const { isModerator, isAdmin } = useAuth();
   const cfg = getPinConfig(pin.type);
   const [address, setAddress] = useState<string | null>(pin.address || null);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+  const [editStatus, setEditStatus] = useState<PinStatus>(pin.status);
+  const [comment, setComment] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  useEffect(() => {
+    setEditStatus(pin.status);
+    setComment('');
+  }, [pin.id, pin.status]);
 
   useEffect(() => {
     if (pin.address) {
@@ -257,95 +337,207 @@ function PinDetailsModal({ pin, onClose, onVote, isMobile }: { pin: Pin; onClose
     });
   }, [pin.id, pin.address, pin.location.lat, pin.location.lng]);
 
+  const handleSave = async () => {
+    if (!onUpdatePin) return;
+    setIsSaving(true);
+    try {
+      const updates: UpdatePinInput = { status: editStatus };
+      if (comment.trim()) updates.comment = comment.trim();
+      await onUpdatePin(pin.id, updates);
+      setComment('');
+    } catch {
+      /* toast handled in HomePage */
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDeletePin) return;
+    setIsDeleting(true);
+    try {
+      await onDeletePin(pin.id);
+      setShowDeleteDialog(false);
+    } catch {
+      /* toast handled in HomePage */
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className={cn("relative w-[95vw] sm:w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-h-[80vh] mx-auto")}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="sticky top-0 z-10 flex justify-between items-center p-4 border-b border-[#2a2a2a] bg-[#1a1a1a] rounded-t-2xl">
-          <div className="flex items-center gap-3">
-            <div className={cn("w-9 h-9 rounded-full flex items-center justify-center border-2", cfg.border, cfg.color)} style={{ background: '#1a1a1a' }}
-              dangerouslySetInnerHTML={{ __html: cfg.icon }}
-            />
-            <div>
-              <h3 className="text-base font-semibold text-white">{cfg.label}</h3>
-              <span className={cn("text-xs px-2 py-0.5 rounded-full", getStatusClass(pin.status))}>{getStatusLabel(pin.status)}</span>
-            </div>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-4">
-          {/* Address */}
-          <div className="flex items-start gap-2 text-sm">
-            <MapPin size={16} className="text-gray-500 mt-0.5 shrink-0" />
-            {isLoadingAddress ? (
-              <span className="text-gray-500 flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Buscando endereço...</span>
-            ) : address ? (
-              <span className="text-gray-300">{address}</span>
-            ) : (
-              <span className="text-gray-500">{pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}</span>
-            )}
-          </div>
-
-          {/* Description */}
-          <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-            <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>
-          </div>
-
-          {/* Timing */}
-          <div className="flex items-center gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1">
-              <Clock size={13} />
-              {pin.reportedAt ? formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR }) : 'Data desconhecida'}
-            </span>
-            {pin.persistenceDays !== undefined && pin.persistenceDays > 0 && (
-              <span className="flex items-center gap-1">
-                <AlertTriangle size={13} />
-                {pin.status === 'resolved' ? `Resolvido em ${pin.persistenceDays}d` : `Há ${pin.persistenceDays} dias`}
-              </span>
-            )}
-          </div>
-
-          {/* Images */}
-          {pin.images && pin.images.length > 0 && (
-            <div className="space-y-2">
-              <ImageGallery images={pin.images} altPrefix="Foto" layout="separate" />
-            </div>
-          )}
-
-          {/* Voting */}
-          <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users size={15} className="text-gray-500" />
-                <span className="text-sm text-gray-300"><span className="font-semibold text-white">{pin.votes || 0}</span> confirmaram</span>
+    <>
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div
+          className={cn("relative w-[95vw] sm:w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-h-[80vh] mx-auto")}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="sticky top-0 z-10 flex justify-between items-center p-4 border-b border-[#2a2a2a] bg-[#1a1a1a] rounded-t-2xl">
+            <div className="flex items-center gap-3">
+              <div className={cn("w-9 h-9 rounded-full flex items-center justify-center border-2", cfg.border, cfg.color)} style={{ background: '#1a1a1a' }}
+                dangerouslySetInnerHTML={{ __html: cfg.icon }}
+              />
+              <div>
+                <h3 className="text-base font-semibold text-white">{cfg.label}</h3>
+                <span className={cn("text-xs px-2 py-0.5 rounded-full", getStatusClass(pin.status))}>{getStatusLabel(pin.status)}</span>
               </div>
-              <button
-                onClick={() => onVote(pin.id)}
-                disabled={pin.userVoted}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                  pin.userVoted ? "bg-green-500/15 text-green-400" : "bg-white/10 text-white hover:bg-white/20"
-                )}
-              >
-                <ThumbsUp size={14} />
-                {pin.userVoted ? 'Confirmado' : 'Confirmar'}
-              </button>
             </div>
+            <button onClick={onClose} className="h-8 w-8 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
+              <X size={16} />
+            </button>
           </div>
 
-          {/* Coordinates */}
-          <div className="text-xs text-gray-500 text-center">
-            {pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}
+          <div className="p-4 space-y-4">
+            {/* Address */}
+            <div className="flex items-start gap-2 text-sm">
+              <MapPin size={16} className="text-gray-500 mt-0.5 shrink-0" />
+              {isLoadingAddress ? (
+                <span className="text-gray-500 flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Buscando endereço...</span>
+              ) : address ? (
+                <span className="text-gray-300">{address}</span>
+              ) : (
+                <span className="text-gray-500">{pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}</span>
+              )}
+            </div>
+
+            {/* Description */}
+            <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+              <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>
+            </div>
+
+            {/* Timing */}
+            <div className="flex items-center gap-4 text-xs text-gray-400">
+              <span className="flex items-center gap-1">
+                <Clock size={13} />
+                {pin.reportedAt ? formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR }) : 'Data desconhecida'}
+              </span>
+              {pin.persistenceDays !== undefined && pin.persistenceDays > 0 && (
+                <span className="flex items-center gap-1">
+                  <AlertTriangle size={13} />
+                  {pin.status === 'resolved' ? `Resolvido em ${pin.persistenceDays}d` : `Há ${pin.persistenceDays} dias`}
+                </span>
+              )}
+            </div>
+
+            {/* Images */}
+            {pin.images && pin.images.length > 0 && (
+              <div className="space-y-2">
+                <ImageGallery images={pin.images} altPrefix="Foto" layout="separate" />
+              </div>
+            )}
+
+            {/* History */}
+            {pin.history && pin.history.length > 0 && (
+              <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                <PinHistory history={pin.history} persistenceDays={pin.persistenceDays} />
+              </div>
+            )}
+
+            {/* Moderator controls */}
+            {isModerator && onUpdatePin && (
+              <div className="p-3 bg-[#1a1a1a] rounded-lg border border-blue-500/20 space-y-3">
+                <h4 className="text-sm font-medium text-blue-400">Moderação</h4>
+                <div className="space-y-2">
+                  <label className="text-xs text-gray-400">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as PinStatus)}
+                    className="w-full h-9 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm"
+                  >
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-gray-400">Comentário (opcional)</label>
+                  <Textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="Ex: Equipe verificou o local"
+                    className="min-h-[72px] resize-none bg-[#121212] border-[#2a2a2a] text-white text-sm"
+                    maxLength={2000}
+                  />
+                </div>
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  size="sm"
+                >
+                  {isSaving ? <Loader2 size={14} className="animate-spin mr-2" /> : <Save size={14} className="mr-2" />}
+                  Salvar alterações
+                </Button>
+              </div>
+            )}
+
+            {/* Voting */}
+            <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users size={15} className="text-gray-500" />
+                  <span className="text-sm text-gray-300"><span className="font-semibold text-white">{pin.votes || 0}</span> confirmaram</span>
+                </div>
+                <button
+                  onClick={() => onVote(pin.id)}
+                  disabled={pin.userVoted}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                    pin.userVoted ? "bg-green-500/15 text-green-400" : "bg-white/10 text-white hover:bg-white/20"
+                  )}
+                >
+                  <ThumbsUp size={14} />
+                  {pin.userVoted ? 'Confirmado' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+
+            {/* Admin delete */}
+            {isAdmin && onDeletePin && (
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteDialog(true)}
+                className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                size="sm"
+              >
+                <Trash2 size={14} className="mr-2" />
+                Excluir pin
+              </Button>
+            )}
+
+            {/* Coordinates */}
+            <div className="text-xs text-gray-500 text-center">
+              {pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
+          <DialogHeader>
+            <DialogTitle>Excluir alerta?</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Esta ação não pode ser desfeita. O pin será removido permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)} className="border-[#2a2a2a] text-white">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -384,7 +576,7 @@ const THEME_LABELS: Record<MapTheme, string> = {
   dark: 'Escuro',
 };
 
-const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinTypes, selectedPin, center, zoom, onVote }: MapComponentProps) => {
+const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom, onVote, onUpdatePin, onDeletePin }: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
@@ -484,7 +676,7 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
           keepBuffer={6}
           className="custom-tile-layer"
         />
-        <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} />
+        <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} onBoundsChange={onBoundsChange} />
         <UserLocationDot />
         <PinMarkers pins={filteredPins} onPinClick={onPinClick} />
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
@@ -493,7 +685,14 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, selectedPinType
 
       {/* Pin details */}
       {selectedPin && (
-        <PinDetailsModal pin={selectedPin} onClose={() => onPinClick(null)} onVote={onVote} isMobile={isMobile} />
+        <PinDetailsModal
+          pin={selectedPin}
+          onClose={() => onPinClick(null)}
+          onVote={onVote}
+          onUpdatePin={onUpdatePin}
+          onDeletePin={onDeletePin}
+          isMobile={isMobile}
+        />
       )}
 
       {/* Theme toggle */}

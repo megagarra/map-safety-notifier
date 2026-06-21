@@ -2,8 +2,8 @@ import { useEffect, useCallback } from 'react';
 import { urlBase64ToUint8Array } from '@/lib/helpers';
 import { toast } from '@/components/ui/use-toast';
 import { ToastAction } from '@/components/ui/toast';
-
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+import { apiUrl } from '@/lib/api';
+import { ApiError } from '@/lib/errors';
 
 export function useNotifications() {
     const subscribeUser = useCallback(async () => {
@@ -15,8 +15,10 @@ export function useNotifications() {
         try {
             const registration = await navigator.serviceWorker.ready;
 
-            // 1. Pegar a chave pública do backend
-            const response = await fetch(`${API_URL}/api/notifications/vapid-public-key`);
+            const response = await fetch(apiUrl('/api/notifications/vapid-public-key'));
+            if (!response.ok) {
+                throw new ApiError('Não foi possível obter a chave VAPID.', response.status);
+            }
             const { public_key } = await response.json();
 
             if (!public_key) {
@@ -24,32 +26,30 @@ export function useNotifications() {
                 return;
             }
 
-            // 2. Tentar inscrever
             const subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(public_key)
             });
 
-            console.log('User is subscribed:', subscription);
-
-            // 3. Enviar para o backend
-            await fetch(`${API_URL}/api/notifications/subscribe`, {
+            const subRes = await fetch(apiUrl('/api/notifications/subscribe'), {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(subscription),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(subscription.toJSON()),
             });
+            if (!subRes.ok) {
+                throw new ApiError('Falha ao registrar inscrição.', subRes.status);
+            }
 
             toast({
-                title: "✅ Notificações Ativadas",
-                description: "Você receberá alertas de segurança em tempo real.",
+                title: "Notificações ativadas",
+                description: "Você receberá alertas novos e atualizações de status em tempo real.",
             });
         } catch (err) {
             console.error('Failed to subscribe the user: ', err);
+            const message = err instanceof ApiError ? err.message : 'Não foi possível configurar as notificações.';
             toast({
-                title: "❌ Erro ao ativar",
-                description: "Não foi possível configurar as notificações.",
+                title: "Erro ao ativar",
+                description: message,
                 variant: "destructive"
             });
         }
@@ -59,8 +59,8 @@ export function useNotifications() {
         if ('Notification' in window) {
             if (Notification.permission === 'default') {
                 toast({
-                    title: "🔔 Ativar notificações?",
-                    description: "Receba alertas de novos riscos próximos a você.",
+                    title: "Ativar notificações?",
+                    description: "Receba alertas novos e atualizações de status próximos a você.",
                     action: (
                         <ToastAction altText="Ativar" onClick={() => {
                             Notification.requestPermission().then(permission => {
@@ -74,13 +74,11 @@ export function useNotifications() {
                     ),
                 });
             } else if (Notification.permission === 'granted') {
-                // Se já tem permissão, tenta garantir que a inscrição está atualizada no backend
                 subscribeUser();
             }
         }
     }, [subscribeUser]);
 
-    // Listener para mensagens do Service Worker (Navegação via clique)
     useEffect(() => {
         if ('serviceWorker' in navigator) {
             const handleMessage = (event: MessageEvent) => {

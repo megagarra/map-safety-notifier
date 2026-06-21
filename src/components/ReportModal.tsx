@@ -5,6 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { PinType, CreatePinInput } from '@/types';
 import { uploadImage } from '@/controllers/pins';
+import { resolveImageUrl } from '@/lib/media';
+import { ApiError } from '@/lib/errors';
 import {
   Image as ImageIcon,
   X,
@@ -116,8 +118,9 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
       try {
         const url = await uploadImage(file);
         setImages((prev) => [...prev, url]);
-      } catch {
-        setValidationError('Erro ao enviar imagem. Tente novamente.');
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : 'Erro ao enviar imagem. Tente novamente.';
+        setValidationError(message);
       }
     }
     e.target.value = '';
@@ -193,7 +196,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                     className="flex-1 min-w-0 relative h-28 sm:h-32 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#252525] hover:border-[#444] transition-colors cursor-pointer group"
                   >
                     <img
-                      src={img}
+                      src={resolveImageUrl(img)}
                       alt={`Foto ${i + 1}`}
                       loading="lazy"
                       decoding="async"
@@ -230,7 +233,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                   <X size={24} />
                 </button>
                 <img
-                  src={previewImg}
+                  src={resolveImageUrl(previewImg)}
                   alt="Preview"
                   className="max-w-full max-h-[90vh] object-contain rounded-lg"
                   onClick={(e) => e.stopPropagation()}

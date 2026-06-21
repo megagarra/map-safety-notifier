@@ -60,8 +60,15 @@ const PinHistory: React.FC<PinHistoryProps> = ({ history, persistenceDays }) => 
                   {format(new Date(entry.timestamp || entry.date || ''), "dd 'de' MMMM, yyyy", { locale: ptBR })}
                 </span>
               </div>
-              {(entry.comment || entry.description) && (
-                <p className="text-xs text-gray-400 mt-1">{entry.comment || entry.description}</p>
+              {(entry.description || entry.comment) && (
+                <div className="mt-1 space-y-1">
+                  {entry.description && (
+                    <p className="text-xs text-gray-400">{entry.description}</p>
+                  )}
+                  {entry.comment && (
+                    <p className="text-xs text-gray-300 italic">&ldquo;{entry.comment}&rdquo;</p>
+                  )}
+                </div>
               )}
             </div>
           </div>

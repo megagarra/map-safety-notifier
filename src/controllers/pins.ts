@@ -1,25 +1,29 @@
-import { Pin, PinType, PinStatus, CreatePinInput } from '@/types';
+import {
+  Pin,
+  PinType,
+  PinStatus,
+  CreatePinInput,
+  UpdatePinInput,
+  PaginatedResponse,
+  MapBounds,
+  PinStats,
+} from '@/types';
+import { api, apiFormData, buildQuery } from '@/lib/api';
 
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-
-function apiUrl(path: string): string {
-  return API_URL ? `${API_URL}${path.startsWith('/') ? path : `/${path}`}` : path;
+export interface FetchPinsParams extends Partial<MapBounds> {
+  limit?: number;
+  offset?: number;
 }
 
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(path), {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `API error ${res.status}`);
-  }
-  return res.json();
-}
+export const fetchPins = async (params: FetchPinsParams = {}): Promise<PaginatedResponse<Pin>> => {
+  const { limit = 200, offset = 0, ...bounds } = params;
+  return api<PaginatedResponse<Pin>>(
+    buildQuery('/api/pins', { limit, offset, ...bounds }),
+  );
+};
 
-export const fetchPins = async (limit: number = 200): Promise<Pin[]> => {
-  return api<Pin[]>(`/api/pins?limit=${limit}`);
+export const fetchPinStats = async (): Promise<PinStats> => {
+  return api<PinStats>('/api/pins/stats');
 };
 
 export const fetchPinById = async (id: string): Promise<Pin | null> => {
@@ -30,38 +34,40 @@ export const fetchPinById = async (id: string): Promise<Pin | null> => {
   }
 };
 
-export const createPin = async (pin: CreatePinInput): Promise<Pin | null> => {
+export const createPin = async (pin: CreatePinInput): Promise<Pin> => {
   return api<Pin>('/api/pins', {
     method: 'POST',
     body: JSON.stringify(pin),
   });
 };
 
-export const updatePin = async (id: string, updates: Partial<Pin>): Promise<Pin | null> => {
+export const updatePin = async (id: string, updates: UpdatePinInput): Promise<Pin> => {
   return api<Pin>(`/api/pins/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
+    auth: true,
   });
 };
 
-export const voteOnPin = async (pinId: string): Promise<Pin | null> => {
+export const deletePin = async (id: string): Promise<void> => {
+  await api<void>(`/api/pins/${id}`, {
+    method: 'DELETE',
+    auth: true,
+  });
+};
+
+export const voteOnPin = async (pinId: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${pinId}/vote`, { method: 'POST' });
 };
 
 export const uploadImage = async (file: File): Promise<string> => {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch(apiUrl('/api/images/upload'), {
-    method: 'POST',
-    body: formData,
+  const data = await apiFormData<{ url: string }>('/api/images/upload', formData, {
+    errorContext: 'upload',
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || 'Erro ao enviar imagem');
-  }
-  const data = await res.json();
   const url = data.url as string;
-  return API_URL ? `${API_URL}${url.startsWith('/') ? url : `/${url}`}` : url;
+  return url.startsWith('/') ? url : `/${url}`;
 };
 
 export const filterPinsByType = (pins: Pin[], types: PinType[] | null): Pin[] => {
