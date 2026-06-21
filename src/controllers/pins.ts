@@ -24,18 +24,44 @@ export interface FetchPinsParams extends Partial<MapBounds> {
   limit?: number;
   offset?: number;
   auth?: boolean;
+  reported_after?: string;
+  reported_before?: string;
+}
+
+export interface FetchNearbyParams {
+  lat: number;
+  lng: number;
+  radius_km?: number;
+  limit?: number;
+  offset?: number;
+  auth?: boolean;
+  reported_after?: string;
+  reported_before?: string;
 }
 
 export const fetchPins = async (params: FetchPinsParams = {}): Promise<PaginatedResponse<Pin>> => {
-  const { limit = 200, offset = 0, auth = false, ...bounds } = params;
+  const { limit = 200, offset = 0, auth = false, reported_after, reported_before, ...bounds } = params;
   return api<PaginatedResponse<Pin>>(
-    buildQuery('/api/pins', { limit, offset, ...bounds }),
+    buildQuery('/api/pins', { limit, offset, reported_after, reported_before, ...bounds }),
+    { auth },
+  );
+};
+
+export const fetchNearbyPins = async (params: FetchNearbyParams): Promise<PaginatedResponse<Pin>> => {
+  const { lat, lng, radius_km = 5, limit = 200, offset = 0, auth = false, reported_after, reported_before } = params;
+  return api<PaginatedResponse<Pin>>(
+    buildQuery('/api/pins/nearby', { lat, lng, radius_km, limit, offset, reported_after, reported_before }),
     { auth },
   );
 };
 
 export const fetchPendingModeration = async (): Promise<Pin[]> => {
   const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/moderation/pending', { auth: true });
+  return unwrapApiList<Pin>(data);
+};
+
+export const fetchRejectedModeration = async (): Promise<Pin[]> => {
+  const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/moderation/rejected', { auth: true });
   return unwrapApiList<Pin>(data);
 };
 
@@ -103,6 +129,10 @@ export const fetchDefaultLocations = async (): Promise<Pin[]> => {
   return unwrapApiList<Pin>(data);
 };
 
+export const fetchDefaultLocationById = async (id: string): Promise<Pin> => {
+  return api<Pin>(`/api/pins/default-locations/${id}`);
+};
+
 export const createDefaultLocation = async (data: CreateDefaultLocationInput): Promise<Pin> => {
   return api<Pin>('/api/pins/default-locations', {
     method: 'POST',
@@ -130,9 +160,16 @@ export const fetchDefaultLocationEntries = async (markerId: string): Promise<Def
   const data = await api<unknown>(`/api/pins/default-locations/${markerId}/entries`);
   const items = unwrapApiList<DefaultLocationEntry>(data);
 
-  if (typeof data === 'object' && data !== null && 'totalQuantity' in data) {
-    const totalQuantity = (data as { totalQuantity: number }).totalQuantity;
-    return { items, totalQuantity };
+  if (typeof data === 'object' && data !== null) {
+    const obj = data as Record<string, unknown>;
+    const totalQuantity = typeof obj.totalQuantity === 'number'
+      ? obj.totalQuantity
+      : items.reduce((sum, entry) => sum + (entry.quantity ?? 1), 0);
+    return {
+      items,
+      totalQuantity,
+      ...(typeof obj.total === 'number' && { total: obj.total }),
+    };
   }
 
   return {
@@ -148,6 +185,17 @@ export const addDefaultLocationEntry = async (
   return api<Pin>(`/api/pins/default-locations/${markerId}/entries`, {
     method: 'POST',
     body: JSON.stringify({ ...data, quantity: data.quantity ?? 1 }),
+    auth: true,
+  });
+};
+
+export const replaceDefaultLocationEntriesBulk = async (
+  markerId: string,
+  data: BulkDefaultLocationEntriesInput,
+): Promise<Pin> => {
+  return api<Pin>(`/api/pins/default-locations/${markerId}/entries/bulk`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
     auth: true,
   });
 };
@@ -189,6 +237,7 @@ export const uploadImage = async (file: File): Promise<string> => {
     errorContext: 'upload',
   });
   const url = data.url as string;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
   return url.startsWith('/') ? url : `/${url}`;
 };
 

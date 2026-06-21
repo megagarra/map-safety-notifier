@@ -34,22 +34,33 @@ export interface Pin {
   userVoted?: boolean;
   entryCount?: number;
   neighborhood?: string;
+  periodLabel?: string;
+  asOfDate?: string;
   rejectionReason?: string;
 }
 
-export interface DefaultLocationEntry {
+export interface CrimeType {
   id: string;
-  type: PinType;
-  description: string;
+  label: string;
+  sortOrder: number;
+}
+
+export interface DefaultLocationEntry {
+  id?: string;
+  type?: PinType;
+  description?: string;
   quantity: number;
+  crimeTypeId?: string;
+  crimeTypeLabel?: string;
   comment?: string;
-  images: string[];
-  createdAt: string;
+  images?: string[];
+  createdAt?: string;
   updatedAt?: string;
 }
 
 export interface DefaultLocationEntriesResponse {
   items: DefaultLocationEntry[];
+  total?: number;
   totalQuantity: number;
 }
 
@@ -70,6 +81,8 @@ export interface CreateDefaultLocationInput {
   location: { lat: number; lng: number };
   description: string;
   address?: string;
+  periodLabel?: string;
+  asOfDate?: string;
 }
 
 export interface UpdateDefaultLocationInput {
@@ -78,11 +91,14 @@ export interface UpdateDefaultLocationInput {
   location?: { lat: number; lng: number };
   description?: string;
   address?: string | null;
+  periodLabel?: string | null;
+  asOfDate?: string | null;
 }
 
 export interface DefaultLocationEntryInput {
   type: PinType;
-  description: string;
+  description?: string;
+  crimeTypeId?: string;
   quantity?: number;
   images?: string[];
   comment?: string;
@@ -90,8 +106,9 @@ export interface DefaultLocationEntryInput {
 
 export interface BulkDefaultLocationEntryItem {
   type: PinType;
-  description: string;
   quantity: number;
+  description?: string;
+  crimeTypeId?: string;
   comment?: string;
 }
 
@@ -102,6 +119,7 @@ export interface BulkDefaultLocationEntriesInput {
 export interface UpdateDefaultLocationEntryInput {
   type?: PinType;
   description?: string;
+  crimeTypeId?: string;
   quantity?: number;
   comment?: string;
   images?: string[];
@@ -159,6 +177,22 @@ export interface PinStats {
   pendingCount: number;
   byStatus: Record<PinStatus, number>;
   dayRanges: { label: string; count: number }[];
+}
+
+export interface AnalyticsOverview {
+  totalPins?: number;
+  pendingCount?: number;
+  approvedCount?: number;
+  rejectedCount?: number;
+  pinsByType?: { type: string; label?: string; count: number }[];
+  neighborhoodStats?: {
+    neighborhood: string;
+    entryCount: number;
+    markerId?: string;
+    periodLabel?: string;
+  }[];
+  weeklyTrend?: { week: string; label?: string; count: number }[];
+  averageApprovalHours?: number;
 }
 
 export interface UpdateUserInput {

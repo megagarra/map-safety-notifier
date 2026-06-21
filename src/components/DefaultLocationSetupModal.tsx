@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +35,8 @@ export function DefaultLocationSetupModal({
   const [type, setType] = useState<PinType>('crime');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
+  const [periodLabel, setPeriodLabel] = useState('');
+  const [asOfDate, setAsOfDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +46,8 @@ export function DefaultLocationSetupModal({
     setType(marker?.type ?? 'crime');
     setDescription(marker?.description ?? '');
     setAddress(marker?.address ?? '');
+    setPeriodLabel(marker?.periodLabel ?? '');
+    setAsOfDate(marker?.asOfDate?.slice(0, 10) ?? '');
     setError(null);
   }, [isOpen, marker]);
 
@@ -75,6 +79,8 @@ export function DefaultLocationSetupModal({
           type,
           description: description.trim(),
           ...(address.trim() ? { address: address.trim() } : { address: null }),
+          ...(periodLabel.trim() ? { periodLabel: periodLabel.trim() } : { periodLabel: null }),
+          ...(asOfDate ? { asOfDate } : { asOfDate: null }),
         });
       } else if (location) {
         await onCreate({
@@ -83,6 +89,8 @@ export function DefaultLocationSetupModal({
           location,
           description: description.trim(),
           ...(address.trim() && { address: address.trim() }),
+          ...(periodLabel.trim() && { periodLabel: periodLabel.trim() }),
+          ...(asOfDate && { asOfDate }),
         });
       }
       handleClose();
@@ -100,6 +108,9 @@ export function DefaultLocationSetupModal({
           <DialogTitle className="text-white">
             {isEdit ? 'Editar marcador por bairro' : 'Novo marcador por bairro'}
           </DialogTitle>
+          <DialogDescription className="text-gray-400 text-sm">
+            {isEdit ? 'Atualize os dados do marcador de ocorrências sem endereço.' : 'Configure um ponto no mapa para agrupar ocorrências por bairro.'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -159,6 +170,28 @@ export function DefaultLocationSetupModal({
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Ex: Praça central"
+              className="bg-[#1a1a1a] border-[#2a2a2a] text-white"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="dl-period" className="text-gray-300">Período dos dados (opcional)</Label>
+            <Input
+              id="dl-period"
+              value={periodLabel}
+              onChange={(e) => setPeriodLabel(e.target.value)}
+              placeholder="Ex: Dados SSP — 1º sem 2025"
+              className="bg-[#1a1a1a] border-[#2a2a2a] text-white"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="dl-asof" className="text-gray-300">Data de referência (opcional)</Label>
+            <Input
+              id="dl-asof"
+              type="date"
+              value={asOfDate}
+              onChange={(e) => setAsOfDate(e.target.value)}
               className="bg-[#1a1a1a] border-[#2a2a2a] text-white"
             />
           </div>

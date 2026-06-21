@@ -5,6 +5,26 @@ const SYSTEM_HISTORY_PHRASES = [
   'local padrão atualizado',
 ];
 
+export function hasValidPinLocation(
+  pin: Pin | null | undefined,
+): pin is Pin & { location: { lat: number; lng: number } } {
+  const lat = pin?.location?.lat;
+  const lng = pin?.location?.lng;
+  return typeof lat === 'number' && typeof lng === 'number' && !Number.isNaN(lat) && !Number.isNaN(lng);
+}
+
+/** Preserva location e campos ausentes quando a API retorna pin parcial (ex.: após bulk). */
+export function mergePinUpdate(existing: Pin | undefined, incoming: Pin): Pin {
+  if (!existing || existing.id !== incoming.id) return incoming;
+  return {
+    ...existing,
+    ...incoming,
+    location: hasValidPinLocation(incoming) ? incoming.location : existing.location,
+    images: incoming.images ?? existing.images ?? [],
+    history: incoming.history ?? existing.history ?? [],
+  };
+}
+
 export function isDefaultLocationPin(pin: Pin): boolean {
   return pin.kind === 'default_location';
 }

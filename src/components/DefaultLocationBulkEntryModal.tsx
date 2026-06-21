@@ -1,39 +1,51 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useQuery } from '@tanstack/react-query';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Pin, PinType, BulkDefaultLocationEntryItem } from '@/types';
-import { createEmptyBulkRow, parseBulkEntriesCsv } from '@/lib/bulkEntries';
-import { getPinConfig } from '@/lib/pinConfig';
+import { Pin, BulkDefaultLocationEntryItem } from '@/types';
+import * as CrimeTypesController from '@/controllers/crimeTypes';
+import { getEntryLabel } from '@/lib/entryLabels';
 import { ApiError } from '@/lib/errors';
-import { Loader2, Plus, Trash2, Upload } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Loader2, Plus, Trash2, AlertTriangle } from 'lucide-react';
+
+interface BulkRow {
+  crimeTypeId: string;
+  quantity: number;
+}
 
 interface DefaultLocationBulkEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
   markers: Pin[];
   initialMarkerId?: string | null;
-  onSubmit: (markerId: string, entries: BulkDefaultLocationEntryItem[]) => Promise<void>;
+  onReplace: (markerId: string, entries: BulkDefaultLocationEntryItem[]) => Promise<void>;
 }
 
-type BulkTab = 'manual' | 'csv';
+function createEmptyRow(): BulkRow {
+  return { crimeTypeId: '', quantity: 1 };
+}
 
 export function DefaultLocationBulkEntryModal({
   isOpen,
   onClose,
   markers,
   initialMarkerId,
-  onSubmit,
+  onReplace,
 }: DefaultLocationBulkEntryModalProps) {
   const [markerId, setMarkerId] = useState('');
-  const [tab, setTab] = useState<BulkTab>('manual');
-  const [rows, setRows] = useState<BulkDefaultLocationEntryItem[]>([createEmptyBulkRow()]);
-  const [csvText, setCsvText] = useState('');
+  const [rows, setRows] = useState<BulkRow[]>([createEmptyRow()]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmReplace, setConfirmReplace] = useState(false);
+
+  const { data: crimeTypes = [], isLoading: loadingTypes } = useQuery({
+    queryKey: ['crime-types'],
+    queryFn: CrimeTypesController.fetchCrimeTypes,
+    enabled: isOpen,
+    staleTime: 300_000,
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -41,84 +53,63 @@ export function DefaultLocationBulkEntryModal({
       ? initialMarkerId
       : markers[0]?.id ?? '';
     setMarkerId(preferred);
-    setTab('manual');
-    setRows([createEmptyBulkRow()]);
-    setCsvText('');
+    setRows([{ crimeTypeId: crimeTypes[0]?.id ?? '', quantity: 1 }]);
     setError(null);
-  }, [isOpen, initialMarkerId, markers]);
+    setConfirmReplace(false);
+  }, [isOpen, initialMarkerId, markers, crimeTypes]);
 
-  const csvPreview = useMemo(() => parseBulkEntriesCsv(csvText), [csvText]);
+  const entries = useMemo((): BulkDefaultLocationEntryItem[] => {
+    return rows
+      .filter((r) => r.crimeTypeId && r.quantity >= 1)
+      .map((r) => ({
+        type: 'crime' as const,
+        crimeTypeId: r.crimeTypeId,
+        quantity: r.quantity,
+      }));
+  }, [rows]);
 
-  const manualEntries = useMemo(
-    () => rows.filter((r) => r.description.trim() && r.quantity >= 1),
-    [rows],
-  );
+  const previewTotal = entries.reduce((sum, e) => sum + e.quantity, 0);
 
-  const previewEntries = tab === 'manual' ? manualEntries : csvPreview.entries;
-  const previewTotal = previewEntries.reduce((sum, e) => sum + e.quantity, 0);
-
-  const handleClose = () => onClose();
-
-  const updateRow = (index: number, patch: Partial<BulkDefaultLocationEntryItem>) => {
-    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  };
-
-  const handleCsvFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    setCsvText(text);
-    setTab('csv');
-    e.target.value = '';
-  };
+  const getLabel = (crimeTypeId: string) =>
+    crimeTypes.find((t) => t.id === crimeTypeId)?.label ?? crimeTypeId;
 
   const handleSubmit = async () => {
     if (!markerId) {
       setError('Selecione o bairro.');
       return;
     }
-
-    let entries: BulkDefaultLocationEntryItem[] = [];
-    if (tab === 'manual') {
-      entries = manualEntries.map((r) => ({
-        type: r.type,
-        description: r.description.trim(),
-        quantity: Math.max(1, r.quantity),
-      }));
-      if (entries.length === 0) {
-        setError('Adicione ao menos uma linha com descrição e quantidade.');
-        return;
-      }
-    } else {
-      if (csvPreview.errors.length > 0) {
-        setError(csvPreview.errors.slice(0, 3).join(' '));
-        return;
-      }
-      if (csvPreview.entries.length === 0) {
-        setError('Nenhuma linha válida no CSV.');
-        return;
-      }
-      entries = csvPreview.entries;
+    if (entries.length === 0) {
+      setError('Adicione ao menos um tipo com quantidade.');
+      return;
+    }
+    if (!confirmReplace) {
+      setConfirmReplace(true);
+      setError(null);
+      return;
     }
 
     setIsSubmitting(true);
     setError(null);
     try {
-      await onSubmit(markerId, entries);
-      handleClose();
+      await onReplace(markerId, entries);
+      onClose();
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Não foi possível registrar as entradas.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível substituir as estatísticas.';
       setError(message);
+      setConfirmReplace(false);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[95vw] sm:max-w-[640px] max-h-[90vh] overflow-y-auto bg-[#121212] border-[#2a2a2a] text-white">
         <DialogHeader>
-          <DialogTitle className="text-white">Cadastro em lote</DialogTitle>
+          <DialogTitle className="text-white">Substituir estatísticas do bairro</DialogTitle>
+          <DialogDescription className="text-gray-400 text-sm">
+            PUT substitui todas as linhas existentes. Lista vazia limpa o bairro.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -126,7 +117,7 @@ export function DefaultLocationBulkEntryModal({
             <Label className="text-gray-300">Bairro</Label>
             <select
               value={markerId}
-              onChange={(e) => setMarkerId(e.target.value)}
+              onChange={(e) => { setMarkerId(e.target.value); setConfirmReplace(false); }}
               disabled={markers.length === 0}
               className="w-full h-9 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-3 text-sm"
             >
@@ -138,58 +129,42 @@ export function DefaultLocationBulkEntryModal({
             </select>
           </div>
 
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setTab('manual')}
-              className={cn(
-                'flex-1 py-2 text-xs rounded-md border transition-colors',
-                tab === 'manual' ? 'border-violet-500 bg-violet-500/10 text-violet-300' : 'border-[#2a2a2a] text-gray-400',
-              )}
-            >
-              Linhas manuais
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('csv')}
-              className={cn(
-                'flex-1 py-2 text-xs rounded-md border transition-colors',
-                tab === 'csv' ? 'border-violet-500 bg-violet-500/10 text-violet-300' : 'border-[#2a2a2a] text-gray-400',
-              )}
-            >
-              Importar CSV
-            </button>
-          </div>
-
-          {tab === 'manual' ? (
+          {loadingTypes ? (
+            <div className="flex justify-center py-6">
+              <Loader2 size={20} className="animate-spin text-gray-400" />
+            </div>
+          ) : crimeTypes.length === 0 ? (
+            <p className="text-xs text-yellow-400">Catálogo de tipos indisponível (GET /api/crime-types).</p>
+          ) : (
             <div className="space-y-2">
-              <div className="grid grid-cols-[80px_1fr_72px_32px] gap-2 text-[10px] uppercase tracking-wide text-gray-500 px-1">
-                <span>Tipo</span>
-                <span>Descrição</span>
+              <div className="grid grid-cols-[1fr_72px_32px] gap-2 text-[10px] uppercase tracking-wide text-gray-500 px-1">
+                <span>Tipo de crime</span>
                 <span>Qtd</span>
                 <span />
               </div>
               {rows.map((row, index) => (
-                <div key={index} className="grid grid-cols-[80px_1fr_72px_32px] gap-2 items-center">
+                <div key={index} className="grid grid-cols-[1fr_72px_32px] gap-2 items-center">
                   <select
-                    value={row.type}
-                    onChange={(e) => updateRow(index, { type: e.target.value as PinType })}
-                    className="h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-1 text-xs"
+                    value={row.crimeTypeId}
+                    onChange={(e) => {
+                      setRows((prev) => prev.map((r, i) => (i === index ? { ...r, crimeTypeId: e.target.value } : r)));
+                      setConfirmReplace(false);
+                    }}
+                    className="h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-2 text-xs"
                   >
-                    <option value="crime">Crime</option>
-                    <option value="infraestrutura">Infra</option>
+                    <option value="">Selecione...</option>
+                    {crimeTypes.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
+                    ))}
                   </select>
-                  <Input
-                    value={row.description}
-                    onChange={(e) => updateRow(index, { description: e.target.value })}
-                    placeholder="Ex: Furto (Art. 155)"
-                    className="h-8 text-xs bg-[#1a1a1a] border-[#2a2a2a] text-white"
-                  />
                   <Input
                     type="number"
                     min={1}
                     value={row.quantity}
-                    onChange={(e) => updateRow(index, { quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                    onChange={(e) => {
+                      setRows((prev) => prev.map((r, i) => (i === index ? { ...r, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) } : r)));
+                      setConfirmReplace(false);
+                    }}
                     className="h-8 text-xs bg-[#1a1a1a] border-[#2a2a2a] text-white"
                   />
                   <button
@@ -206,64 +181,29 @@ export function DefaultLocationBulkEntryModal({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setRows((prev) => [...prev, createEmptyBulkRow()])}
+                onClick={() => setRows((prev) => [...prev, { crimeTypeId: crimeTypes[0]?.id ?? '', quantity: 1 }])}
                 className="w-full h-8 text-xs border-[#2a2a2a] text-gray-300"
               >
                 <Plus size={14} className="mr-1" /> Adicionar linha
               </Button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-xs text-violet-300 cursor-pointer w-fit">
-                <Upload size={14} />
-                Selecionar arquivo CSV
-                <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFile} />
-              </label>
-              <p className="text-[11px] text-gray-500">
-                Formato: tipo, descrição, quantidade — separado por vírgula ou ponto-e-vírgula. Ex.: crime, Furto (Art. 155), 11
-              </p>
-              <Textarea
-                value={csvText}
-                onChange={(e) => setCsvText(e.target.value)}
-                placeholder={'tipo,descrição,quantidade\ncrime,Lesão Corporal (Art. 129),17\ncrime,Furto (Art. 155),11'}
-                className="min-h-[140px] font-mono text-xs bg-[#1a1a1a] border-[#2a2a2a] text-white"
-              />
-              {csvPreview.errors.length > 0 && (
-                <div className="text-xs text-red-400 space-y-0.5">
-                  {csvPreview.errors.slice(0, 5).map((msg) => <p key={msg}>{msg}</p>)}
-                </div>
-              )}
+          )}
+
+          {entries.length > 0 && (
+            <div className="rounded-lg border border-[#2a2a2a] p-3 space-y-1">
+              <p className="text-xs text-gray-400">Prévia · total {previewTotal}</p>
+              {entries.map((e, i) => (
+                <p key={i} className="text-xs text-gray-300 truncate">
+                  {getLabel(e.crimeTypeId!)} — {e.quantity}
+                </p>
+              ))}
             </div>
           )}
 
-          {previewEntries.length > 0 && (
-            <div className="rounded-lg border border-[#2a2a2a] overflow-hidden">
-              <div className="px-3 py-2 bg-[#1a1a1a] text-xs text-gray-400 border-b border-[#2a2a2a]">
-                Prévia: {previewEntries.length} tipo{previewEntries.length === 1 ? '' : 's'} · total {previewTotal}
-              </div>
-              <div className="max-h-40 overflow-y-auto custom-scrollbar">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-gray-500 border-b border-[#2a2a2a]">
-                      <th className="text-left py-2 px-3 font-medium">Tipo</th>
-                      <th className="text-left py-2 px-3 font-medium">Descrição</th>
-                      <th className="text-right py-2 px-3 font-medium w-16">Qtd</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewEntries.map((entry, i) => {
-                      const cfg = getPinConfig(entry.type);
-                      return (
-                        <tr key={i} className="border-b border-[#2a2a2a]/60 last:border-0">
-                          <td className={cn('py-2 px-3', cfg.color)}>{cfg.label}</td>
-                          <td className="py-2 px-3 text-gray-300">{entry.description}</td>
-                          <td className="py-2 px-3 text-right text-white font-medium">{entry.quantity}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+          {confirmReplace && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-200">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>Isso apaga todas as linhas atuais deste bairro e grava apenas as acima. Confirme novamente para enviar.</span>
             </div>
           )}
 
@@ -271,15 +211,15 @@ export function DefaultLocationBulkEntryModal({
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={handleClose} className="border-[#2a2a2a] text-white">
+          <Button variant="outline" onClick={onClose} className="border-[#2a2a2a] text-white">
             Cancelar
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || markers.length === 0}
+            disabled={isSubmitting || markers.length === 0 || crimeTypes.length === 0}
             className="bg-violet-600 hover:bg-violet-700"
           >
-            {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : `Registrar ${previewTotal > 0 ? previewTotal : ''}`}
+            {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : confirmReplace ? `Substituir (${previewTotal})` : 'Continuar'}
           </Button>
         </DialogFooter>
       </DialogContent>

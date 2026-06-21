@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DefaultLocationEntry, PinType } from '@/types';
+import { DefaultLocationEntry, Pin, PinType } from '@/types';
 import * as PinsController from '@/controllers/pins';
-import { getPinConfig } from '@/lib/pinConfig';
+import { getEntryLabel } from '@/lib/entryLabels';
 import { resolveImageUrl } from '@/lib/media';
+import { DefaultLocationEntryChart } from '@/components/DefaultLocationEntryChart';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { ApiError } from '@/lib/errors';
-import { Loader2, Pencil, Trash2, X, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { Loader2, Pencil, Trash2, X, Check, CalendarDays } from 'lucide-react';
 
 interface DefaultLocationEntriesPanelProps {
   markerId: string;
+  marker?: Pin;
   isAdmin: boolean;
   onEntriesChanged?: () => void;
   onBulkRegister?: () => void;
@@ -21,6 +24,7 @@ interface DefaultLocationEntriesPanelProps {
 
 export function DefaultLocationEntriesPanel({
   markerId,
+  marker,
   isAdmin,
   onEntriesChanged,
   onBulkRegister,
@@ -34,6 +38,15 @@ export function DefaultLocationEntriesPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  const { data: markerDetail } = useQuery({
+    queryKey: ['default-location', markerId],
+    queryFn: () => PinsController.fetchDefaultLocationById(markerId),
+    enabled: Boolean(markerId),
+    staleTime: 60_000,
+  });
+
+  const header = markerDetail ?? marker;
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['default-location-entries', markerId],
     queryFn: () => PinsController.fetchDefaultLocationEntries(markerId),
@@ -41,19 +54,16 @@ export function DefaultLocationEntriesPanel({
   });
 
   const entries = data?.items ?? [];
-  const totalQuantity = data?.totalQuantity ?? entries.reduce((s, e) => s + (e.quantity ?? 1), 0);
+  const totalQuantity = data?.totalQuantity ?? header?.entryCount ?? entries.reduce((s, e) => s + (e.quantity ?? 1), 0);
 
-  const sorted = [...entries].sort((a, b) => {
-    const qtyDiff = (b.quantity ?? 1) - (a.quantity ?? 1);
-    if (qtyDiff !== 0) return qtyDiff;
-    return a.description.localeCompare(b.description, 'pt-BR');
-  });
+  const sorted = [...entries].sort((a, b) => b.quantity - a.quantity);
 
   const startEdit = (entry: DefaultLocationEntry) => {
+    if (!entry.id) return;
     setEditingId(entry.id);
-    setEditDesc(entry.description);
+    setEditDesc(entry.description ?? getEntryLabel(entry));
     setEditComment(entry.comment ?? '');
-    setEditType(entry.type);
+    setEditType(entry.type ?? 'crime');
     setEditQuantity(entry.quantity ?? 1);
   };
 
@@ -111,64 +121,62 @@ export function DefaultLocationEntriesPanel({
 
   return (
     <div className="space-y-3">
+      {(header?.periodLabel || header?.asOfDate) && (
+        <div className="p-2.5 rounded-lg bg-violet-500/10 border border-violet-500/20 space-y-1">
+          {header.periodLabel && (
+            <p className="text-xs text-violet-200 font-medium">{header.periodLabel}</p>
+          )}
+          {header.asOfDate && (
+            <p className="text-[11px] text-gray-400 flex items-center gap-1">
+              <CalendarDays size={11} />
+              Referência: {format(new Date(header.asOfDate), 'dd/MM/yyyy', { locale: ptBR })}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-medium text-white">Ocorrências por tipo</h3>
+          <h3 className="text-sm font-medium text-white">Estatísticas por tipo</h3>
           <p className="text-xs text-violet-300/80 mt-0.5">
             Total: <span className="font-semibold text-violet-200">{totalQuantity}</span>
             {entries.length > 0 && (
-              <span className="text-gray-500"> · {entries.length} linha{entries.length === 1 ? '' : 's'}</span>
+              <span className="text-gray-500"> · {entries.length} tipo{entries.length === 1 ? '' : 's'}</span>
             )}
           </p>
         </div>
         {isAdmin && onBulkRegister && (
-          <button
-            onClick={onBulkRegister}
-            className="text-[10px] text-violet-400 hover:text-violet-200 whitespace-nowrap"
-          >
-            + Lote
+          <button onClick={onBulkRegister} className="text-[10px] text-violet-400 hover:text-violet-200 whitespace-nowrap">
+            Substituir lote
           </button>
         )}
       </div>
 
+      {sorted.length > 0 && (
+        <DefaultLocationEntryChart entries={sorted} totalQuantity={totalQuantity} />
+      )}
+
       {sorted.length === 0 ? (
-        <p className="text-xs text-gray-500">Nenhuma ocorrência registrada.</p>
+        <p className="text-xs text-gray-500">Nenhuma estatística registrada.</p>
       ) : editingId ? (
         sorted.map((entry) => {
           if (entry.id !== editingId) return null;
           return (
             <div key={entry.id} className="p-3 rounded-lg bg-[#121212] border border-[#2a2a2a] space-y-2">
-              <select
-                value={editType}
-                onChange={(e) => setEditType(e.target.value as PinType)}
-                className="w-full h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-2 text-xs"
-              >
-                <option value="crime">Crime</option>
-                <option value="infraestrutura">Infraestrutura</option>
-              </select>
               <Textarea
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
                 className="min-h-[60px] text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  value={editQuantity}
-                  onChange={(e) => setEditQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="h-8 text-xs bg-[#1a1a1a] border-[#2a2a2a] text-white"
-                  placeholder="Quantidade"
-                />
-                <Input
-                  value={editComment}
-                  onChange={(e) => setEditComment(e.target.value)}
-                  placeholder="Detalhes extras"
-                  className="h-8 text-xs bg-[#1a1a1a] border-[#2a2a2a] text-white"
-                />
-              </div>
+              <Input
+                type="number"
+                min={1}
+                value={editQuantity}
+                onChange={(e) => setEditQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="h-8 text-xs bg-[#1a1a1a] border-[#2a2a2a] text-white"
+              />
               <div className="flex gap-2">
-                <Button size="sm" onClick={() => handleSave(entry.id)} disabled={savingId === entry.id} className="flex-1 h-7 text-xs">
+                <Button size="sm" onClick={() => handleSave(entry.id!)} disabled={savingId === entry.id} className="flex-1 h-7 text-xs">
                   {savingId === entry.id ? <Loader2 size={12} className="animate-spin" /> : <><Check size={12} className="mr-1" /> Salvar</>}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setEditingId(null)} className="h-7 text-xs border-[#2a2a2a] text-white">
@@ -188,29 +196,28 @@ export function DefaultLocationEntriesPanel({
               </tr>
             </thead>
             <tbody>
-              {sorted.map((entry) => {
-                const cfg = getPinConfig(entry.type);
+              {sorted.map((entry, index) => {
                 const qty = entry.quantity ?? 1;
+                const images = entry.images ?? [];
                 return (
-                  <tr key={entry.id} className="border-b border-[#2a2a2a]/60 last:border-0 group">
+                  <tr key={entry.id ?? `entry-${index}`} className="border-b border-[#2a2a2a]/60 last:border-0 group">
                     <td className="py-2.5 px-3 align-top">
-                      <span className={cn('text-[10px] font-medium uppercase tracking-wide', cfg.color)}>{cfg.label}</span>
-                      <p className="text-sm text-gray-200 mt-0.5 leading-snug">{entry.description}</p>
+                      <p className="text-sm text-gray-200 leading-snug">{getEntryLabel(entry)}</p>
                       {entry.comment && <p className="text-[10px] text-violet-300/70 mt-0.5">{entry.comment}</p>}
-                      {entry.images.length > 0 && (
+                      {images.length > 0 && (
                         <div className="flex gap-1 flex-wrap mt-1.5">
-                          {entry.images.map((img, i) => (
+                          {images.map((img, i) => (
                             <img key={i} src={resolveImageUrl(img)} alt="" className="w-10 h-10 rounded object-cover border border-[#2a2a2a]" />
                           ))}
                         </div>
                       )}
-                      {isAdmin && (
+                      {isAdmin && entry.id && (
                         <div className="flex gap-2 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => startEdit(entry)} className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1">
                             <Pencil size={10} /> Editar
                           </button>
                           <button
-                            onClick={() => handleDelete(entry.id)}
+                            onClick={() => handleDelete(entry.id!)}
                             disabled={deletingId === entry.id}
                             className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1"
                           >
@@ -229,14 +236,6 @@ export function DefaultLocationEntriesPanel({
                 );
               })}
             </tbody>
-            {entries.length > 1 && (
-              <tfoot>
-                <tr className="bg-[#1a1a1a] border-t border-[#2a2a2a]">
-                  <td className="py-2 px-3 text-gray-400 font-medium">Total</td>
-                  <td className="py-2 px-3 text-right text-white font-bold tabular-nums">{totalQuantity}</td>
-                </tr>
-              </tfoot>
-            )}
           </table>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -120,6 +120,9 @@ export function DefaultLocationEntryModal({
       <DialogContent className="w-[95vw] sm:max-w-[480px] max-h-[90vh] overflow-y-auto bg-[#121212] border-[#2a2a2a] text-white">
         <DialogHeader>
           <DialogTitle className="text-white">Registrar sem endereço</DialogTitle>
+          <DialogDescription className="text-gray-400 text-sm">
+            Registre uma ocorrência no marcador do bairro selecionado.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">

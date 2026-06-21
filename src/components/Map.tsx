@@ -24,7 +24,7 @@ import { ImageGallery } from './ImageGallery';
 import PinHistory from './PinHistory';
 import { DefaultLocationEntriesPanel } from './DefaultLocationEntriesPanel';
 import { useAuth } from '@/hooks/useAuth';
-import { isDefaultLocationPin, isPendingPin, getApprovalLabel, getApprovalClass } from '@/lib/pins';
+import { isDefaultLocationPin, isPendingPin, getApprovalLabel, getApprovalClass, hasValidPinLocation } from '@/lib/pins';
 import { getPinConfig } from '@/lib/pinConfig';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -268,7 +268,7 @@ function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) 
 
   return (
     <>
-      {pins.map((pin) => (
+      {pins.filter(hasValidPinLocation).map((pin) => (
         <Marker
           key={pin.id}
           position={[pin.location.lat, pin.location.lng]}
@@ -367,12 +367,17 @@ function PinDetailsModal({
       setIsLoadingAddress(false);
       return;
     }
+    if (!hasValidPinLocation(pin)) {
+      setAddress(null);
+      setIsLoadingAddress(false);
+      return;
+    }
     setIsLoadingAddress(true);
     reverseGeocode(pin.location.lat, pin.location.lng).then((result) => {
       setAddress(result);
       setIsLoadingAddress(false);
     });
-  }, [pin.id, pin.address, pin.location.lat, pin.location.lng, isDefault]);
+  }, [pin.id, pin.address, pin.location?.lat, pin.location?.lng, isDefault]);
 
   const handleSave = async () => {
     if (!onUpdatePin) return;
@@ -467,8 +472,10 @@ function PinDetailsModal({
                 <span className="text-gray-500 flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Buscando endereço...</span>
               ) : address ? (
                 <span className="text-gray-300">{address}</span>
-              ) : (
+              ) : hasValidPinLocation(pin) ? (
                 <span className="text-gray-500">{pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}</span>
+              ) : (
+                <span className="text-gray-500">Localização indisponível</span>
               )}
             </div>
 
@@ -516,6 +523,7 @@ function PinDetailsModal({
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
                 <DefaultLocationEntriesPanel
                   markerId={pin.id}
+                  marker={pin}
                   isAdmin={isAdmin}
                   onEntriesChanged={onEntriesChanged}
                   onBulkRegister={isAdmin && onBulkRegisterDefaultEntry ? () => onBulkRegisterDefaultEntry(pin.id) : undefined}
@@ -664,7 +672,9 @@ function PinDetailsModal({
 
             {/* Coordinates */}
             <div className="text-xs text-gray-500 text-center">
-              {pin.location.lat.toFixed(6)}, {pin.location.lng.toFixed(6)}
+              {hasValidPinLocation(pin)
+                ? `${pin.location.lat.toFixed(6)}, ${pin.location.lng.toFixed(6)}`
+                : 'Coordenadas indisponíveis'}
             </div>
           </div>
         </div>
@@ -789,8 +799,9 @@ const MapComponent = ({
   }, []);
 
   const filteredPins = useMemo(() => {
-    if (!selectedPinTypes?.length) return pins;
-    return pins.filter((p) => selectedPinTypes.includes(p.type));
+    const withLocation = pins.filter(hasValidPinLocation);
+    if (!selectedPinTypes?.length) return withLocation;
+    return withLocation.filter((p) => selectedPinTypes.includes(p.type));
   }, [pins, selectedPinTypes]);
 
   const effectiveCenter = center || MAP_CENTER;
@@ -877,7 +888,7 @@ const MapComponent = ({
       </MapContainer>
 
       {/* Pin details */}
-      {selectedPin && (
+      {selectedPin && hasValidPinLocation(selectedPin) && (
         <PinDetailsModal
           pin={selectedPin}
           onClose={() => onPinClick(null)}

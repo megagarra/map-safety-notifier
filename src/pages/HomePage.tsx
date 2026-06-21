@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import Map from '@/components/Map';
+import MapView from '@/components/Map';
 import ReportModal from '@/components/ReportModal';
 import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
 import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
@@ -22,9 +22,9 @@ import { toast } from '@/components/ui/use-toast';
 import * as PinsController from '@/controllers/pins';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
-import { isDefaultLocationPin } from '@/lib/pins';
+import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck, Layers } from 'lucide-react';
+import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -40,6 +40,17 @@ function boundsKey(bounds: MapBounds) {
   return `${bounds.lat_min},${bounds.lat_max},${bounds.lng_min},${bounds.lng_max}`;
 }
 
+type DatePreset = 'all' | '7d' | '30d' | '90d';
+type PinFetchMode = 'bounds' | 'nearby';
+
+function getDateFilter(preset: DatePreset) {
+  if (preset === 'all') return {};
+  const days = preset === '7d' ? 7 : preset === '30d' ? 30 : 90;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return { reported_after: d.toISOString().slice(0, 10) };
+}
+
 function upsertMarkerInCache(
   prev: PaginatedResponse<Pin> | undefined,
   marker: Pin,
@@ -50,7 +61,7 @@ function upsertMarkerInCache(
   const idx = prev.items.findIndex((p) => p.id === marker.id);
   if (idx >= 0) {
     const items = [...prev.items];
-    items[idx] = marker;
+    items[idx] = mergePinUpdate(prev.items[idx], marker);
     return { ...prev, items };
   }
   return { ...prev, items: [marker, ...prev.items], total: prev.total + 1 };
@@ -75,12 +86,41 @@ export default function HomePage() {
   const { isAuthenticated, isAdmin, isModerator, isStaff, user, logout } = useAuth();
 
   const [bounds, setBounds] = useState<MapBounds>(DEFAULT_BOUNDS);
+  const [fetchMode, setFetchMode] = useState<PinFetchMode>('bounds');
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [center, setCenter] = useState<[number, number]>(FALLBACK_CENTER);
+  const [zoom, setZoom] = useState(13);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
+  const dateFilter = useMemo(() => getDateFilter(datePreset), [datePreset]);
+
+  const pinsQueryKey = fetchMode === 'nearby'
+    ? ['pins', 'nearby', center[0], center[1], datePreset, isStaff] as const
+    : ['pins', 'bounds', boundsKeyStr, datePreset, isStaff] as const;
 
   const { data: pinsPage, isLoading: isLoadingPins, isError } = useQuery({
-    queryKey: ['pins', boundsKeyStr, isStaff],
-    queryFn: () => PinsController.fetchPins({ ...bounds, limit: 200, offset: 0, auth: isStaff }),
+    queryKey: pinsQueryKey,
+    queryFn: () => {
+      if (fetchMode === 'nearby') {
+        return PinsController.fetchNearbyPins({
+          lat: center[0],
+          lng: center[1],
+          radius_km: 5,
+          limit: 200,
+          offset: 0,
+          auth: isStaff,
+          ...dateFilter,
+        });
+      }
+      return PinsController.fetchPins({
+        ...bounds,
+        limit: 200,
+        offset: 0,
+        auth: isStaff,
+        ...dateFilter,
+      });
+    },
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
@@ -108,22 +148,19 @@ export default function HomePage() {
   const hasMore = pins.length < total;
 
   const defaultMarkers = useMemo(() => {
-    const fromPins = pins.filter(isDefaultLocationPin);
+    const fromPins = pins.filter(isDefaultLocationPin).filter(hasValidPinLocation);
     if (!isAdmin || defaultLocations.length === 0) return fromPins;
-    const byId = new Map<string, Pin>();
-    defaultLocations.forEach((m) => byId.set(m.id, m));
-    fromPins.forEach((m) => byId.set(m.id, m));
+    const byId = new globalThis.Map<string, Pin>();
+    defaultLocations.filter(hasValidPinLocation).forEach((m) => byId.set(m.id, m));
+    fromPins.forEach((m) => byId.set(m.id, mergePinUpdate(byId.get(m.id), m)));
     return Array.from(byId.values()).sort((a, b) =>
       (a.neighborhood ?? '').localeCompare(b.neighborhood ?? '', 'pt-BR'),
     );
   }, [pins, defaultLocations, isAdmin]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
-  const [center, setCenter] = useState<[number, number] | null>(null);
-  const [zoom, setZoom] = useState(13);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
 
   const [mapMode, setMapMode] = useState<'normal' | 'place-default-marker' | 'move-pin'>('normal');
   const [movePinId, setMovePinId] = useState<string | null>(null);
@@ -134,7 +171,7 @@ export default function HomePage() {
   const [bulkEntryModalOpen, setBulkEntryModalOpen] = useState(false);
   const [entryMarkerId, setEntryMarkerId] = useState<string | null>(null);
 
-  useNotifications();
+  useNotifications(isStaff);
 
   useEffect(() => {
     if (isError) {
@@ -182,9 +219,9 @@ export default function HomePage() {
 
   const updatePinsCache = useCallback(
     (updater: (prev: PaginatedResponse<Pin> | undefined) => PaginatedResponse<Pin> | undefined) => {
-      queryClient.setQueryData<PaginatedResponse<Pin>>(['pins', boundsKeyStr, isStaff], updater);
+      queryClient.setQueryData<PaginatedResponse<Pin>>(pinsQueryKey, updater);
     },
-    [queryClient, boundsKeyStr, isStaff],
+    [queryClient, pinsQueryKey],
   );
 
   const invalidateDefaultLocations = useCallback(() => {
@@ -200,7 +237,7 @@ export default function HomePage() {
 
   const handlePinClick = useCallback((pin: Pin | null) => {
     setSelectedPin(pin);
-    if (pin) updateUrl(pin.location.lat, pin.location.lng, zoom);
+    if (pin && hasValidPinLocation(pin)) updateUrl(pin.location.lat, pin.location.lng, zoom);
   }, [zoom, updateUrl]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
@@ -231,12 +268,23 @@ export default function HomePage() {
     if (!hasMore || isLoadingMore) return;
     setIsLoadingMore(true);
     try {
-      const next = await PinsController.fetchPins({
-        ...bounds,
-        limit: 200,
-        offset: pins.length,
-        auth: isStaff,
-      });
+      const next = fetchMode === 'nearby'
+        ? await PinsController.fetchNearbyPins({
+          lat: center[0],
+          lng: center[1],
+          radius_km: 5,
+          limit: 200,
+          offset: pins.length,
+          auth: isStaff,
+          ...dateFilter,
+        })
+        : await PinsController.fetchPins({
+          ...bounds,
+          limit: 200,
+          offset: pins.length,
+          auth: isStaff,
+          ...dateFilter,
+        });
       updatePinsCache((prev) => {
         if (!prev) return next;
         return { ...next, items: [...prev.items, ...next.items] };
@@ -247,7 +295,7 @@ export default function HomePage() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoadingMore, bounds, pins.length, updatePinsCache, isStaff]);
+  }, [hasMore, isLoadingMore, bounds, pins.length, updatePinsCache, isStaff, fetchMode, center, dateFilter]);
 
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
@@ -321,7 +369,7 @@ export default function HomePage() {
       const marker = await PinsController.createDefaultLocation(data);
       updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
       invalidateDefaultLocations();
-      setSelectedPin(marker);
+      setSelectedPin(hasValidPinLocation(marker) ? marker : null);
       toast({ title: 'Marcador criado', description: `Bairro ${data.neighborhood} configurado.` });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível criar o marcador.';
@@ -335,7 +383,7 @@ export default function HomePage() {
       const marker = await PinsController.updateDefaultLocation(id, data);
       updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
       invalidateDefaultLocations();
-      setSelectedPin((prev) => (prev?.id === id ? marker : prev));
+      setSelectedPin((prev) => (prev?.id === id ? mergePinUpdate(prev, marker) : prev));
       toast({ title: 'Marcador atualizado', description: 'Alterações salvas.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível atualizar o marcador.';
@@ -353,7 +401,7 @@ export default function HomePage() {
       updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
       invalidateDefaultLocations();
       queryClient.invalidateQueries({ queryKey: ['default-location-entries', markerId] });
-      setSelectedPin((prev) => (prev?.id === markerId ? marker : prev));
+      setSelectedPin((prev) => (prev?.id === markerId ? mergePinUpdate(prev, marker) : prev));
       toast({ title: 'Ocorrência registrada', description: 'Adicionada ao histórico do bairro.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível registrar a ocorrência.';
@@ -362,23 +410,24 @@ export default function HomePage() {
     }
   }, [updatePinsCache, invalidateDefaultLocations, queryClient]);
 
-  const handleBulkAddDefaultLocationEntries = useCallback(async (
+  const handleReplaceDefaultLocationEntries = useCallback(async (
     markerId: string,
     entries: BulkDefaultLocationEntryItem[],
   ) => {
     try {
-      const marker = await PinsController.addDefaultLocationEntriesBulk(markerId, { entries });
+      const marker = await PinsController.replaceDefaultLocationEntriesBulk(markerId, { entries });
       updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
       invalidateDefaultLocations();
       queryClient.invalidateQueries({ queryKey: ['default-location-entries', markerId] });
-      setSelectedPin((prev) => (prev?.id === markerId ? marker : prev));
+      queryClient.invalidateQueries({ queryKey: ['default-location', markerId] });
+      setSelectedPin((prev) => (prev?.id === markerId ? mergePinUpdate(prev, marker) : prev));
       const total = entries.reduce((sum, e) => sum + e.quantity, 0);
       toast({
-        title: 'Cadastro em lote concluído',
-        description: `${entries.length} tipo(s) registrado(s) · total ${total}.`,
+        title: 'Estatísticas substituídas',
+        description: `${entries.length} tipo(s) · total ${total}.`,
       });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Não foi possível registrar as entradas.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível substituir as estatísticas.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -412,7 +461,7 @@ export default function HomePage() {
         prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev,
       );
       if (isDefaultLocationPin(updated)) invalidateDefaultLocations();
-      setSelectedPin(updated);
+      setSelectedPin((prev) => (prev?.id === pinId ? mergePinUpdate(prev, updated) : prev));
       setMapMode('normal');
       setMovePinId(null);
       toast({ title: 'Pin movido', description: 'Localização atualizada.' });
@@ -485,7 +534,7 @@ export default function HomePage() {
     }
   }, [handleDeleteDefaultLocation]);
 
-  if (isLoadingLocation || !center || isLoadingPins) {
+  if (isLoadingLocation || isLoadingPins) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-[#121212] fixed inset-0">
         <div className="text-center">
@@ -499,7 +548,7 @@ export default function HomePage() {
 
   return (
     <div className="h-screen w-full overflow-hidden fixed inset-0">
-      <Map
+      <MapView
         pins={pins}
         onPinClick={handlePinClick}
         onMapClick={handleMapClick}
@@ -539,6 +588,27 @@ export default function HomePage() {
               Carregar mais
             </button>
           )}
+          <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Carregar pins</p>
+            <select
+              value={fetchMode}
+              onChange={(e) => setFetchMode(e.target.value as PinFetchMode)}
+              className="w-full h-7 rounded text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
+            >
+              <option value="bounds">Área visível</option>
+              <option value="nearby">Próximos (5 km)</option>
+            </select>
+            <select
+              value={datePreset}
+              onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+              className="w-full h-7 rounded text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
+            >
+              <option value="all">Todo período</option>
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+              <option value="90d">Últimos 90 dias</option>
+            </select>
+          </div>
         </div>
 
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 shadow-lg overflow-hidden">
@@ -549,18 +619,27 @@ export default function HomePage() {
                 <p className="text-xs text-blue-400 capitalize">{user?.role}</p>
               </div>
               {isModerator && (
-                <Link
-                  to="/admin/moderation"
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
-                >
-                  <ShieldCheck size={14} />
-                  Moderação
-                  {pendingCount > 0 && (
-                    <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
-                      {pendingCount > 99 ? '99+' : pendingCount}
-                    </span>
-                  )}
-                </Link>
+                <>
+                  <Link
+                    to="/admin/moderation"
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
+                  >
+                    <ShieldCheck size={14} />
+                    Moderação
+                    {pendingCount > 0 && (
+                      <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
+                        {pendingCount > 99 ? '99+' : pendingCount}
+                      </span>
+                    )}
+                  </Link>
+                  <Link
+                    to="/admin/analytics"
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                  >
+                    <BarChart3 size={14} />
+                    Painel analítico
+                  </Link>
+                </>
               )}
               {isAdmin && (
                 <>
@@ -583,7 +662,7 @@ export default function HomePage() {
                     className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <Layers size={14} />
-                    Cadastro em lote
+                    Substituir estatísticas
                   </button>
                   <DefaultLocationsAdminSection
                     markers={defaultMarkers}
@@ -653,7 +732,7 @@ export default function HomePage() {
         onClose={() => { setBulkEntryModalOpen(false); setEntryMarkerId(null); }}
         markers={defaultMarkers}
         initialMarkerId={entryMarkerId}
-        onSubmit={handleBulkAddDefaultLocationEntries}
+        onReplace={handleReplaceDefaultLocationEntries}
       />
     </div>
   );
