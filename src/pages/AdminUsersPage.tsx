@@ -1,23 +1,47 @@
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
-import { registerUser } from '@/controllers/auth';
+import { fetchUsers, registerUser, updateUser, deleteUser } from '@/controllers/auth';
+import { AuthUser, UserRole, RegisterInput } from '@/types';
 import { toast } from '@/components/ui/use-toast';
 import { ApiError } from '@/lib/errors';
-import { UserRole } from '@/types';
-import { ArrowLeft, Loader2, UserPlus } from 'lucide-react';
+import { ArrowLeft, Loader2, UserPlus, Pencil, Trash2, X, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Administrador',
+  moderator: 'Moderador',
+  user: 'Usuário',
+};
 
 export function AdminUsersPage() {
-  const { isAdmin, isLoading } = useAuth();
+  const { isAdmin, isLoading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [roleFilter, setRoleFilter] = useState<string>('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('moderator');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<UserRole>('user');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingUser, setEditingUser] = useState<AuthUser | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState<UserRole>('user');
+  const [editActive, setEditActive] = useState(true);
+  const [editPassword, setEditPassword] = useState('');
+  const [actionId, setActionId] = useState<string | null>(null);
 
-  if (isLoading) {
+  const { data: users = [], isLoading, refetch } = useQuery({
+    queryKey: ['auth', 'users', roleFilter],
+    queryFn: () => fetchUsers(roleFilter || undefined),
+    enabled: isAdmin,
+  });
+
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center">
         <Loader2 className="animate-spin text-white" size={32} />
@@ -29,89 +53,153 @@ export function AdminUsersPage() {
     return <Navigate to="/login" replace />;
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || password.length < 8) {
-      toast({
-        title: 'Dados inválidos',
-        description: 'Informe email e senha com pelo menos 8 caracteres.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Dados inválidos', description: 'Email e senha (mín. 8 caracteres) são obrigatórios.', variant: 'destructive' });
       return;
     }
     setIsSubmitting(true);
     try {
-      await registerUser({ email: email.trim(), password, role });
-      toast({ title: 'Usuário criado', description: `${email} cadastrado como ${role}.` });
-      setEmail('');
-      setPassword('');
-      setRole('moderator');
+      const input: RegisterInput = { email: email.trim(), password, role, ...(name.trim() && { name: name.trim() }) };
+      await registerUser(input);
+      toast({ title: 'Usuário criado', description: `${email} cadastrado.` });
+      setEmail(''); setPassword(''); setName(''); setRole('user');
+      refetch();
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Não foi possível criar o usuário.';
-      toast({ title: 'Erro', description: message, variant: 'destructive' });
+      toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Falha ao criar.', variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const startEdit = (u: AuthUser) => {
+    setEditingUser(u);
+    setEditName(u.name ?? '');
+    setEditRole(u.role);
+    setEditActive(u.isActive);
+    setEditPassword('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+    setActionId(editingUser.id);
+    try {
+      await updateUser(editingUser.id, {
+        name: editName.trim() || undefined,
+        role: editRole,
+        isActive: editActive,
+        ...(editPassword.length >= 8 && { password: editPassword }),
+      });
+      toast({ title: 'Usuário atualizado' });
+      setEditingUser(null);
+      refetch();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Falha ao salvar.', variant: 'destructive' });
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setActionId(id);
+    try {
+      await deleteUser(id);
+      toast({ title: 'Usuário excluído' });
+      refetch();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Falha ao excluir.', variant: 'destructive' });
+    } finally {
+      setActionId(null);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#2a2a2a] bg-[#1a1a1a] shadow-2xl overflow-hidden">
-        <div className="p-6 border-b border-[#2a2a2a]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
-              <UserPlus size={20} className="text-purple-400" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-white">Cadastrar usuário</h1>
-              <p className="text-sm text-gray-400">Somente administradores</p>
-            </div>
+    <div className="min-h-screen bg-[#121212] text-white">
+      <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="text-gray-400 hover:text-white"><ArrowLeft size={20} /></Link>
+          <div>
+            <h1 className="text-xl font-semibold">Gestão de usuários</h1>
+            <p className="text-sm text-gray-400">Somente administradores</p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email" className="text-gray-300">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="bg-[#121212] border-[#2a2a2a] text-white"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password" className="text-gray-300">Senha</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="bg-[#121212] border-[#2a2a2a] text-white"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="role" className="text-gray-300">Perfil</Label>
-            <select
-              id="role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as UserRole)}
-              className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm"
-            >
+        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4">
+          <h2 className="text-sm font-medium mb-3 flex items-center gap-2"><UserPlus size={16} /> Novo usuário</h2>
+          <form onSubmit={handleCreate} className="space-y-3">
+            <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <Input placeholder="Nome (opcional)" value={name} onChange={(e) => setName(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <Input placeholder="Senha (mín. 8)" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm">
+              <option value="user">Usuário</option>
               <option value="moderator">Moderador</option>
               <option value="admin">Administrador</option>
             </select>
-          </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? <><Loader2 size={16} className="animate-spin mr-2" /> Criando...</> : 'Criar usuário'}
-          </Button>
-        </form>
+            <Button type="submit" disabled={isSubmitting} className="w-full">
+              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Criar usuário'}
+            </Button>
+          </form>
+        </div>
 
-        <div className="px-6 pb-6 flex gap-4">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors">
-            <ArrowLeft size={14} />
-            Voltar ao mapa
-          </Link>
+        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium">Usuários ({users.length})</h2>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-8 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-2 text-xs">
+              <option value="">Todos</option>
+              <option value="user">Usuários</option>
+              <option value="moderator">Moderadores</option>
+              <option value="admin">Admins</option>
+            </select>
+          </div>
+          {isLoading ? (
+            <div className="flex justify-center py-6"><Loader2 className="animate-spin text-gray-400" /></div>
+          ) : (
+            <div className="space-y-2">
+              {users.map((u) => (
+                <div key={u.id} className="p-3 rounded-lg bg-[#121212] border border-[#2a2a2a]">
+                  {editingUser?.id === u.id ? (
+                    <div className="space-y-2">
+                      <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nome" className="h-8 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
+                      <select value={editRole} onChange={(e) => setEditRole(e.target.value as UserRole)} className="w-full h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-2 text-xs">
+                        <option value="user">Usuário</option>
+                        <option value="moderator">Moderador</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <label className="flex items-center gap-2 text-xs text-gray-300">
+                        <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
+                        Conta ativa
+                      </label>
+                      <Input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Nova senha (opcional)" type="password" className="h-8 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleSaveEdit} disabled={actionId === u.id} className="flex-1 h-7 text-xs">
+                          {actionId === u.id ? <Loader2 size={12} className="animate-spin" /> : <><Check size={12} className="mr-1" /> Salvar</>}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingUser(null)} className="h-7 text-xs border-[#2a2a2a] text-white"><X size={12} /></Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">{u.name || u.email}</p>
+                        {u.name && <p className="text-xs text-gray-500">{u.email}</p>}
+                        <div className="flex gap-2 mt-1">
+                          <span className="text-xs text-blue-400">{ROLE_LABELS[u.role]}</span>
+                          {!u.isActive && <span className="text-xs text-red-400">Inativo</span>}
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => startEdit(u)} className="p-1.5 text-gray-400 hover:text-white"><Pencil size={14} /></button>
+                        <button onClick={() => handleDelete(u.id)} disabled={actionId === u.id} className="p-1.5 text-red-400 hover:text-red-300">
+                          {actionId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,10 @@
 export type PinType = 'infraestrutura' | 'crime';
 
+export type PinKind = 'normal' | 'default_location';
+
 export type PinStatus = 'reported' | 'acknowledged' | 'in_progress' | 'resolved';
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface PinHistoryEntry {
   status: PinStatus;
@@ -13,6 +17,8 @@ export interface PinHistoryEntry {
 export interface Pin {
   id: string;
   type: PinType;
+  kind?: PinKind;
+  approvalStatus?: ApprovalStatus;
   location: {
     lat: number;
     lng: number;
@@ -26,6 +32,18 @@ export interface Pin {
   persistenceDays?: number;
   votes?: number;
   userVoted?: boolean;
+  entryCount?: number;
+  rejectionReason?: string;
+}
+
+export interface DefaultLocationEntry {
+  id: string;
+  type: PinType;
+  description: string;
+  comment?: string;
+  images: string[];
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreatePinInput {
@@ -39,11 +57,40 @@ export interface CreatePinInput {
   address?: string;
 }
 
+export interface DefaultLocationInput {
+  type: PinType;
+  location: { lat: number; lng: number };
+  description: string;
+  address?: string;
+}
+
+export interface DefaultLocationEntryInput {
+  type: PinType;
+  description: string;
+  images?: string[];
+  comment?: string;
+}
+
+export interface UpdateDefaultLocationEntryInput {
+  type?: PinType;
+  description?: string;
+  comment?: string;
+  images?: string[];
+}
+
 export interface UpdatePinInput {
   status?: PinStatus;
   description?: string;
   address?: string | null;
   comment?: string;
+}
+
+export interface AdminPinLocationInput {
+  location: { lat: number; lng: number };
+}
+
+export interface RejectPinInput {
+  reason: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -60,12 +107,14 @@ export interface MapBounds {
   lng_max: number;
 }
 
-export type UserRole = 'admin' | 'moderator';
+export type UserRole = 'admin' | 'moderator' | 'user';
 
 export interface AuthUser {
   id: string;
   email: string;
   role: UserRole;
+  name?: string;
+  isActive: boolean;
 }
 
 export interface AuthTokens {
@@ -78,6 +127,21 @@ export interface PinStats {
   total: number;
   unresolved: number;
   averagePersistenceDays: number;
+  pendingCount: number;
   byStatus: Record<PinStatus, number>;
   dayRanges: { label: string; count: number }[];
+}
+
+export interface UpdateUserInput {
+  name?: string;
+  role?: UserRole;
+  isActive?: boolean;
+  password?: string;
+}
+
+export interface RegisterInput {
+  email: string;
+  password: string;
+  role: UserRole;
+  name?: string;
 }

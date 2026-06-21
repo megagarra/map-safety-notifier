@@ -7,28 +7,53 @@ import {
   PaginatedResponse,
   MapBounds,
   PinStats,
+  DefaultLocationInput,
+  DefaultLocationEntryInput,
+  DefaultLocationEntry,
+  UpdateDefaultLocationEntryInput,
+  AdminPinLocationInput,
+  RejectPinInput,
 } from '@/types';
 import { api, apiFormData, buildQuery } from '@/lib/api';
+import { ApiError } from '@/lib/errors';
 
 export interface FetchPinsParams extends Partial<MapBounds> {
   limit?: number;
   offset?: number;
+  auth?: boolean;
 }
 
 export const fetchPins = async (params: FetchPinsParams = {}): Promise<PaginatedResponse<Pin>> => {
-  const { limit = 200, offset = 0, ...bounds } = params;
+  const { limit = 200, offset = 0, auth = false, ...bounds } = params;
   return api<PaginatedResponse<Pin>>(
     buildQuery('/api/pins', { limit, offset, ...bounds }),
+    { auth },
   );
+};
+
+export const fetchPendingModeration = async (): Promise<Pin[]> => {
+  return api<Pin[]>('/api/pins/moderation/pending', { auth: true });
+};
+
+export const approvePin = async (id: string): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${id}/approve`, { method: 'POST', auth: true });
+};
+
+export const rejectPin = async (id: string, input: RejectPinInput): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    auth: true,
+  });
 };
 
 export const fetchPinStats = async (): Promise<PinStats> => {
   return api<PinStats>('/api/pins/stats');
 };
 
-export const fetchPinById = async (id: string): Promise<Pin | null> => {
+export const fetchPinById = async (id: string, auth = false): Promise<Pin | null> => {
   try {
-    return await api<Pin>(`/api/pins/${id}`);
+    return await api<Pin>(`/api/pins/${id}`, { auth });
   } catch {
     return null;
   }
@@ -49,6 +74,14 @@ export const updatePin = async (id: string, updates: UpdatePinInput): Promise<Pi
   });
 };
 
+export const adminMovePin = async (id: string, input: AdminPinLocationInput): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${id}/admin`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+    auth: true,
+  });
+};
+
 export const deletePin = async (id: string): Promise<void> => {
   await api<void>(`/api/pins/${id}`, {
     method: 'DELETE',
@@ -58,6 +91,60 @@ export const deletePin = async (id: string): Promise<void> => {
 
 export const voteOnPin = async (pinId: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${pinId}/vote`, { method: 'POST' });
+};
+
+export const fetchDefaultLocation = async (): Promise<Pin | null> => {
+  try {
+    return await api<Pin>('/api/pins/default-location');
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+};
+
+export const upsertDefaultLocation = async (data: DefaultLocationInput): Promise<Pin> => {
+  return api<Pin>('/api/pins/default-location', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+    auth: true,
+  });
+};
+
+export const deleteDefaultLocation = async (): Promise<void> => {
+  await api<void>('/api/pins/default-location', {
+    method: 'DELETE',
+    auth: true,
+  });
+};
+
+export const fetchDefaultLocationEntries = async (): Promise<DefaultLocationEntry[]> => {
+  return api<DefaultLocationEntry[]>('/api/pins/default-location/entries');
+};
+
+export const addDefaultLocationEntry = async (data: DefaultLocationEntryInput): Promise<Pin> => {
+  return api<Pin>('/api/pins/default-location/entries', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    auth: true,
+  });
+};
+
+export const updateDefaultLocationEntry = async (
+  entryId: string,
+  data: UpdateDefaultLocationEntryInput,
+): Promise<DefaultLocationEntry> => {
+  return api<DefaultLocationEntry>(`/api/pins/default-location/entries/${entryId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+    auth: true,
+  });
+};
+
+export const deleteDefaultLocationEntry = async (entryId: string): Promise<void> => {
+  await api<void>(`/api/pins/default-location/entries/${entryId}`, {
+    method: 'DELETE',
+    auth: true,
+  });
 };
 
 export const uploadImage = async (file: File): Promise<string> => {

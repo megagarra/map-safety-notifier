@@ -47,8 +47,8 @@ export function LoginPage() {
               <Shield size={20} className="text-blue-400" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-white">Área do moderador</h1>
-              <p className="text-sm text-gray-400">Login para administradores e moderadores</p>
+              <h1 className="text-xl font-semibold text-white">Entrar</h1>
+              <p className="text-sm text-gray-400">Acesso para moderadores, admins e usuários cadastrados</p>
             </div>
           </div>
         </div>

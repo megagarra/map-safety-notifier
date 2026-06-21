@@ -22,7 +22,10 @@ import {
 } from 'lucide-react';
 import { ImageGallery } from './ImageGallery';
 import PinHistory from './PinHistory';
+import { DefaultLocationEntriesPanel } from './DefaultLocationEntriesPanel';
 import { useAuth } from '@/hooks/useAuth';
+import { isDefaultLocationPin, isPendingPin, getApprovalLabel, getApprovalClass } from '@/lib/pins';
+import { getPinConfig } from '@/lib/pinConfig';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,6 +56,13 @@ interface MapComponentProps {
   onVote: (pinId: string) => void;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
+  mapMode?: 'normal' | 'place-default-marker' | 'move-pin';
+  onRegisterDefaultEntry?: () => void;
+  onDeleteDefaultLocation?: () => Promise<void>;
+  onAdminMovePin?: (pinId: string, lat: number, lng: number) => Promise<void>;
+  onStartMovePin?: (pinId: string) => void;
+  movePinId?: string | null;
+  onEntriesChanged?: () => void;
 }
 
 const TILE_URLS = {
@@ -71,32 +81,7 @@ const MAP_CENTER: [number, number] = [-23.3343, -46.6953];
 const MAP_MIN_ZOOM = 12;
 const MAP_MAX_ZOOM = 19;
 
-// --- Pin config by type ---
-
-const PIN_CONFIG: Record<string, { label: string; color: string; border: string; bg: string; pulse: string; icon: string }> = {
-  infraestrutura: {
-    label: 'Infraestrutura',
-    color: 'text-orange-400',
-    border: 'border-orange-500/40',
-    bg: 'bg-orange-500/20',
-    pulse: 'rgba(249,115,22,0.4)',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14 2.3 6.3"/><path d="m14 6 7.7 7.7"/><path d="m8 6 8 8"/></svg>`,
-  },
-  crime: {
-    label: 'Crime',
-    color: 'text-red-400',
-    border: 'border-red-500/40',
-    bg: 'bg-red-500/20',
-    pulse: 'rgba(239,68,68,0.4)',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m14.5 9.5-5 5"/><path d="m9.5 9.5 5 5"/></svg>`,
-  },
-};
-
-const DEFAULT_PIN_CONFIG = PIN_CONFIG.infraestrutura;
-
-function getPinConfig(type: string) {
-  return PIN_CONFIG[type] || DEFAULT_PIN_CONFIG;
-}
+// --- Pin config imported from @/lib/pinConfig ---
 
 function getStatusLabel(status: string) {
   const map: Record<string, string> = {
@@ -203,8 +188,34 @@ function MapInstanceSetter({ setMapInstance }: { setMapInstance: (map: L.Map) =>
 
 // --- Pin marker rendering ---
 
+const DEFAULT_LOCATION_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="#a78bfa"/></svg>`;
+
 function createPinHTML(pin: Pin, currentZoom: number) {
+  const isDefault = isDefaultLocationPin(pin);
+
+  if (isDefault) {
+    const minZ = 12, maxZ = 18;
+    const ratio = Math.min(1, Math.max(0, (currentZoom - minZ) / (maxZ - minZ)));
+    const size = Math.round(44 * (0.75 + 0.25 * ratio));
+    const count = pin.entryCount ?? 0;
+    const countBadge = count > 0
+      ? `<div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);min-width:22px;height:22px;padding:0 5px;border-radius:11px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;background:#7c3aed;color:#fff;border:2px solid #1a1a1a;box-shadow:0 2px 6px rgba(0,0,0,0.4);z-index:2;">${count}</div>`
+      : '';
+    return {
+      html: `
+        <div class="default-location-marker" style="position:relative;display:flex;align-items:center;justify-content:center;width:${size}px;height:${size + 10}px;">
+          ${countBadge}
+          <div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(167,139,250,0.5);animation:defaultPinPulse 2s ease-out infinite;"></div>
+          <div style="width:${size}px;height:${size}px;border-radius:50%;background:linear-gradient(135deg,#1a1a1a,#2d1f4e);border:3px solid #a78bfa;display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(167,139,250,0.5);">
+            ${DEFAULT_LOCATION_ICON}
+          </div>
+        </div>`,
+      size: size + 10,
+    };
+  }
+
   const cfg = getPinConfig(pin.type);
+  const isPending = isPendingPin(pin);
   const hasHighVotes = (pin.votes || 0) > 5;
 
   const minZ = 12, maxZ = 18;
@@ -214,11 +225,12 @@ function createPinHTML(pin: Pin, currentZoom: number) {
   return {
     html: `
       <div style="position:relative;display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;">
-        <div style="width:100%;height:100%;border-radius:50%;background:#1a1a1a;border:2px solid;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);"
-             class="${cfg.border} ${cfg.color}">
+        <div style="width:100%;height:100%;border-radius:50%;background:#1a1a1a;border:2px ${isPending ? 'dashed' : 'solid'} ${isPending ? '#eab308' : ''};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);${isPending ? 'opacity:0.85;' : ''}"
+             class="${isPending ? '' : cfg.border} ${cfg.color}">
           ${cfg.icon}
         </div>
-        ${(pin.votes && pin.votes > 0) ? `<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #1a1a1a;" class="${cfg.bg} ${cfg.color}">${pin.votes}</div>` : ''}
+        ${isPending ? `<div style="position:absolute;top:-6px;right:-6px;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;background:#eab308;color:#1a1a1a;border:1.5px solid #1a1a1a;">!</div>` : ''}
+        ${(!isPending && pin.votes && pin.votes > 0) ? `<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #1a1a1a;" class="${cfg.bg} ${cfg.color}">${pin.votes}</div>` : ''}
       </div>`,
     size,
   };
@@ -227,7 +239,7 @@ function createPinHTML(pin: Pin, currentZoom: number) {
 const iconCache = new Map<string, L.DivIcon>();
 
 function getOrCreateIcon(pin: Pin, currentZoom: number): L.DivIcon {
-  const key = `${pin.type}-${pin.votes || 0}-${Math.floor(currentZoom)}`;
+  const key = `${pin.kind ?? 'normal'}-${pin.approvalStatus ?? 'approved'}-${pin.type}-${pin.votes || 0}-${pin.entryCount ?? 0}-${Math.floor(currentZoom)}`;
   let icon = iconCache.get(key);
   if (!icon) {
     const { html, size } = createPinHTML(pin, currentZoom);
@@ -254,6 +266,7 @@ function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) 
           key={pin.id}
           position={[pin.location.lat, pin.location.lng]}
           icon={getOrCreateIcon(pin, currentZoom)}
+          zIndexOffset={isDefaultLocationPin(pin) ? 1000 : 0}
           eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); onPinClick(pin); } }}
         />
       ))}
@@ -301,6 +314,10 @@ function PinDetailsModal({
   onVote,
   onUpdatePin,
   onDeletePin,
+  onRegisterDefaultEntry,
+  onDeleteDefaultLocation,
+  onStartMovePin,
+  onEntriesChanged,
   isMobile,
 }: {
   pin: Pin;
@@ -308,9 +325,15 @@ function PinDetailsModal({
   onVote: (id: string) => void;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
+  onRegisterDefaultEntry?: () => void;
+  onDeleteDefaultLocation?: () => Promise<void>;
+  onStartMovePin?: (pinId: string) => void;
+  onEntriesChanged?: () => void;
   isMobile: boolean;
 }) {
   const { isModerator, isAdmin } = useAuth();
+  const isDefault = isDefaultLocationPin(pin);
+  const isPending = isPendingPin(pin);
   const cfg = getPinConfig(pin.type);
   const [address, setAddress] = useState<string | null>(pin.address || null);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
@@ -319,6 +342,8 @@ function PinDetailsModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showDeleteMarkerDialog, setShowDeleteMarkerDialog] = useState(false);
+  const [isDeletingMarker, setIsDeletingMarker] = useState(false);
 
   useEffect(() => {
     setEditStatus(pin.status);
@@ -326,8 +351,9 @@ function PinDetailsModal({
   }, [pin.id, pin.status]);
 
   useEffect(() => {
-    if (pin.address) {
-      setAddress(pin.address);
+    if (isDefault || pin.address) {
+      setAddress(pin.address || null);
+      setIsLoadingAddress(false);
       return;
     }
     setIsLoadingAddress(true);
@@ -365,6 +391,19 @@ function PinDetailsModal({
     }
   };
 
+  const handleDeleteMarker = async () => {
+    if (!onDeleteDefaultLocation) return;
+    setIsDeletingMarker(true);
+    try {
+      await onDeleteDefaultLocation();
+      setShowDeleteMarkerDialog(false);
+    } catch {
+      /* toast in HomePage */
+    } finally {
+      setIsDeletingMarker(false);
+    }
+  };
+
   return (
     <>
       <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -375,12 +414,31 @@ function PinDetailsModal({
           {/* Header */}
           <div className="sticky top-0 z-10 flex justify-between items-center p-4 border-b border-[#2a2a2a] bg-[#1a1a1a] rounded-t-2xl">
             <div className="flex items-center gap-3">
-              <div className={cn("w-9 h-9 rounded-full flex items-center justify-center border-2", cfg.border, cfg.color)} style={{ background: '#1a1a1a' }}
-                dangerouslySetInnerHTML={{ __html: cfg.icon }}
+              <div
+                className={cn(
+                  "w-9 h-9 rounded-full flex items-center justify-center border-2",
+                  isDefault ? "border-violet-500/60 text-violet-400" : cn(cfg.border, cfg.color),
+                )}
+                style={{ background: isDefault ? '#2d1f4e' : '#1a1a1a' }}
+                dangerouslySetInnerHTML={{ __html: isDefault ? DEFAULT_LOCATION_ICON : cfg.icon }}
               />
               <div>
-                <h3 className="text-base font-semibold text-white">{cfg.label}</h3>
-                <span className={cn("text-xs px-2 py-0.5 rounded-full", getStatusClass(pin.status))}>{getStatusLabel(pin.status)}</span>
+                <h3 className="text-base font-semibold text-white">
+                  {isDefault ? 'Local padrão' : cfg.label}
+                </h3>
+                {!isDefault && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={cn("text-xs px-2 py-0.5 rounded-full", getStatusClass(pin.status))}>{getStatusLabel(pin.status)}</span>
+                    {isModerator && pin.approvalStatus && (
+                      <span className={cn("text-xs px-2 py-0.5 rounded-full", getApprovalClass(pin.approvalStatus))}>
+                        {getApprovalLabel(pin.approvalStatus)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {isDefault && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300">Sem endereço confirmado</span>
+                )}
               </div>
             </div>
             <button onClick={onClose} className="h-8 w-8 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
@@ -404,34 +462,65 @@ function PinDetailsModal({
             {/* Description */}
             <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
               <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>
-            </div>
-
-            {/* Timing */}
-            <div className="flex items-center gap-4 text-xs text-gray-400">
-              <span className="flex items-center gap-1">
-                <Clock size={13} />
-                {pin.reportedAt ? formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR }) : 'Data desconhecida'}
-              </span>
-              {pin.persistenceDays !== undefined && pin.persistenceDays > 0 && (
-                <span className="flex items-center gap-1">
-                  <AlertTriangle size={13} />
-                  {pin.status === 'resolved' ? `Resolvido em ${pin.persistenceDays}d` : `Há ${pin.persistenceDays} dias`}
-                </span>
+              {pin.rejectionReason && isModerator && (
+                <p className="text-xs text-red-400 mt-2 border-t border-[#2a2a2a] pt-2">
+                  Motivo da rejeição: {pin.rejectionReason}
+                </p>
               )}
             </div>
 
-            {/* Images */}
-            {pin.images && pin.images.length > 0 && (
-              <div className="space-y-2">
-                <ImageGallery images={pin.images} altPrefix="Foto" layout="separate" />
+            {isPending && isModerator && (
+              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-300">
+                Esta ocorrência aguarda aprovação e não é visível para visitantes.
               </div>
             )}
 
-            {/* History */}
-            {pin.history && pin.history.length > 0 && (
+            {/* Timing — oculto para marcador padrão */}
+            {!isDefault && (
+              <div className="flex items-center gap-4 text-xs text-gray-400">
+                <span className="flex items-center gap-1">
+                  <Clock size={13} />
+                  {pin.reportedAt ? formatDistanceToNow(new Date(pin.reportedAt), { addSuffix: true, locale: ptBR }) : 'Data desconhecida'}
+                </span>
+                {pin.persistenceDays !== undefined && pin.persistenceDays > 0 && (
+                  <span className="flex items-center gap-1">
+                    <AlertTriangle size={13} />
+                    {pin.status === 'resolved' ? `Resolvido em ${pin.persistenceDays}d` : `Há ${pin.persistenceDays} dias`}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Images — galeria compartilhada */}
+            {pin.images && pin.images.length > 0 && (
+              <div className="space-y-2">
+                <ImageGallery images={pin.images} altPrefix={isDefault ? 'Registro' : 'Foto'} layout="separate" />
+              </div>
+            )}
+
+            {/* Entries from API for default location */}
+            {isDefault && (
+              <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                <DefaultLocationEntriesPanel isAdmin={isAdmin} onEntriesChanged={onEntriesChanged} />
+              </div>
+            )}
+
+            {/* History for normal pins only */}
+            {!isDefault && pin.history && pin.history.length > 0 && (
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
                 <PinHistory history={pin.history} persistenceDays={pin.persistenceDays} />
               </div>
+            )}
+
+            {/* Admin: registrar ocorrência no marcador */}
+            {isDefault && isAdmin && onRegisterDefaultEntry && (
+              <Button
+                onClick={onRegisterDefaultEntry}
+                className="w-full bg-violet-600 hover:bg-violet-700 text-white"
+                size="sm"
+              >
+                Registrar ocorrência sem endereço
+              </Button>
             )}
 
             {/* Moderator controls */}
@@ -472,29 +561,43 @@ function PinDetailsModal({
               </div>
             )}
 
-            {/* Voting */}
-            <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users size={15} className="text-gray-500" />
-                  <span className="text-sm text-gray-300"><span className="font-semibold text-white">{pin.votes || 0}</span> confirmaram</span>
+            {/* Voting — não disponível para marcador padrão ou pendentes */}
+            {!isDefault && !isPending && (
+              <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users size={15} className="text-gray-500" />
+                    <span className="text-sm text-gray-300"><span className="font-semibold text-white">{pin.votes || 0}</span> confirmaram</span>
+                  </div>
+                  <button
+                    onClick={() => onVote(pin.id)}
+                    disabled={pin.userVoted}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                      pin.userVoted ? "bg-green-500/15 text-green-400" : "bg-white/10 text-white hover:bg-white/20"
+                    )}
+                  >
+                    <ThumbsUp size={14} />
+                    {pin.userVoted ? 'Confirmado' : 'Confirmar'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => onVote(pin.id)}
-                  disabled={pin.userVoted}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                    pin.userVoted ? "bg-green-500/15 text-green-400" : "bg-white/10 text-white hover:bg-white/20"
-                  )}
-                >
-                  <ThumbsUp size={14} />
-                  {pin.userVoted ? 'Confirmado' : 'Confirmar'}
-                </button>
               </div>
-            </div>
+            )}
 
-            {/* Admin delete */}
-            {isAdmin && onDeletePin && (
+            {/* Admin: mover pin no mapa */}
+            {isAdmin && !isDefault && onStartMovePin && (
+              <Button
+                variant="outline"
+                onClick={() => { onStartMovePin(pin.id); onClose(); }}
+                className="w-full border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                size="sm"
+              >
+                Mover pin no mapa
+              </Button>
+            )}
+
+            {/* Admin delete pin */}
+            {isAdmin && onDeletePin && !isDefault && (
               <Button
                 variant="outline"
                 onClick={() => setShowDeleteDialog(true)}
@@ -503,6 +606,19 @@ function PinDetailsModal({
               >
                 <Trash2 size={14} className="mr-2" />
                 Excluir pin
+              </Button>
+            )}
+
+            {/* Admin: remover marcador padrão inteiro */}
+            {isDefault && isAdmin && onDeleteDefaultLocation && (
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteMarkerDialog(true)}
+                className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10"
+                size="sm"
+              >
+                <Trash2 size={14} className="mr-2" />
+                Remover marcador padrão
               </Button>
             )}
 
@@ -533,6 +649,26 @@ function PinDetailsModal({
             >
               {isDeleting ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
               Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteMarkerDialog} onOpenChange={setShowDeleteMarkerDialog}>
+        <DialogContent className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
+          <DialogHeader>
+            <DialogTitle>Remover marcador padrão?</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Todas as entradas do histórico serão removidas. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteMarkerDialog(false)} className="border-[#2a2a2a] text-white">
+              Cancelar
+            </Button>
+            <Button onClick={handleDeleteMarker} disabled={isDeletingMarker} className="bg-red-600 hover:bg-red-700 text-white">
+              {isDeletingMarker ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+              Remover
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -576,7 +712,10 @@ const THEME_LABELS: Record<MapTheme, string> = {
   dark: 'Escuro',
 };
 
-const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom, onVote, onUpdatePin, onDeletePin }: MapComponentProps) => {
+const MapComponent = ({
+  pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom,
+  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onDeleteDefaultLocation, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
+}: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
@@ -625,6 +764,10 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, onBoundsChange,
   }, [mapInstance]);
 
   const handleMapClick = (lat: number, lng: number) => {
+    if (mapMode === 'move-pin' && movePinId && onAdminMovePin) {
+      onAdminMovePin(movePinId, lat, lng);
+      return;
+    }
     if (selectedPin) {
       onPinClick(null);
     } else {
@@ -634,6 +777,16 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, onBoundsChange,
 
   return (
     <div className={cn("h-full w-full relative overflow-hidden map-wrapper", mapTheme === 'dark' && "map-theme-dark")}>
+      {mapMode === 'place-default-marker' && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[500] px-4 py-2 rounded-lg bg-violet-600/90 backdrop-blur text-white text-sm font-medium shadow-lg pointer-events-none">
+          Clique no mapa para posicionar o marcador padrão
+        </div>
+      )}
+      {mapMode === 'move-pin' && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[500] px-4 py-2 rounded-lg bg-blue-600/90 backdrop-blur text-white text-sm font-medium shadow-lg pointer-events-none">
+          Clique no mapa para mover o pin
+        </div>
+      )}
       {!mapLoaded && <div className="map-loading-placeholder absolute inset-0 bg-[#121212] z-[5]" />}
 
       <MapContainer
@@ -691,6 +844,10 @@ const MapComponent = ({ pins, onPinClick, onMapClick, onMapMove, onBoundsChange,
           onVote={onVote}
           onUpdatePin={onUpdatePin}
           onDeletePin={onDeletePin}
+          onRegisterDefaultEntry={onRegisterDefaultEntry}
+          onDeleteDefaultLocation={onDeleteDefaultLocation}
+          onStartMovePin={onStartMovePin}
+          onEntriesChanged={onEntriesChanged}
           isMobile={isMobile}
         />
       )}

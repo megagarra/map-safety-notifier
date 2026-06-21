@@ -40,10 +40,10 @@ export function useNotifications() {
                 throw new ApiError('Falha ao registrar inscrição.', subRes.status);
             }
 
-            toast({
-                title: "Notificações ativadas",
-                description: "Você receberá alertas novos e atualizações de status em tempo real.",
-            });
+      toast({
+        title: "Notificações ativadas",
+        description: "Alertas de moderação, publicações e ocorrências sem endereço.",
+      });
         } catch (err) {
             console.error('Failed to subscribe the user: ', err);
             const message = err instanceof ApiError ? err.message : 'Não foi possível configurar as notificações.';

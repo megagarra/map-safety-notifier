@@ -3,13 +3,24 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Map from '@/components/Map';
 import ReportModal from '@/components/ReportModal';
-import { Pin, PinType, CreatePinInput, MapBounds, PaginatedResponse, UpdatePinInput } from '@/types';
+import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
+import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
+import {
+  Pin,
+  CreatePinInput,
+  MapBounds,
+  PaginatedResponse,
+  UpdatePinInput,
+  DefaultLocationInput,
+  DefaultLocationEntryInput,
+} from '@/types';
 import { toast } from '@/components/ui/use-toast';
 import * as PinsController from '@/controllers/pins';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
+import { isDefaultLocationPin } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, UserPlus } from 'lucide-react';
+import { LogIn, LogOut, Loader2, UserPlus, MapPin, FilePlus, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -25,26 +36,61 @@ function boundsKey(bounds: MapBounds) {
   return `${bounds.lat_min},${bounds.lat_max},${bounds.lng_min},${bounds.lng_max}`;
 }
 
+function replaceDefaultLocationInCache(
+  prev: PaginatedResponse<Pin> | undefined,
+  marker: Pin,
+): PaginatedResponse<Pin> {
+  if (!prev) {
+    return { items: [marker], total: 1, limit: 200, offset: 0 };
+  }
+  const withoutOld = prev.items.filter((p) => !isDefaultLocationPin(p));
+  const hadDefault = prev.items.some(isDefaultLocationPin);
+  return {
+    ...prev,
+    items: [marker, ...withoutOld],
+    total: hadDefault ? prev.total : prev.total + 1,
+  };
+}
+
 export default function HomePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAuthenticated, isAdmin, user, logout } = useAuth();
+  const { isAuthenticated, isAdmin, isModerator, isStaff, user, logout } = useAuth();
 
   const [bounds, setBounds] = useState<MapBounds>(DEFAULT_BOUNDS);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
 
   const { data: pinsPage, isLoading: isLoadingPins, isError } = useQuery({
-    queryKey: ['pins', boundsKeyStr],
-    queryFn: () => PinsController.fetchPins({ ...bounds, limit: 200, offset: 0 }),
+    queryKey: ['pins', boundsKeyStr, isStaff],
+    queryFn: () => PinsController.fetchPins({ ...bounds, limit: 200, offset: 0, auth: isStaff }),
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
   });
 
+  const { data: pinStats } = useQuery({
+    queryKey: ['pin-stats'],
+    queryFn: PinsController.fetchPinStats,
+    staleTime: 30_000,
+    enabled: isModerator,
+    refetchInterval: 60_000,
+  });
+
+  const pendingCount = pinStats?.pendingCount ?? 0;
+
+  useQuery({
+    queryKey: ['default-location'],
+    queryFn: PinsController.fetchDefaultLocation,
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
+
   const pins = pinsPage?.items ?? [];
   const total = pinsPage?.total ?? 0;
   const hasMore = pins.length < total;
+
+  const defaultLocationPin = useMemo(() => pins.find(isDefaultLocationPin) ?? null, [pins]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [center, setCenter] = useState<[number, number] | null>(null);
@@ -52,6 +98,12 @@ export default function HomePage() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+
+  const [mapMode, setMapMode] = useState<'normal' | 'place-default-marker' | 'move-pin'>('normal');
+  const [movePinId, setMovePinId] = useState<string | null>(null);
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [setupLocation, setSetupLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [entryModalOpen, setEntryModalOpen] = useState(false);
 
   useNotifications();
 
@@ -119,10 +171,17 @@ export default function HomePage() {
   }, [zoom, updateUrl]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
+    if (mapMode === 'move-pin' && movePinId) return;
+    if (mapMode === 'place-default-marker') {
+      setSetupLocation({ lat, lng });
+      setSetupModalOpen(true);
+      setMapMode('normal');
+      return;
+    }
     setNewPinLocation({ lat, lng });
     setReportModalOpen(true);
     updateUrl(lat, lng, zoom);
-  }, [zoom, updateUrl]);
+  }, [mapMode, zoom, updateUrl]);
 
   const handleMapMove = useCallback((newCenter: [number, number], newZoom: number) => {
     setCenter(newCenter);
@@ -142,13 +201,11 @@ export default function HomePage() {
         ...bounds,
         limit: 200,
         offset: pins.length,
+        auth: isStaff,
       });
       updatePinsCache((prev) => {
         if (!prev) return next;
-        return {
-          ...next,
-          items: [...prev.items, ...next.items],
-        };
+        return { ...next, items: [...prev.items, ...next.items] };
       });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível carregar mais alertas.';
@@ -156,23 +213,27 @@ export default function HomePage() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoadingMore, bounds, pins.length, updatePinsCache]);
+  }, [hasMore, isLoadingMore, bounds, pins.length, updatePinsCache, isStaff]);
 
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
-      const newPin = await PinsController.createPin(data);
-      updatePinsCache((prev) => {
-        if (!prev) return { items: [newPin], total: 1, limit: 200, offset: 0 };
-        return { ...prev, items: [newPin, ...prev.items], total: prev.total + 1 };
+      await PinsController.createPin(data);
+      queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
+      queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
+      toast({
+        title: 'Enviado para revisão',
+        description: 'Sua ocorrência será analisada pela equipe antes de aparecer no mapa.',
       });
-      toast({ title: 'Relatório enviado', description: 'Seu relatório foi enviado com sucesso.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Tente novamente.';
       toast({ title: 'Erro ao enviar relatório', description: message, variant: 'destructive' });
     }
-  }, [updatePinsCache]);
+  }, [queryClient]);
 
   const handleVote = useCallback(async (pinId: string) => {
+    const pin = pins.find((p) => p.id === pinId);
+    if (pin && isDefaultLocationPin(pin)) return;
+
     try {
       const updated = await PinsController.voteOnPin(pinId);
       updatePinsCache((prev) =>
@@ -184,7 +245,7 @@ export default function HomePage() {
       const message = err instanceof ApiError ? err.message : 'Tente novamente.';
       toast({ title: 'Erro ao registrar voto', description: message, variant: 'destructive' });
     }
-  }, [updatePinsCache]);
+  }, [updatePinsCache, pins]);
 
   const handleUpdatePin = useCallback(async (pinId: string, updates: UpdatePinInput) => {
     try {
@@ -193,13 +254,14 @@ export default function HomePage() {
         prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev,
       );
       setSelectedPin((prev) => (prev?.id === pinId ? updated : prev));
+      queryClient.setQueryData(['default-location'], isDefaultLocationPin(updated) ? updated : null);
       toast({ title: 'Pin atualizado', description: 'Alterações salvas com sucesso.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível atualizar o pin.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
-  }, [updatePinsCache]);
+  }, [updatePinsCache, queryClient]);
 
   const handleDeletePin = useCallback(async (pinId: string) => {
     try {
@@ -220,6 +282,108 @@ export default function HomePage() {
       throw err;
     }
   }, [updatePinsCache]);
+
+  const handleUpsertDefaultLocation = useCallback(async (data: DefaultLocationInput) => {
+    try {
+      const marker = await PinsController.upsertDefaultLocation(data);
+      updatePinsCache((prev) => replaceDefaultLocationInCache(prev, marker));
+      queryClient.setQueryData(['default-location'], marker);
+      setSelectedPin(marker);
+      toast({
+        title: defaultLocationPin ? 'Marcador atualizado' : 'Marcador configurado',
+        description: 'O ponto de ocorrências sem endereço foi salvo.',
+      });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível salvar o marcador.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+      throw err;
+    }
+  }, [updatePinsCache, queryClient, defaultLocationPin]);
+
+  const handleAddDefaultLocationEntry = useCallback(async (data: DefaultLocationEntryInput) => {
+    try {
+      const marker = await PinsController.addDefaultLocationEntry(data);
+      updatePinsCache((prev) => replaceDefaultLocationInCache(prev, marker));
+      queryClient.setQueryData(['default-location'], marker);
+      queryClient.invalidateQueries({ queryKey: ['default-location-entries'] });
+      setSelectedPin(marker);
+      toast({ title: 'Ocorrência registrada', description: 'Adicionada ao histórico do marcador padrão.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível registrar a ocorrência.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+      throw err;
+    }
+  }, [updatePinsCache, queryClient]);
+
+  const handleDeleteDefaultLocation = useCallback(async () => {
+    try {
+      await PinsController.deleteDefaultLocation();
+      updatePinsCache((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: prev.items.filter((p) => !isDefaultLocationPin(p)),
+          total: Math.max(0, prev.total - 1),
+        };
+      });
+      queryClient.setQueryData(['default-location'], null);
+      queryClient.invalidateQueries({ queryKey: ['default-location-entries'] });
+      setSelectedPin(null);
+      toast({ title: 'Marcador removido', description: 'O marcador padrão foi excluído.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível remover o marcador.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+      throw err;
+    }
+  }, [updatePinsCache, queryClient]);
+
+  const handleAdminMovePin = useCallback(async (pinId: string, lat: number, lng: number) => {
+    try {
+      const updated = await PinsController.adminMovePin(pinId, { location: { lat, lng } });
+      updatePinsCache((prev) =>
+        prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev,
+      );
+      setSelectedPin(updated);
+      setMapMode('normal');
+      setMovePinId(null);
+      toast({ title: 'Pin movido', description: 'Localização atualizada.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível mover o pin.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    }
+  }, [updatePinsCache]);
+
+  const handleStartMovePin = useCallback((pinId: string) => {
+    setMovePinId(pinId);
+    setMapMode('move-pin');
+    toast({ title: 'Mover pin', description: 'Clique no mapa na nova posição.' });
+  }, []);
+
+  const handleEntriesChanged = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['pins'] });
+    queryClient.invalidateQueries({ queryKey: ['default-location'] });
+  }, [queryClient]);
+
+  const startPlaceDefaultMarker = useCallback(() => {
+    setMapMode('place-default-marker');
+    setSelectedPin(null);
+    toast({
+      title: 'Posicionar marcador',
+      description: 'Clique no mapa no local desejado.',
+    });
+  }, []);
+
+  const handleRegisterDefaultEntry = useCallback(() => {
+    if (!defaultLocationPin) {
+      toast({
+        title: 'Marcador não configurado',
+        description: 'Configure o marcador padrão antes de registrar ocorrências.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setEntryModalOpen(true);
+  }, [defaultLocationPin]);
 
   if (isLoadingLocation || !center || isLoadingPins) {
     return (
@@ -247,11 +411,19 @@ export default function HomePage() {
         zoom={zoom}
         onVote={handleVote}
         onUpdatePin={handleUpdatePin}
-        onDeletePin={handleDeletePin}
+        onDeletePin={isAdmin ? handleDeletePin : undefined}
+        mapMode={mapMode}
+        movePinId={movePinId}
+        onAdminMovePin={isAdmin ? handleAdminMovePin : undefined}
+        onStartMovePin={isAdmin ? handleStartMovePin : undefined}
+        onDeleteDefaultLocation={isAdmin ? handleDeleteDefaultLocation : undefined}
+        onEntriesChanged={handleEntriesChanged}
+        onRegisterDefaultEntry={() => {
+          setEntryModalOpen(true);
+        }}
       />
 
-      {/* Auth + stats overlay */}
-      <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 max-w-[220px]">
+      <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 max-w-[240px]">
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 px-3 py-2 shadow-lg">
           <p className="text-xs text-gray-400">
             Mostrando <span className="text-white font-medium">{pins.length}</span> de{' '}
@@ -276,14 +448,44 @@ export default function HomePage() {
                 <p className="text-xs text-gray-400 truncate">{user?.email}</p>
                 <p className="text-xs text-blue-400 capitalize">{user?.role}</p>
               </div>
-              {isAdmin && (
+              {isModerator && (
                 <Link
-                  to="/admin/users"
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                  to="/admin/moderation"
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
                 >
-                  <UserPlus size={14} />
-                  Usuários
+                  <ShieldCheck size={14} />
+                  Moderação
+                  {pendingCount > 0 && (
+                    <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
+                      {pendingCount > 99 ? '99+' : pendingCount}
+                    </span>
+                  )}
                 </Link>
+              )}
+              {isAdmin && (
+                <>
+                  <Link
+                    to="/admin/users"
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                  >
+                    <UserPlus size={14} />
+                    Usuários
+                  </Link>
+                  <button
+                    onClick={startPlaceDefaultMarker}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                  >
+                    <MapPin size={14} />
+                    {defaultLocationPin ? 'Mover marcador padrão' : 'Configurar marcador padrão'}
+                  </button>
+                  <button
+                    onClick={handleRegisterDefaultEntry}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                  >
+                    <FilePlus size={14} />
+                    Registrar sem endereço
+                  </button>
+                </>
               )}
               <button
                 onClick={() => { logout(); toast({ title: 'Logout realizado' }); }}
@@ -303,6 +505,15 @@ export default function HomePage() {
             </Link>
           )}
         </div>
+
+        {(mapMode === 'place-default-marker' || mapMode === 'move-pin') && (
+          <button
+            onClick={() => { setMapMode('normal'); setMovePinId(null); }}
+            className="text-xs px-3 py-1.5 rounded-lg bg-[#1a1a1a]/90 border border-white/10 text-gray-400 hover:text-white"
+          >
+            Cancelar
+          </button>
+        )}
       </div>
 
       <ReportModal
@@ -310,6 +521,22 @@ export default function HomePage() {
         onClose={() => { setReportModalOpen(false); setNewPinLocation(null); }}
         onSubmit={handleReportSubmit}
         location={newPinLocation}
+      />
+
+      <DefaultLocationSetupModal
+        isOpen={setupModalOpen}
+        onClose={() => { setSetupModalOpen(false); setSetupLocation(null); }}
+        location={setupLocation}
+        onSubmit={handleUpsertDefaultLocation}
+        existingDescription={defaultLocationPin?.description}
+        existingAddress={defaultLocationPin?.address}
+        existingType={defaultLocationPin?.type}
+      />
+
+      <DefaultLocationEntryModal
+        isOpen={entryModalOpen}
+        onClose={() => setEntryModalOpen(false)}
+        onSubmit={handleAddDefaultLocationEntry}
       />
     </div>
   );

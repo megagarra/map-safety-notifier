@@ -143,8 +143,9 @@ src/
 | Rota | Página | Descrição |
 |------|--------|-----------|
 | `/` | HomePage | Mapa interativo com pins |
-| `/login` | LoginPage | Login de moderadores/admins (JWT) |
-| `/admin/users` | AdminUsersPage | Cadastro de moderadores (somente admin) |
+| `/login` | LoginPage | Login (admin, moderador, usuário) |
+| `/admin/moderation` | ModerationPage | Fila de aprovação (staff) |
+| `/admin/users` | AdminUsersPage | Gestão de usuários (admin) |
 
 ## API e autenticação
 
@@ -163,11 +164,15 @@ Use esse email e senha em `#/login`.
 ### Funcionalidades integradas
 
 - Listagem paginada de pins (`GET /api/pins` → `{ items, total, limit, offset }`)
+- **Moderação**: ocorrências públicas ficam `pending` até aprovação; fila em `#/admin/moderation`
+- Staff logado vê todos os pins no mapa (incl. pendentes); visitantes só `approved` + marcador padrão
 - Filtro por área visível do mapa (bbox: `lat_min`, `lat_max`, `lng_min`, `lng_max`)
 - Upload de imagens via `POST /api/images/upload` (paths `/uploads/...` no create)
 - JWT com refresh automático em rotas protegidas (PATCH/DELETE)
 - Moderação: alterar status e comentário no modal do pin
-- Exclusão de pin (somente `role: admin`)
+- Exclusão de pin (somente `role: admin`, exceto marcador padrão)
+- **Marcador padrão** (`kind: "default_location"`): ponto único para ocorrências sem endereço — renderização violeta no mapa, histórico como feed, sem voto/exclusão
+- Admin: `PUT /api/pins/default-location` (configurar/mover) e `POST /api/pins/default-location/entries` (registrar ocorrência)
 - Push notifications (novos alertas e atualizações de status)
 
 ## Dados
