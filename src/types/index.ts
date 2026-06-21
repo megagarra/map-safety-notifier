@@ -41,10 +41,16 @@ export interface DefaultLocationEntry {
   id: string;
   type: PinType;
   description: string;
+  quantity: number;
   comment?: string;
   images: string[];
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface DefaultLocationEntriesResponse {
+  items: DefaultLocationEntry[];
+  totalQuantity: number;
 }
 
 export interface CreatePinInput {
@@ -77,13 +83,26 @@ export interface UpdateDefaultLocationInput {
 export interface DefaultLocationEntryInput {
   type: PinType;
   description: string;
+  quantity?: number;
   images?: string[];
   comment?: string;
+}
+
+export interface BulkDefaultLocationEntryItem {
+  type: PinType;
+  description: string;
+  quantity: number;
+  comment?: string;
+}
+
+export interface BulkDefaultLocationEntriesInput {
+  entries: BulkDefaultLocationEntryItem[];
 }
 
 export interface UpdateDefaultLocationEntryInput {
   type?: PinType;
   description?: string;
+  quantity?: number;
   comment?: string;
   images?: string[];
 }

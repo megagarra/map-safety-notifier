@@ -5,6 +5,7 @@ import Map from '@/components/Map';
 import ReportModal from '@/components/ReportModal';
 import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
 import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
+import { DefaultLocationBulkEntryModal } from '@/components/DefaultLocationBulkEntryModal';
 import { DefaultLocationsAdminSection } from '@/components/DefaultLocationsAdminSection';
 import {
   Pin,
@@ -15,6 +16,7 @@ import {
   CreateDefaultLocationInput,
   UpdateDefaultLocationInput,
   DefaultLocationEntryInput,
+  BulkDefaultLocationEntryItem,
 } from '@/types';
 import { toast } from '@/components/ui/use-toast';
 import * as PinsController from '@/controllers/pins';
@@ -22,7 +24,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck } from 'lucide-react';
+import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -129,6 +131,7 @@ export default function HomePage() {
   const [setupLocation, setSetupLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [editingMarker, setEditingMarker] = useState<Pin | null>(null);
   const [entryModalOpen, setEntryModalOpen] = useState(false);
+  const [bulkEntryModalOpen, setBulkEntryModalOpen] = useState(false);
   const [entryMarkerId, setEntryMarkerId] = useState<string | null>(null);
 
   useNotifications();
@@ -343,7 +346,10 @@ export default function HomePage() {
 
   const handleAddDefaultLocationEntry = useCallback(async (markerId: string, data: DefaultLocationEntryInput) => {
     try {
-      const marker = await PinsController.addDefaultLocationEntry(markerId, data);
+      const marker = await PinsController.addDefaultLocationEntry(markerId, {
+        ...data,
+        quantity: data.quantity ?? 1,
+      });
       updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
       invalidateDefaultLocations();
       queryClient.invalidateQueries({ queryKey: ['default-location-entries', markerId] });
@@ -351,6 +357,28 @@ export default function HomePage() {
       toast({ title: 'Ocorrência registrada', description: 'Adicionada ao histórico do bairro.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível registrar a ocorrência.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+      throw err;
+    }
+  }, [updatePinsCache, invalidateDefaultLocations, queryClient]);
+
+  const handleBulkAddDefaultLocationEntries = useCallback(async (
+    markerId: string,
+    entries: BulkDefaultLocationEntryItem[],
+  ) => {
+    try {
+      const marker = await PinsController.addDefaultLocationEntriesBulk(markerId, { entries });
+      updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
+      invalidateDefaultLocations();
+      queryClient.invalidateQueries({ queryKey: ['default-location-entries', markerId] });
+      setSelectedPin((prev) => (prev?.id === markerId ? marker : prev));
+      const total = entries.reduce((sum, e) => sum + e.quantity, 0);
+      toast({
+        title: 'Cadastro em lote concluído',
+        description: `${entries.length} tipo(s) registrado(s) · total ${total}.`,
+      });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível registrar as entradas.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -424,6 +452,19 @@ export default function HomePage() {
     setEntryModalOpen(true);
   }, [defaultMarkers]);
 
+  const openBulkEntryModal = useCallback((markerId?: string | null) => {
+    if (defaultMarkers.length === 0) {
+      toast({
+        title: 'Nenhum bairro configurado',
+        description: 'Crie um marcador por bairro antes do cadastro em lote.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setEntryMarkerId(markerId ?? defaultMarkers[0]?.id ?? null);
+    setBulkEntryModalOpen(true);
+  }, [defaultMarkers]);
+
   const focusMarker = useCallback((marker: Pin) => {
     setCenter([marker.location.lat, marker.location.lng]);
     setZoom(15);
@@ -479,6 +520,7 @@ export default function HomePage() {
         onEditDefaultMarker={isAdmin ? openEditMarker : undefined}
         onEntriesChanged={handleEntriesChanged}
         onRegisterDefaultEntry={isAdmin ? openEntryModal : undefined}
+        onBulkRegisterDefaultEntry={isAdmin ? openBulkEntryModal : undefined}
       />
 
       <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 max-w-[240px]">
@@ -535,6 +577,13 @@ export default function HomePage() {
                   >
                     <FilePlus size={14} />
                     Registrar sem endereço
+                  </button>
+                  <button
+                    onClick={() => openBulkEntryModal()}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                  >
+                    <Layers size={14} />
+                    Cadastro em lote
                   </button>
                   <DefaultLocationsAdminSection
                     markers={defaultMarkers}
@@ -597,6 +646,14 @@ export default function HomePage() {
         markers={defaultMarkers}
         initialMarkerId={entryMarkerId}
         onSubmit={handleAddDefaultLocationEntry}
+      />
+
+      <DefaultLocationBulkEntryModal
+        isOpen={bulkEntryModalOpen}
+        onClose={() => { setBulkEntryModalOpen(false); setEntryMarkerId(null); }}
+        markers={defaultMarkers}
+        initialMarkerId={entryMarkerId}
+        onSubmit={handleBulkAddDefaultLocationEntries}
       />
     </div>
   );

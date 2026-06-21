@@ -34,6 +34,7 @@ export function DefaultLocationEntryModal({
   const [markerId, setMarkerId] = useState('');
   const [type, setType] = useState<PinType>('crime');
   const [description, setDescription] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [comment, setComment] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,6 +48,7 @@ export function DefaultLocationEntryModal({
     setMarkerId(preferred);
     setType('crime');
     setDescription('');
+    setQuantity(1);
     setComment('');
     setImages([]);
     setError(null);
@@ -55,6 +57,7 @@ export function DefaultLocationEntryModal({
   const reset = () => {
     setType('crime');
     setDescription('');
+    setQuantity(1);
     setComment('');
     setImages([]);
     setError(null);
@@ -89,12 +92,17 @@ export function DefaultLocationEntryModal({
       setError('Informe a descrição da ocorrência.');
       return;
     }
+    if (quantity < 1) {
+      setError('Quantidade mínima: 1.');
+      return;
+    }
     setIsSubmitting(true);
     setError(null);
     try {
       await onSubmit(markerId, {
         type,
         description: description.trim(),
+        quantity,
         ...(images.length > 0 && { images }),
         ...(comment.trim() && { comment: comment.trim() }),
       });
@@ -162,6 +170,18 @@ export function DefaultLocationEntryModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Descreva a ocorrência..."
               className="min-h-[100px] bg-[#1a1a1a] border-[#2a2a2a] text-white"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="entry-quantity" className="text-gray-300">Quantidade</Label>
+            <Input
+              id="entry-quantity"
+              type="number"
+              min={1}
+              value={quantity}
+              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              className="bg-[#1a1a1a] border-[#2a2a2a] text-white"
             />
           </div>
 

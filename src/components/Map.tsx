@@ -58,6 +58,7 @@ interface MapComponentProps {
   onDeletePin?: (pinId: string) => Promise<void>;
   mapMode?: 'normal' | 'place-default-marker' | 'move-pin';
   onRegisterDefaultEntry?: (markerId: string) => void;
+  onBulkRegisterDefaultEntry?: (markerId: string) => void;
   onDeleteDefaultLocation?: (markerId: string) => Promise<void>;
   onEditDefaultMarker?: (pin: Pin) => void;
   onAdminMovePin?: (pinId: string, lat: number, lng: number) => Promise<void>;
@@ -321,6 +322,7 @@ function PinDetailsModal({
   onUpdatePin,
   onDeletePin,
   onRegisterDefaultEntry,
+  onBulkRegisterDefaultEntry,
   onDeleteDefaultLocation,
   onEditDefaultMarker,
   onStartMovePin,
@@ -333,6 +335,7 @@ function PinDetailsModal({
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
   onRegisterDefaultEntry?: (markerId: string) => void;
+  onBulkRegisterDefaultEntry?: (markerId: string) => void;
   onDeleteDefaultLocation?: (markerId: string) => Promise<void>;
   onEditDefaultMarker?: (pin: Pin) => void;
   onStartMovePin?: (pinId: string) => void;
@@ -511,7 +514,12 @@ function PinDetailsModal({
             {/* Entries from API for default location */}
             {isDefault && (
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                <DefaultLocationEntriesPanel markerId={pin.id} isAdmin={isAdmin} onEntriesChanged={onEntriesChanged} />
+                <DefaultLocationEntriesPanel
+                  markerId={pin.id}
+                  isAdmin={isAdmin}
+                  onEntriesChanged={onEntriesChanged}
+                  onBulkRegister={isAdmin && onBulkRegisterDefaultEntry ? () => onBulkRegisterDefaultEntry(pin.id) : undefined}
+                />
               </div>
             )}
 
@@ -746,7 +754,7 @@ const THEME_LABELS: Record<MapTheme, string> = {
 
 const MapComponent = ({
   pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom,
-  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
+  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onBulkRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
 }: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -877,6 +885,7 @@ const MapComponent = ({
           onUpdatePin={onUpdatePin}
           onDeletePin={onDeletePin}
           onRegisterDefaultEntry={onRegisterDefaultEntry}
+          onBulkRegisterDefaultEntry={onBulkRegisterDefaultEntry}
           onDeleteDefaultLocation={onDeleteDefaultLocation}
           onEditDefaultMarker={onEditDefaultMarker}
           onStartMovePin={onStartMovePin}

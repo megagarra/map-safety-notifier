@@ -10,7 +10,9 @@ import {
   CreateDefaultLocationInput,
   UpdateDefaultLocationInput,
   DefaultLocationEntryInput,
+  BulkDefaultLocationEntriesInput,
   DefaultLocationEntry,
+  DefaultLocationEntriesResponse,
   UpdateDefaultLocationEntryInput,
   AdminPinLocationInput,
   RejectPinInput,
@@ -124,9 +126,19 @@ export const deleteDefaultLocation = async (id: string): Promise<void> => {
   });
 };
 
-export const fetchDefaultLocationEntries = async (markerId: string): Promise<DefaultLocationEntry[]> => {
+export const fetchDefaultLocationEntries = async (markerId: string): Promise<DefaultLocationEntriesResponse> => {
   const data = await api<unknown>(`/api/pins/default-locations/${markerId}/entries`);
-  return unwrapApiList<DefaultLocationEntry>(data);
+  const items = unwrapApiList<DefaultLocationEntry>(data);
+
+  if (typeof data === 'object' && data !== null && 'totalQuantity' in data) {
+    const totalQuantity = (data as { totalQuantity: number }).totalQuantity;
+    return { items, totalQuantity };
+  }
+
+  return {
+    items,
+    totalQuantity: items.reduce((sum, entry) => sum + (entry.quantity ?? 1), 0),
+  };
 };
 
 export const addDefaultLocationEntry = async (
@@ -134,6 +146,17 @@ export const addDefaultLocationEntry = async (
   data: DefaultLocationEntryInput,
 ): Promise<Pin> => {
   return api<Pin>(`/api/pins/default-locations/${markerId}/entries`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, quantity: data.quantity ?? 1 }),
+    auth: true,
+  });
+};
+
+export const addDefaultLocationEntriesBulk = async (
+  markerId: string,
+  data: BulkDefaultLocationEntriesInput,
+): Promise<Pin> => {
+  return api<Pin>(`/api/pins/default-locations/${markerId}/entries/bulk`, {
     method: 'POST',
     body: JSON.stringify(data),
     auth: true,
