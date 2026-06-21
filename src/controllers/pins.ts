@@ -7,7 +7,8 @@ import {
   PaginatedResponse,
   MapBounds,
   PinStats,
-  DefaultLocationInput,
+  CreateDefaultLocationInput,
+  UpdateDefaultLocationInput,
   DefaultLocationEntryInput,
   DefaultLocationEntry,
   UpdateDefaultLocationEntryInput,
@@ -15,7 +16,7 @@ import {
   RejectPinInput,
 } from '@/types';
 import { api, apiFormData, buildQuery } from '@/lib/api';
-import { ApiError } from '@/lib/errors';
+import { unwrapApiList } from '@/lib/apiList';
 
 export interface FetchPinsParams extends Partial<MapBounds> {
   limit?: number;
@@ -32,7 +33,8 @@ export const fetchPins = async (params: FetchPinsParams = {}): Promise<Paginated
 };
 
 export const fetchPendingModeration = async (): Promise<Pin[]> => {
-  return api<Pin[]>('/api/pins/moderation/pending', { auth: true });
+  const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/moderation/pending', { auth: true });
+  return unwrapApiList<Pin>(data);
 };
 
 export const approvePin = async (id: string): Promise<Pin> => {
@@ -59,10 +61,11 @@ export const fetchPinById = async (id: string, auth = false): Promise<Pin | null
   }
 };
 
-export const createPin = async (pin: CreatePinInput): Promise<Pin> => {
+export const createPin = async (pin: CreatePinInput, auth = false): Promise<Pin> => {
   return api<Pin>('/api/pins', {
     method: 'POST',
     body: JSON.stringify(pin),
+    auth,
   });
 };
 
@@ -93,36 +96,44 @@ export const voteOnPin = async (pinId: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${pinId}/vote`, { method: 'POST' });
 };
 
-export const fetchDefaultLocation = async (): Promise<Pin | null> => {
-  try {
-    return await api<Pin>('/api/pins/default-location');
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) return null;
-    throw err;
-  }
+export const fetchDefaultLocations = async (): Promise<Pin[]> => {
+  const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/default-locations');
+  return unwrapApiList<Pin>(data);
 };
 
-export const upsertDefaultLocation = async (data: DefaultLocationInput): Promise<Pin> => {
-  return api<Pin>('/api/pins/default-location', {
-    method: 'PUT',
+export const createDefaultLocation = async (data: CreateDefaultLocationInput): Promise<Pin> => {
+  return api<Pin>('/api/pins/default-locations', {
+    method: 'POST',
     body: JSON.stringify(data),
     auth: true,
   });
 };
 
-export const deleteDefaultLocation = async (): Promise<void> => {
-  await api<void>('/api/pins/default-location', {
+export const updateDefaultLocation = async (id: string, data: UpdateDefaultLocationInput): Promise<Pin> => {
+  return api<Pin>(`/api/pins/default-locations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+    auth: true,
+  });
+};
+
+export const deleteDefaultLocation = async (id: string): Promise<void> => {
+  await api<void>(`/api/pins/default-locations/${id}`, {
     method: 'DELETE',
     auth: true,
   });
 };
 
-export const fetchDefaultLocationEntries = async (): Promise<DefaultLocationEntry[]> => {
-  return api<DefaultLocationEntry[]>('/api/pins/default-location/entries');
+export const fetchDefaultLocationEntries = async (markerId: string): Promise<DefaultLocationEntry[]> => {
+  const data = await api<unknown>(`/api/pins/default-locations/${markerId}/entries`);
+  return unwrapApiList<DefaultLocationEntry>(data);
 };
 
-export const addDefaultLocationEntry = async (data: DefaultLocationEntryInput): Promise<Pin> => {
-  return api<Pin>('/api/pins/default-location/entries', {
+export const addDefaultLocationEntry = async (
+  markerId: string,
+  data: DefaultLocationEntryInput,
+): Promise<Pin> => {
+  return api<Pin>(`/api/pins/default-locations/${markerId}/entries`, {
     method: 'POST',
     body: JSON.stringify(data),
     auth: true,
@@ -130,18 +141,19 @@ export const addDefaultLocationEntry = async (data: DefaultLocationEntryInput): 
 };
 
 export const updateDefaultLocationEntry = async (
+  markerId: string,
   entryId: string,
   data: UpdateDefaultLocationEntryInput,
 ): Promise<DefaultLocationEntry> => {
-  return api<DefaultLocationEntry>(`/api/pins/default-location/entries/${entryId}`, {
+  return api<DefaultLocationEntry>(`/api/pins/default-locations/${markerId}/entries/${entryId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
     auth: true,
   });
 };
 
-export const deleteDefaultLocationEntry = async (entryId: string): Promise<void> => {
-  await api<void>(`/api/pins/default-location/entries/${entryId}`, {
+export const deleteDefaultLocationEntry = async (markerId: string, entryId: string): Promise<void> => {
+  await api<void>(`/api/pins/default-locations/${markerId}/entries/${entryId}`, {
     method: 'DELETE',
     auth: true,
   });

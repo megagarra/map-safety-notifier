@@ -198,8 +198,19 @@ self.addEventListener('push', event => {
   }
 
   const title = data.title || 'Novo Alerta de Segurança';
+  const eventType = data.event || data.type;
+  let body = data.body || 'Um novo evento foi reportado no mapa.';
+  if (eventType === 'moderation_pending') {
+    body = data.body || 'Nova ocorrência aguardando aprovação na fila de moderação.';
+  } else if (eventType === 'pin_approved') {
+    body = data.body || 'Uma ocorrência foi aprovada e publicada no mapa.';
+  } else if (eventType === 'default_location_entry') {
+    const neighborhood = data.neighborhood ? ` (${data.neighborhood})` : '';
+    body = data.body || `Nova entrada registrada em marcador por bairro${neighborhood}.`;
+  }
+
   const options = {
-    body: data.body || 'Um novo evento foi reportado no mapa.',
+    body,
     icon: '/pwa-192x192.png',
     badge: '/favicon.ico',
     data: data, // Armazena os dados para uso no clique

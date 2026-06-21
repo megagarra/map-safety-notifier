@@ -33,6 +33,7 @@ export interface Pin {
   votes?: number;
   userVoted?: boolean;
   entryCount?: number;
+  neighborhood?: string;
   rejectionReason?: string;
 }
 
@@ -57,11 +58,20 @@ export interface CreatePinInput {
   address?: string;
 }
 
-export interface DefaultLocationInput {
+export interface CreateDefaultLocationInput {
+  neighborhood: string;
   type: PinType;
   location: { lat: number; lng: number };
   description: string;
   address?: string;
+}
+
+export interface UpdateDefaultLocationInput {
+  neighborhood?: string;
+  type?: PinType;
+  location?: { lat: number; lng: number };
+  description?: string;
+  address?: string | null;
 }
 
 export interface DefaultLocationEntryInput {

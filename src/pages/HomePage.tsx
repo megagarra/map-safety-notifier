@@ -5,13 +5,15 @@ import Map from '@/components/Map';
 import ReportModal from '@/components/ReportModal';
 import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
 import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
+import { DefaultLocationsAdminSection } from '@/components/DefaultLocationsAdminSection';
 import {
   Pin,
   CreatePinInput,
   MapBounds,
   PaginatedResponse,
   UpdatePinInput,
-  DefaultLocationInput,
+  CreateDefaultLocationInput,
+  UpdateDefaultLocationInput,
   DefaultLocationEntryInput,
 } from '@/types';
 import { toast } from '@/components/ui/use-toast';
@@ -20,7 +22,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, UserPlus, MapPin, FilePlus, ShieldCheck } from 'lucide-react';
+import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -36,19 +38,32 @@ function boundsKey(bounds: MapBounds) {
   return `${bounds.lat_min},${bounds.lat_max},${bounds.lng_min},${bounds.lng_max}`;
 }
 
-function replaceDefaultLocationInCache(
+function upsertMarkerInCache(
   prev: PaginatedResponse<Pin> | undefined,
   marker: Pin,
 ): PaginatedResponse<Pin> {
   if (!prev) {
     return { items: [marker], total: 1, limit: 200, offset: 0 };
   }
-  const withoutOld = prev.items.filter((p) => !isDefaultLocationPin(p));
-  const hadDefault = prev.items.some(isDefaultLocationPin);
+  const idx = prev.items.findIndex((p) => p.id === marker.id);
+  if (idx >= 0) {
+    const items = [...prev.items];
+    items[idx] = marker;
+    return { ...prev, items };
+  }
+  return { ...prev, items: [marker, ...prev.items], total: prev.total + 1 };
+}
+
+function removeMarkerFromCache(
+  prev: PaginatedResponse<Pin> | undefined,
+  markerId: string,
+): PaginatedResponse<Pin> | undefined {
+  if (!prev) return prev;
+  const had = prev.items.some((p) => p.id === markerId);
   return {
     ...prev,
-    items: [marker, ...withoutOld],
-    total: hadDefault ? prev.total : prev.total + 1,
+    items: prev.items.filter((p) => p.id !== markerId),
+    total: had ? Math.max(0, prev.total - 1) : prev.total,
   };
 }
 
@@ -77,20 +92,29 @@ export default function HomePage() {
     refetchInterval: 60_000,
   });
 
-  const pendingCount = pinStats?.pendingCount ?? 0;
-
-  useQuery({
-    queryKey: ['default-location'],
-    queryFn: PinsController.fetchDefaultLocation,
+  const { data: defaultLocations = [], isLoading: isLoadingDefaultLocations } = useQuery({
+    queryKey: ['default-locations'],
+    queryFn: PinsController.fetchDefaultLocations,
     enabled: isAdmin,
     staleTime: 60_000,
   });
+
+  const pendingCount = pinStats?.pendingCount ?? 0;
 
   const pins = pinsPage?.items ?? [];
   const total = pinsPage?.total ?? 0;
   const hasMore = pins.length < total;
 
-  const defaultLocationPin = useMemo(() => pins.find(isDefaultLocationPin) ?? null, [pins]);
+  const defaultMarkers = useMemo(() => {
+    const fromPins = pins.filter(isDefaultLocationPin);
+    if (!isAdmin || defaultLocations.length === 0) return fromPins;
+    const byId = new Map<string, Pin>();
+    defaultLocations.forEach((m) => byId.set(m.id, m));
+    fromPins.forEach((m) => byId.set(m.id, m));
+    return Array.from(byId.values()).sort((a, b) =>
+      (a.neighborhood ?? '').localeCompare(b.neighborhood ?? '', 'pt-BR'),
+    );
+  }, [pins, defaultLocations, isAdmin]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const [center, setCenter] = useState<[number, number] | null>(null);
@@ -103,7 +127,9 @@ export default function HomePage() {
   const [movePinId, setMovePinId] = useState<string | null>(null);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [setupLocation, setSetupLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [editingMarker, setEditingMarker] = useState<Pin | null>(null);
   const [entryModalOpen, setEntryModalOpen] = useState(false);
+  const [entryMarkerId, setEntryMarkerId] = useState<string | null>(null);
 
   useNotifications();
 
@@ -153,10 +179,14 @@ export default function HomePage() {
 
   const updatePinsCache = useCallback(
     (updater: (prev: PaginatedResponse<Pin> | undefined) => PaginatedResponse<Pin> | undefined) => {
-      queryClient.setQueryData<PaginatedResponse<Pin>>(['pins', boundsKeyStr], updater);
+      queryClient.setQueryData<PaginatedResponse<Pin>>(['pins', boundsKeyStr, isStaff], updater);
     },
-    [queryClient, boundsKeyStr],
+    [queryClient, boundsKeyStr, isStaff],
   );
+
+  const invalidateDefaultLocations = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['default-locations'] });
+  }, [queryClient]);
 
   const updateUrl = useCallback((lat: number, lng: number, z: number) => {
     if (urlTimeout.current) clearTimeout(urlTimeout.current);
@@ -174,6 +204,7 @@ export default function HomePage() {
     if (mapMode === 'move-pin' && movePinId) return;
     if (mapMode === 'place-default-marker') {
       setSetupLocation({ lat, lng });
+      setEditingMarker(null);
       setSetupModalOpen(true);
       setMapMode('normal');
       return;
@@ -181,7 +212,7 @@ export default function HomePage() {
     setNewPinLocation({ lat, lng });
     setReportModalOpen(true);
     updateUrl(lat, lng, zoom);
-  }, [mapMode, zoom, updateUrl]);
+  }, [mapMode, movePinId, zoom, updateUrl]);
 
   const handleMapMove = useCallback((newCenter: [number, number], newZoom: number) => {
     setCenter(newCenter);
@@ -217,18 +248,18 @@ export default function HomePage() {
 
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
-      await PinsController.createPin(data);
+      await PinsController.createPin(data, isAuthenticated);
       queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
       toast({
         title: 'Enviado para revisão',
-        description: 'Sua ocorrência será analisada pela equipe antes de aparecer no mapa.',
+        description: 'Aparecerá no mapa após aprovação.',
       });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Tente novamente.';
       toast({ title: 'Erro ao enviar relatório', description: message, variant: 'destructive' });
     }
-  }, [queryClient]);
+  }, [queryClient, isAuthenticated]);
 
   const handleVote = useCallback(async (pinId: string) => {
     const pin = pins.find((p) => p.id === pinId);
@@ -254,14 +285,13 @@ export default function HomePage() {
         prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev,
       );
       setSelectedPin((prev) => (prev?.id === pinId ? updated : prev));
-      queryClient.setQueryData(['default-location'], isDefaultLocationPin(updated) ? updated : null);
       toast({ title: 'Pin atualizado', description: 'Alterações salvas com sucesso.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível atualizar o pin.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
-  }, [updatePinsCache, queryClient]);
+  }, [updatePinsCache]);
 
   const handleDeletePin = useCallback(async (pinId: string) => {
     try {
@@ -283,66 +313,77 @@ export default function HomePage() {
     }
   }, [updatePinsCache]);
 
-  const handleUpsertDefaultLocation = useCallback(async (data: DefaultLocationInput) => {
+  const handleCreateDefaultLocation = useCallback(async (data: CreateDefaultLocationInput) => {
     try {
-      const marker = await PinsController.upsertDefaultLocation(data);
-      updatePinsCache((prev) => replaceDefaultLocationInCache(prev, marker));
-      queryClient.setQueryData(['default-location'], marker);
+      const marker = await PinsController.createDefaultLocation(data);
+      updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
+      invalidateDefaultLocations();
       setSelectedPin(marker);
-      toast({
-        title: defaultLocationPin ? 'Marcador atualizado' : 'Marcador configurado',
-        description: 'O ponto de ocorrências sem endereço foi salvo.',
-      });
+      toast({ title: 'Marcador criado', description: `Bairro ${data.neighborhood} configurado.` });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Não foi possível salvar o marcador.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível criar o marcador.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
-  }, [updatePinsCache, queryClient, defaultLocationPin]);
+  }, [updatePinsCache, invalidateDefaultLocations]);
 
-  const handleAddDefaultLocationEntry = useCallback(async (data: DefaultLocationEntryInput) => {
+  const handleUpdateDefaultLocation = useCallback(async (id: string, data: UpdateDefaultLocationInput) => {
     try {
-      const marker = await PinsController.addDefaultLocationEntry(data);
-      updatePinsCache((prev) => replaceDefaultLocationInCache(prev, marker));
-      queryClient.setQueryData(['default-location'], marker);
-      queryClient.invalidateQueries({ queryKey: ['default-location-entries'] });
-      setSelectedPin(marker);
-      toast({ title: 'Ocorrência registrada', description: 'Adicionada ao histórico do marcador padrão.' });
+      const marker = await PinsController.updateDefaultLocation(id, data);
+      updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
+      invalidateDefaultLocations();
+      setSelectedPin((prev) => (prev?.id === id ? marker : prev));
+      toast({ title: 'Marcador atualizado', description: 'Alterações salvas.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível atualizar o marcador.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+      throw err;
+    }
+  }, [updatePinsCache, invalidateDefaultLocations]);
+
+  const handleAddDefaultLocationEntry = useCallback(async (markerId: string, data: DefaultLocationEntryInput) => {
+    try {
+      const marker = await PinsController.addDefaultLocationEntry(markerId, data);
+      updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
+      invalidateDefaultLocations();
+      queryClient.invalidateQueries({ queryKey: ['default-location-entries', markerId] });
+      setSelectedPin((prev) => (prev?.id === markerId ? marker : prev));
+      toast({ title: 'Ocorrência registrada', description: 'Adicionada ao histórico do bairro.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível registrar a ocorrência.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
-  }, [updatePinsCache, queryClient]);
+  }, [updatePinsCache, invalidateDefaultLocations, queryClient]);
 
-  const handleDeleteDefaultLocation = useCallback(async () => {
+  const handleDeleteDefaultLocation = useCallback(async (markerId: string) => {
     try {
-      await PinsController.deleteDefaultLocation();
-      updatePinsCache((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          items: prev.items.filter((p) => !isDefaultLocationPin(p)),
-          total: Math.max(0, prev.total - 1),
-        };
-      });
-      queryClient.setQueryData(['default-location'], null);
-      queryClient.invalidateQueries({ queryKey: ['default-location-entries'] });
+      await PinsController.deleteDefaultLocation(markerId);
+      updatePinsCache((prev) => removeMarkerFromCache(prev, markerId));
+      invalidateDefaultLocations();
+      queryClient.removeQueries({ queryKey: ['default-location-entries', markerId] });
       setSelectedPin(null);
-      toast({ title: 'Marcador removido', description: 'O marcador padrão foi excluído.' });
+      toast({ title: 'Marcador removido', description: 'O marcador do bairro foi excluído.' });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Não foi possível remover o marcador.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
-  }, [updatePinsCache, queryClient]);
+  }, [updatePinsCache, invalidateDefaultLocations, queryClient]);
 
   const handleAdminMovePin = useCallback(async (pinId: string, lat: number, lng: number) => {
+    const pin = pins.find((p) => p.id === pinId) ?? defaultMarkers.find((p) => p.id === pinId);
+    if (!pin) return;
+
     try {
-      const updated = await PinsController.adminMovePin(pinId, { location: { lat, lng } });
+      const updated = isDefaultLocationPin(pin)
+        ? await PinsController.updateDefaultLocation(pinId, { location: { lat, lng } })
+        : await PinsController.adminMovePin(pinId, { location: { lat, lng } });
+
       updatePinsCache((prev) =>
         prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev,
       );
+      if (isDefaultLocationPin(updated)) invalidateDefaultLocations();
       setSelectedPin(updated);
       setMapMode('normal');
       setMovePinId(null);
@@ -351,7 +392,7 @@ export default function HomePage() {
       const message = err instanceof ApiError ? err.message : 'Não foi possível mover o pin.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
     }
-  }, [updatePinsCache]);
+  }, [updatePinsCache, pins, defaultMarkers, invalidateDefaultLocations]);
 
   const handleStartMovePin = useCallback((pinId: string) => {
     setMovePinId(pinId);
@@ -361,29 +402,47 @@ export default function HomePage() {
 
   const handleEntriesChanged = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['pins'] });
-    queryClient.invalidateQueries({ queryKey: ['default-location'] });
-  }, [queryClient]);
+    invalidateDefaultLocations();
+  }, [queryClient, invalidateDefaultLocations]);
 
   const startPlaceDefaultMarker = useCallback(() => {
     setMapMode('place-default-marker');
     setSelectedPin(null);
-    toast({
-      title: 'Posicionar marcador',
-      description: 'Clique no mapa no local desejado.',
-    });
+    toast({ title: 'Novo marcador', description: 'Clique no mapa para posicionar o marcador do bairro.' });
   }, []);
 
-  const handleRegisterDefaultEntry = useCallback(() => {
-    if (!defaultLocationPin) {
+  const openEntryModal = useCallback((markerId?: string | null) => {
+    if (defaultMarkers.length === 0) {
       toast({
-        title: 'Marcador não configurado',
-        description: 'Configure o marcador padrão antes de registrar ocorrências.',
+        title: 'Nenhum bairro configurado',
+        description: 'Crie um marcador por bairro antes de registrar ocorrências.',
         variant: 'destructive',
       });
       return;
     }
+    setEntryMarkerId(markerId ?? defaultMarkers[0]?.id ?? null);
     setEntryModalOpen(true);
-  }, [defaultLocationPin]);
+  }, [defaultMarkers]);
+
+  const focusMarker = useCallback((marker: Pin) => {
+    setCenter([marker.location.lat, marker.location.lng]);
+    setZoom(15);
+    setSelectedPin(marker);
+    updateUrl(marker.location.lat, marker.location.lng, 15);
+  }, [updateUrl]);
+
+  const openEditMarker = useCallback((marker: Pin) => {
+    setEditingMarker(marker);
+    setSetupLocation(marker.location);
+    setSetupModalOpen(true);
+  }, []);
+
+  const confirmDeleteMarker = useCallback((marker: Pin) => {
+    const name = marker.neighborhood ?? 'este bairro';
+    if (window.confirm(`Remover marcador de ${name}? Todas as entradas serão excluídas.`)) {
+      handleDeleteDefaultLocation(marker.id);
+    }
+  }, [handleDeleteDefaultLocation]);
 
   if (isLoadingLocation || !center || isLoadingPins) {
     return (
@@ -417,10 +476,9 @@ export default function HomePage() {
         onAdminMovePin={isAdmin ? handleAdminMovePin : undefined}
         onStartMovePin={isAdmin ? handleStartMovePin : undefined}
         onDeleteDefaultLocation={isAdmin ? handleDeleteDefaultLocation : undefined}
+        onEditDefaultMarker={isAdmin ? openEditMarker : undefined}
         onEntriesChanged={handleEntriesChanged}
-        onRegisterDefaultEntry={() => {
-          setEntryModalOpen(true);
-        }}
+        onRegisterDefaultEntry={isAdmin ? openEntryModal : undefined}
       />
 
       <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 max-w-[240px]">
@@ -472,19 +530,20 @@ export default function HomePage() {
                     Usuários
                   </Link>
                   <button
-                    onClick={startPlaceDefaultMarker}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
-                  >
-                    <MapPin size={14} />
-                    {defaultLocationPin ? 'Mover marcador padrão' : 'Configurar marcador padrão'}
-                  </button>
-                  <button
-                    onClick={handleRegisterDefaultEntry}
+                    onClick={() => openEntryModal()}
                     className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <FilePlus size={14} />
                     Registrar sem endereço
                   </button>
+                  <DefaultLocationsAdminSection
+                    markers={defaultMarkers}
+                    isLoading={isLoadingDefaultLocations}
+                    onFocus={focusMarker}
+                    onEdit={openEditMarker}
+                    onDelete={confirmDeleteMarker}
+                    onCreateNew={startPlaceDefaultMarker}
+                  />
                 </>
               )}
               <button
@@ -525,17 +584,18 @@ export default function HomePage() {
 
       <DefaultLocationSetupModal
         isOpen={setupModalOpen}
-        onClose={() => { setSetupModalOpen(false); setSetupLocation(null); }}
+        onClose={() => { setSetupModalOpen(false); setSetupLocation(null); setEditingMarker(null); }}
         location={setupLocation}
-        onSubmit={handleUpsertDefaultLocation}
-        existingDescription={defaultLocationPin?.description}
-        existingAddress={defaultLocationPin?.address}
-        existingType={defaultLocationPin?.type}
+        marker={editingMarker}
+        onCreate={handleCreateDefaultLocation}
+        onUpdate={handleUpdateDefaultLocation}
       />
 
       <DefaultLocationEntryModal
         isOpen={entryModalOpen}
-        onClose={() => setEntryModalOpen(false)}
+        onClose={() => { setEntryModalOpen(false); setEntryMarkerId(null); }}
+        markers={defaultMarkers}
+        initialMarkerId={entryMarkerId}
         onSubmit={handleAddDefaultLocationEntry}
       />
     </div>

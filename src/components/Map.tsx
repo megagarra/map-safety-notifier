@@ -57,8 +57,9 @@ interface MapComponentProps {
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
   mapMode?: 'normal' | 'place-default-marker' | 'move-pin';
-  onRegisterDefaultEntry?: () => void;
-  onDeleteDefaultLocation?: () => Promise<void>;
+  onRegisterDefaultEntry?: (markerId: string) => void;
+  onDeleteDefaultLocation?: (markerId: string) => Promise<void>;
+  onEditDefaultMarker?: (pin: Pin) => void;
   onAdminMovePin?: (pinId: string, lat: number, lng: number) => Promise<void>;
   onStartMovePin?: (pinId: string) => void;
   movePinId?: string | null;
@@ -198,19 +199,24 @@ function createPinHTML(pin: Pin, currentZoom: number) {
     const ratio = Math.min(1, Math.max(0, (currentZoom - minZ) / (maxZ - minZ)));
     const size = Math.round(44 * (0.75 + 0.25 * ratio));
     const count = pin.entryCount ?? 0;
+    const neighborhood = pin.neighborhood ?? '';
     const countBadge = count > 0
       ? `<div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);min-width:22px;height:22px;padding:0 5px;border-radius:11px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;background:#7c3aed;color:#fff;border:2px solid #1a1a1a;box-shadow:0 2px 6px rgba(0,0,0,0.4);z-index:2;">${count}</div>`
       : '';
+    const neighborhoodLabel = neighborhood
+      ? `<div style="position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:600;color:#c4b5fd;background:rgba(26,26,26,0.92);padding:1px 6px;border-radius:4px;border:1px solid rgba(167,139,250,0.35);max-width:120px;overflow:hidden;text-overflow:ellipsis;">${neighborhood}</div>`
+      : '';
     return {
       html: `
-        <div class="default-location-marker" style="position:relative;display:flex;align-items:center;justify-content:center;width:${size}px;height:${size + 10}px;">
+        <div class="default-location-marker" style="position:relative;display:flex;align-items:center;justify-content:center;width:${size}px;height:${size + (neighborhood ? 26 : 10)}px;">
           ${countBadge}
           <div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(167,139,250,0.5);animation:defaultPinPulse 2s ease-out infinite;"></div>
           <div style="width:${size}px;height:${size}px;border-radius:50%;background:linear-gradient(135deg,#1a1a1a,#2d1f4e);border:3px solid #a78bfa;display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(167,139,250,0.5);">
             ${DEFAULT_LOCATION_ICON}
           </div>
+          ${neighborhoodLabel}
         </div>`,
-      size: size + 10,
+      size: size + (neighborhood ? 26 : 10),
     };
   }
 
@@ -239,7 +245,7 @@ function createPinHTML(pin: Pin, currentZoom: number) {
 const iconCache = new Map<string, L.DivIcon>();
 
 function getOrCreateIcon(pin: Pin, currentZoom: number): L.DivIcon {
-  const key = `${pin.kind ?? 'normal'}-${pin.approvalStatus ?? 'approved'}-${pin.type}-${pin.votes || 0}-${pin.entryCount ?? 0}-${Math.floor(currentZoom)}`;
+  const key = `${pin.kind ?? 'normal'}-${pin.approvalStatus ?? 'approved'}-${pin.type}-${pin.votes || 0}-${pin.entryCount ?? 0}-${pin.neighborhood ?? ''}-${Math.floor(currentZoom)}`;
   let icon = iconCache.get(key);
   if (!icon) {
     const { html, size } = createPinHTML(pin, currentZoom);
@@ -316,6 +322,7 @@ function PinDetailsModal({
   onDeletePin,
   onRegisterDefaultEntry,
   onDeleteDefaultLocation,
+  onEditDefaultMarker,
   onStartMovePin,
   onEntriesChanged,
   isMobile,
@@ -325,8 +332,9 @@ function PinDetailsModal({
   onVote: (id: string) => void;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
-  onRegisterDefaultEntry?: () => void;
-  onDeleteDefaultLocation?: () => Promise<void>;
+  onRegisterDefaultEntry?: (markerId: string) => void;
+  onDeleteDefaultLocation?: (markerId: string) => Promise<void>;
+  onEditDefaultMarker?: (pin: Pin) => void;
   onStartMovePin?: (pinId: string) => void;
   onEntriesChanged?: () => void;
   isMobile: boolean;
@@ -361,7 +369,7 @@ function PinDetailsModal({
       setAddress(result);
       setIsLoadingAddress(false);
     });
-  }, [pin.id, pin.address, pin.location.lat, pin.location.lng]);
+  }, [pin.id, pin.address, pin.location.lat, pin.location.lng, isDefault]);
 
   const handleSave = async () => {
     if (!onUpdatePin) return;
@@ -395,7 +403,7 @@ function PinDetailsModal({
     if (!onDeleteDefaultLocation) return;
     setIsDeletingMarker(true);
     try {
-      await onDeleteDefaultLocation();
+      await onDeleteDefaultLocation(pin.id);
       setShowDeleteMarkerDialog(false);
     } catch {
       /* toast in HomePage */
@@ -424,7 +432,7 @@ function PinDetailsModal({
               />
               <div>
                 <h3 className="text-base font-semibold text-white">
-                  {isDefault ? 'Local padrão' : cfg.label}
+                  {isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : cfg.label}
                 </h3>
                 {!isDefault && (
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -437,7 +445,9 @@ function PinDetailsModal({
                   </div>
                 )}
                 {isDefault && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300">Sem endereço confirmado</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300">
+                    {pin.entryCount ?? 0} ocorrência{(pin.entryCount ?? 0) === 1 ? '' : 's'}
+                  </span>
                 )}
               </div>
             </div>
@@ -501,7 +511,7 @@ function PinDetailsModal({
             {/* Entries from API for default location */}
             {isDefault && (
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                <DefaultLocationEntriesPanel isAdmin={isAdmin} onEntriesChanged={onEntriesChanged} />
+                <DefaultLocationEntriesPanel markerId={pin.id} isAdmin={isAdmin} onEntriesChanged={onEntriesChanged} />
               </div>
             )}
 
@@ -515,11 +525,33 @@ function PinDetailsModal({
             {/* Admin: registrar ocorrência no marcador */}
             {isDefault && isAdmin && onRegisterDefaultEntry && (
               <Button
-                onClick={onRegisterDefaultEntry}
+                onClick={() => onRegisterDefaultEntry(pin.id)}
                 className="w-full bg-violet-600 hover:bg-violet-700 text-white"
                 size="sm"
               >
                 Registrar ocorrência sem endereço
+              </Button>
+            )}
+
+            {isDefault && isAdmin && onEditDefaultMarker && (
+              <Button
+                variant="outline"
+                onClick={() => onEditDefaultMarker(pin)}
+                className="w-full border-violet-500/30 text-violet-300 hover:bg-violet-500/10"
+                size="sm"
+              >
+                Editar marcador
+              </Button>
+            )}
+
+            {isDefault && isAdmin && onStartMovePin && (
+              <Button
+                variant="outline"
+                onClick={() => { onStartMovePin(pin.id); onClose(); }}
+                className="w-full border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                size="sm"
+              >
+                Mover marcador no mapa
               </Button>
             )}
 
@@ -657,9 +689,9 @@ function PinDetailsModal({
       <Dialog open={showDeleteMarkerDialog} onOpenChange={setShowDeleteMarkerDialog}>
         <DialogContent className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
           <DialogHeader>
-            <DialogTitle>Remover marcador padrão?</DialogTitle>
+            <DialogTitle>Remover marcador de {pin.neighborhood ?? 'bairro'}?</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Todas as entradas do histórico serão removidas. Esta ação não pode ser desfeita.
+              Todas as entradas deste bairro serão removidas. Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -714,7 +746,7 @@ const THEME_LABELS: Record<MapTheme, string> = {
 
 const MapComponent = ({
   pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom,
-  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onDeleteDefaultLocation, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
+  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
 }: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -846,6 +878,7 @@ const MapComponent = ({
           onDeletePin={onDeletePin}
           onRegisterDefaultEntry={onRegisterDefaultEntry}
           onDeleteDefaultLocation={onDeleteDefaultLocation}
+          onEditDefaultMarker={onEditDefaultMarker}
           onStartMovePin={onStartMovePin}
           onEntriesChanged={onEntriesChanged}
           isMobile={isMobile}

@@ -15,11 +15,12 @@ import { Loader2, Pencil, Trash2, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DefaultLocationEntriesPanelProps {
+  markerId: string;
   isAdmin: boolean;
   onEntriesChanged?: () => void;
 }
 
-export function DefaultLocationEntriesPanel({ isAdmin, onEntriesChanged }: DefaultLocationEntriesPanelProps) {
+export function DefaultLocationEntriesPanel({ markerId, isAdmin, onEntriesChanged }: DefaultLocationEntriesPanelProps) {
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDesc, setEditDesc] = useState('');
@@ -29,8 +30,9 @@ export function DefaultLocationEntriesPanel({ isAdmin, onEntriesChanged }: Defau
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const { data: entries = [], isLoading, refetch } = useQuery({
-    queryKey: ['default-location-entries'],
-    queryFn: PinsController.fetchDefaultLocationEntries,
+    queryKey: ['default-location-entries', markerId],
+    queryFn: () => PinsController.fetchDefaultLocationEntries(markerId),
+    enabled: Boolean(markerId),
   });
 
   const sorted = [...entries].sort(
@@ -47,7 +49,7 @@ export function DefaultLocationEntriesPanel({ isAdmin, onEntriesChanged }: Defau
   const handleSave = async (entryId: string) => {
     setSavingId(entryId);
     try {
-      await PinsController.updateDefaultLocationEntry(entryId, {
+      await PinsController.updateDefaultLocationEntry(markerId, entryId, {
         type: editType,
         description: editDesc.trim(),
         ...(editComment.trim() && { comment: editComment.trim() }),
@@ -57,7 +59,7 @@ export function DefaultLocationEntriesPanel({ isAdmin, onEntriesChanged }: Defau
       refetch();
       onEntriesChanged?.();
       queryClient.invalidateQueries({ queryKey: ['pins'] });
-      queryClient.invalidateQueries({ queryKey: ['default-location'] });
+      queryClient.invalidateQueries({ queryKey: ['default-locations'] });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Erro ao salvar.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
@@ -69,12 +71,12 @@ export function DefaultLocationEntriesPanel({ isAdmin, onEntriesChanged }: Defau
   const handleDelete = async (entryId: string) => {
     setDeletingId(entryId);
     try {
-      await PinsController.deleteDefaultLocationEntry(entryId);
+      await PinsController.deleteDefaultLocationEntry(markerId, entryId);
       toast({ title: 'Entrada removida' });
       refetch();
       onEntriesChanged?.();
       queryClient.invalidateQueries({ queryKey: ['pins'] });
-      queryClient.invalidateQueries({ queryKey: ['default-location'] });
+      queryClient.invalidateQueries({ queryKey: ['default-locations'] });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Erro ao remover.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });

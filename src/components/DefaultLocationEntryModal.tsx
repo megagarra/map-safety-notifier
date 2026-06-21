@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { PinType, DefaultLocationEntryInput } from '@/types';
+import { Pin, PinType, DefaultLocationEntryInput } from '@/types';
 import { uploadImage } from '@/controllers/pins';
 import { resolveImageUrl } from '@/lib/media';
 import { ApiError } from '@/lib/errors';
@@ -14,7 +14,9 @@ import { cn } from '@/lib/utils';
 interface DefaultLocationEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: DefaultLocationEntryInput) => Promise<void>;
+  markers: Pin[];
+  initialMarkerId?: string | null;
+  onSubmit: (markerId: string, data: DefaultLocationEntryInput) => Promise<void>;
 }
 
 const TYPE_OPTIONS: { value: PinType; label: string; icon: React.ReactNode; activeClass: string }[] = [
@@ -22,13 +24,33 @@ const TYPE_OPTIONS: { value: PinType; label: string; icon: React.ReactNode; acti
   { value: 'crime', label: 'Crime', icon: <AlertTriangle size={18} />, activeClass: 'border-red-500 bg-red-500/10' },
 ];
 
-export function DefaultLocationEntryModal({ isOpen, onClose, onSubmit }: DefaultLocationEntryModalProps) {
+export function DefaultLocationEntryModal({
+  isOpen,
+  onClose,
+  markers,
+  initialMarkerId,
+  onSubmit,
+}: DefaultLocationEntryModalProps) {
+  const [markerId, setMarkerId] = useState('');
   const [type, setType] = useState<PinType>('crime');
   const [description, setDescription] = useState('');
   const [comment, setComment] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const preferred = initialMarkerId && markers.some((m) => m.id === initialMarkerId)
+      ? initialMarkerId
+      : markers[0]?.id ?? '';
+    setMarkerId(preferred);
+    setType('crime');
+    setDescription('');
+    setComment('');
+    setImages([]);
+    setError(null);
+  }, [isOpen, initialMarkerId, markers]);
 
   const reset = () => {
     setType('crime');
@@ -59,6 +81,10 @@ export function DefaultLocationEntryModal({ isOpen, onClose, onSubmit }: Default
   };
 
   const handleSubmit = async () => {
+    if (!markerId) {
+      setError('Selecione o bairro.');
+      return;
+    }
     if (!description.trim()) {
       setError('Informe a descrição da ocorrência.');
       return;
@@ -66,7 +92,7 @@ export function DefaultLocationEntryModal({ isOpen, onClose, onSubmit }: Default
     setIsSubmitting(true);
     setError(null);
     try {
-      await onSubmit({
+      await onSubmit(markerId, {
         type,
         description: description.trim(),
         ...(images.length > 0 && { images }),
@@ -89,9 +115,24 @@ export function DefaultLocationEntryModal({ isOpen, onClose, onSubmit }: Default
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <p className="text-xs text-gray-400">
-            A ocorrência será adicionada ao histórico do marcador padrão. Não é necessário informar coordenadas.
-          </p>
+          <div className="space-y-2">
+            <Label className="text-gray-300">Bairro</Label>
+            {markers.length === 0 ? (
+              <p className="text-xs text-yellow-400">Nenhum marcador configurado. Crie um marcador por bairro primeiro.</p>
+            ) : (
+              <select
+                value={markerId}
+                onChange={(e) => setMarkerId(e.target.value)}
+                className="w-full h-9 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-3 text-sm"
+              >
+                {markers.map((marker) => (
+                  <option key={marker.id} value={marker.id}>
+                    {marker.neighborhood ?? marker.description}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           <div className="space-y-2">
             <Label className="text-gray-300">Tipo</Label>
@@ -165,7 +206,7 @@ export function DefaultLocationEntryModal({ isOpen, onClose, onSubmit }: Default
           <Button variant="outline" onClick={handleClose} className="border-[#2a2a2a] text-white">
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting} className="bg-violet-600 hover:bg-violet-700">
+          <Button onClick={handleSubmit} disabled={isSubmitting || markers.length === 0} className="bg-violet-600 hover:bg-violet-700">
             {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Registrar'}
           </Button>
         </DialogFooter>
