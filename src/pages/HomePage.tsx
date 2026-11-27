@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
+import { useGeolocation } from '@/hooks/useGeolocation';
+import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 import ReportModal from '@/components/ReportModal';
 import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
 import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
@@ -88,22 +90,26 @@ export default function HomePage() {
   const [bounds, setBounds] = useState<MapBounds>(DEFAULT_BOUNDS);
   const [fetchMode, setFetchMode] = useState<PinFetchMode>('bounds');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
-  const [center, setCenter] = useState<[number, number]>(FALLBACK_CENTER);
-  const [zoom, setZoom] = useState(13);
+  // Initial view: shared link (?lat&lng&z) > last saved view > fallback. Never block on GPS.
+  const [initialView] = useState(() => readUrlView(window.location.search) ?? readSavedView());
+  const [center, setCenter] = useState<[number, number]>(initialView?.center ?? FALLBACK_CENTER);
+  const [zoom, setZoom] = useState(initialView?.zoom ?? 13);
+  const userMovedRef = useRef(false);
+  const dupeShownRef = useRef<string | null>(null);
+  const geo = useGeolocation();
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
   const dateFilter = useMemo(() => getDateFilter(datePreset), [datePreset]);
 
   const pinsQueryKey = useMemo(
     () =>
       fetchMode === 'nearby'
-        ? (['pins', 'nearby', center[0], center[1], datePreset, isStaff] as const)
+        ? (['pins', 'nearby', center[0].toFixed(3), center[1].toFixed(3), datePreset, isStaff] as const)
         : (['pins', 'bounds', boundsKeyStr, datePreset, isStaff] as const),
     [fetchMode, center, boundsKeyStr, datePreset, isStaff],
   );
 
-  const { data: pinsPage, isLoading: isLoadingPins, isFetching: isFetchingPins, isError } = useQuery({
+  const { data: pinsPage, isFetching: isFetchingPins, isError } = useQuery({
     queryKey: pinsQueryKey,
     queryFn: () => {
       if (fetchMode === 'nearby') {
@@ -187,41 +193,15 @@ export default function HomePage() {
 
   const urlTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // First GPS fix: center on the user only if they didn't open a link/saved view or move the map.
+  const centeredOnGpsRef = useRef(false);
   useEffect(() => {
-    setIsLoadingLocation(true);
-    if (!('geolocation' in navigator)) {
-      setCenter(FALLBACK_CENTER);
-      setIsLoadingLocation(false);
-      return;
-    }
-
-    let resolved = false;
-
-    const onSuccess = ({ coords }: GeolocationPosition) => {
-      if (resolved) return;
-      resolved = true;
-      setCenter([coords.latitude, coords.longitude]);
-      setIsLoadingLocation(false);
-    };
-
-    navigator.geolocation.getCurrentPosition(onSuccess, () => {
-      navigator.geolocation.getCurrentPosition(onSuccess, () => {
-        if (resolved) return;
-        resolved = true;
-        setCenter(FALLBACK_CENTER);
-        setIsLoadingLocation(false);
-      }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
-
-    const safetyTimer = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      setCenter(FALLBACK_CENTER);
-      setIsLoadingLocation(false);
-    }, 15000);
-
-    return () => clearTimeout(safetyTimer);
-  }, []);
+    if (!geo.pos || centeredOnGpsRef.current) return;
+    centeredOnGpsRef.current = true;
+    if (initialView || userMovedRef.current) return;
+    setCenter(geo.pos);
+    setZoom(15);
+  }, [geo.pos, initialView]);
 
   const updatePinsCache = useCallback(
     (updater: (prev: PaginatedResponse<Pin> | undefined) => PaginatedResponse<Pin> | undefined) => {
@@ -243,8 +223,7 @@ export default function HomePage() {
 
   const handlePinClick = useCallback((pin: Pin | null) => {
     setSelectedPin(pin);
-    if (pin && hasValidPinLocation(pin)) updateUrl(pin.location.lat, pin.location.lng, zoom);
-  }, [zoom, updateUrl]);
+  }, []);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (mapMode === 'move-pin' && movePinId) return;
@@ -255,14 +234,30 @@ export default function HomePage() {
       setMapMode('normal');
       return;
     }
+    // Avoid duplicates: tapping on/next to an existing report opens it instead.
+    const nearby = pins.find(
+      (p) => !isDefaultLocationPin(p) && hasValidPinLocation(p) && p.approvalStatus !== 'rejected' &&
+        Math.hypot((p.location.lat - lat) * 111_000, (p.location.lng - lng) * 111_000 * Math.cos((lat * Math.PI) / 180)) < 35,
+    );
+    if (nearby && nearby.id !== dupeShownRef.current) {
+      dupeShownRef.current = nearby.id;
+      setSelectedPin(nearby);
+      toast({
+        title: 'Já existe uma ocorrência aqui',
+        description: 'Se for o mesmo problema, toque em "Eu também vi". Para registrar outra, toque de novo no mapa.',
+      });
+      return;
+    }
+    dupeShownRef.current = null;
     setNewPinLocation({ lat, lng });
     setReportModalOpen(true);
-    updateUrl(lat, lng, zoom);
-  }, [mapMode, movePinId, zoom, updateUrl]);
+  }, [mapMode, movePinId, pins]);
 
   const handleMapMove = useCallback((newCenter: [number, number], newZoom: number) => {
+    userMovedRef.current = true;
     setCenter(newCenter);
     setZoom(newZoom);
+    saveView(newCenter, newZoom);
     updateUrl(newCenter[0], newCenter[1], newZoom);
   }, [updateUrl]);
 
@@ -553,23 +548,11 @@ export default function HomePage() {
     }
   }, [handleDeleteDefaultLocation]);
 
-  if (isLoadingLocation || (isLoadingPins && !pinsPage)) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-[#121212] fixed inset-0">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-t-blue-500 border-blue-300/30 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-white text-lg">{isLoadingPins ? 'Carregando dados do mapa...' : 'Obtendo sua localização...'}</p>
-          <p className="text-gray-400 text-sm mt-2">{isLoadingLocation ? 'Permita o acesso à localização quando solicitado' : 'Aguarde um momento'}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-screen w-full overflow-hidden fixed inset-0">
       {isFetchingPins && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
-          <Loader2 size={12} className="animate-spin" /> Atualizando...
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+          <Loader2 size={12} className="animate-spin" /> Carregando ocorrências...
         </div>
       )}
       <MapView

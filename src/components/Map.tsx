@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
-import { MapContainer, TileLayer, Marker, CircleMarker, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
+import MapSearch from './MapSearch';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { formatDistanceToNow } from 'date-fns';
@@ -157,15 +159,6 @@ function MapEvents({
       if (boundsTimer.current) clearTimeout(boundsTimer.current);
       boundsTimer.current = setTimeout(emitBounds, 400);
     },
-    zoomend: () => {
-      if (isUserInteraction.current && onMapMove) {
-        const c = map.getCenter();
-        onMapMove([c.lat, c.lng], map.getZoom());
-      }
-      isUserInteraction.current = true;
-      if (boundsTimer.current) clearTimeout(boundsTimer.current);
-      boundsTimer.current = setTimeout(emitBounds, 400);
-    },
   });
 
   useEffect(() => { map.isUserInteraction = isUserInteraction; }, [map]);
@@ -244,7 +237,7 @@ function createPinHTML(pin: Pin, currentZoom: number) {
              class="${isPending ? '' : cfg.border} ${cfg.color}">
           ${cfg.icon}
         </div>
-        ${isPending ? `<div style="position:absolute;top:-6px;right:-6px;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;background:#eab308;color:#1a1a1a;border:1.5px solid #1a1a1a;">!</div>` : ''}
+        ${isPending ? `<div style="position:absolute;top:-6px;right:-6px;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;background:#eab308;color:#1a1a1a;border:1.5px solid #1a1a1a;white-space:nowrap;">${pin.votes ? `+${pin.votes}` : '…'}</div>` : ''}
         ${(!isPending && pin.votes && pin.votes > 0) ? `<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #1a1a1a;" class="${cfg.bg} ${cfg.color}">${pin.votes}</div>` : ''}
       </div>`,
     size,
@@ -488,18 +481,22 @@ function PinDetailsModal({
             </div>
 
             {/* Description */}
+            {(pin.description || (pin.rejectionReason && isModerator)) && (
             <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-              <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>
+              {pin.description && <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>}
               {pin.rejectionReason && isModerator && (
                 <p className="text-xs text-red-400 mt-2 border-t border-[#2a2a2a] pt-2">
                   Motivo da rejeição: {pin.rejectionReason}
                 </p>
               )}
             </div>
+            )}
 
-            {isPending && isModerator && (
-              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-300">
-                Esta ocorrência aguarda aprovação e não é visível para visitantes.
+            {isPending && (
+              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-200 leading-relaxed">
+                {isModerator
+                  ? 'Aguardando aprovação. Visitantes veem só o pin, sem descrição e fotos.'
+                  : 'Esta ocorrência já foi registrada e está aguardando aprovação. Se você também viu, toque em "Eu também vi" em vez de registrar de novo.'}
               </div>
             )}
 
@@ -617,8 +614,8 @@ function PinDetailsModal({
               </div>
             )}
 
-            {/* Voting — não disponível para marcador padrão ou pendentes */}
-            {!isDefault && !isPending && (
+            {/* Voting — também em pendentes, para confirmar em vez de duplicar */}
+            {!isDefault && (
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -634,7 +631,7 @@ function PinDetailsModal({
                     )}
                   >
                     <ThumbsUp size={14} />
-                    {pin.userVoted ? 'Confirmado' : 'Confirmar'}
+                    {pin.userVoted ? 'Confirmado' : isPending ? 'Eu também vi' : 'Confirmar'}
                   </button>
                 </div>
               </div>
@@ -738,24 +735,19 @@ function PinDetailsModal({
 // --- User location blue dot ---
 
 function UserLocationDot() {
-  const [pos, setPos] = useState<[number, number] | null>(null);
-
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return;
-    const id = navigator.geolocation.watchPosition(
-      ({ coords }) => setPos([coords.latitude, coords.longitude]),
-      () => { },
-      { enableHighAccuracy: true, maximumAge: 5000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
-  }, []);
-
+  const { pos, accuracy } = useGeolocation();
   if (!pos) return null;
-
   return (
     <>
-      <CircleMarker center={pos} radius={12} pathOptions={{ color: 'transparent', fillColor: 'rgba(66,133,244,0.15)', fillOpacity: 1 }} />
-      <CircleMarker center={pos} radius={5} pathOptions={{ color: '#fff', weight: 2, fillColor: '#4285F4', fillOpacity: 1 }} />
+      {accuracy != null && accuracy < 3000 && (
+        <Circle
+          center={pos}
+          radius={accuracy}
+          interactive={false}
+          pathOptions={{ color: '#4285F4', weight: 1, opacity: 0.4, fillColor: '#4285F4', fillOpacity: 0.12 }}
+        />
+      )}
+      <CircleMarker center={pos} radius={7} interactive={false} pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#4285F4', fillOpacity: 1 }} />
     </>
   );
 }
@@ -894,7 +886,7 @@ const MapComponent = ({
         <UserLocationDot />
         <PinMarkers pins={filteredPins} onPinClick={onPinClick} />
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
-        <ZoomControl position="bottomright" />
+        {!isMobile && <ZoomControl position="bottomright" />}
       </MapContainer>
 
       {/* Pin details */}
@@ -916,7 +908,8 @@ const MapComponent = ({
       )}
 
       {/* Theme toggle */}
-      <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
+      <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2 items-end">
+        <MapSearch map={mapInstance} />
         <button
           onClick={cycleMapTheme}
           className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
@@ -928,29 +921,93 @@ const MapComponent = ({
 
       {/* Location button — automatically adjusts for mobile and desktop zooms */}
       <div className="absolute bottom-[130px] md:bottom-[196px] right-[16px] md:right-[24px] z-[400]">
-        <button
-          onClick={() => {
-            if (!("geolocation" in navigator) || !mapInstance) return;
-            navigator.geolocation.getCurrentPosition(
-              (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
-              () => {
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
-                  () => { },
-                  { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-                );
-              },
-              { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-            );
-          }}
-          className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
-          title="Minha localização"
-        >
-          <Navigation size={18} />
-        </button>
+        <LocateButton map={mapInstance} />
       </div>
     </div>
   );
 };
 
 export default MapComponent;
+
+// --- "My location" button ---
+
+function LocateButton({ map }: { map: L.Map | null }) {
+  const geo = useGeolocation();
+  const [waiting, setWaiting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const flyTo = (pos: [number, number], accuracy: number | null) => {
+    if (!map) return;
+    if (accuracy && accuracy > 150) {
+      map.flyToBounds(L.latLng(pos).toBounds(accuracy * 2), { maxZoom: 17, duration: 0.8 });
+    } else {
+      map.flyTo(pos, 17, { duration: 0.8 });
+    }
+  };
+
+  useEffect(() => {
+    if (!waiting) return;
+    if (geo.pos) {
+      setWaiting(false);
+      flyTo(geo.pos, geo.accuracy);
+    } else if (geo.error) {
+      setWaiting(false);
+    }
+  }, [waiting, geo.pos, geo.error]);
+
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => {
+      setWaiting(false);
+      setMessage('Não foi possível obter sua localização. Tente novamente.');
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [waiting]);
+
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), 5000);
+    return () => clearTimeout(t);
+  }, [message]);
+
+  useEffect(() => {
+    if (geo.error === 'denied') setMessage('Permissão de localização negada. Ative nas configurações do navegador.');
+    else if (geo.error === 'unsupported') setMessage('Seu navegador não suporta localização.');
+  }, [geo.error]);
+
+  const onClick = () => {
+    const { pos, accuracy, error } = getGeoState();
+    setMessage(null);
+    if (pos) {
+      flyTo(pos, accuracy);
+      return;
+    }
+    if (error === 'unsupported') {
+      setMessage('Seu navegador não suporta localização.');
+      return;
+    }
+    if (error) retryGeolocation();
+    setWaiting(true);
+  };
+
+  return (
+    <div className="relative">
+      {message && (
+        <div className="absolute right-full mr-2 bottom-0 w-60 rounded-lg bg-[#1a1a1a]/95 border border-white/10 px-3 py-2 text-xs text-gray-200 shadow-lg">
+          {message}
+        </div>
+      )}
+      <button
+        onClick={onClick}
+        className={cn(
+          'w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center hover:bg-[#2a2a2a] transition-colors shadow-lg',
+          geo.pos ? 'text-blue-400' : geo.error ? 'text-red-400' : 'text-white',
+        )}
+        title="Minha localização"
+        aria-label="Minha localização"
+      >
+        {waiting ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} />}
+      </button>
+    </div>
+  );
+}
