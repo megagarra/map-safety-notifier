@@ -970,14 +970,20 @@ function LocateButton({ map }: { map: L.Map | null }) {
     return () => clearTimeout(t);
   }, [message]);
 
+  const [asked, setAsked] = useState(false);
   useEffect(() => {
+    if (!asked) return;
     if (geo.error === 'denied') setMessage('Permissão de localização negada. Ative nas configurações do navegador.');
     else if (geo.error === 'unsupported') setMessage('Seu navegador não suporta localização.');
-  }, [geo.error]);
+  }, [geo.error, asked]);
 
   const onClick = () => {
     const { pos, accuracy, error } = getGeoState();
     setMessage(null);
+    setAsked(true);
+    if (error === 'denied') {
+      setMessage('Permissão de localização negada. Ative nas configurações do navegador.');
+    }
     if (pos) {
       flyTo(pos, accuracy);
       return;

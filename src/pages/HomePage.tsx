@@ -91,7 +91,7 @@ export default function HomePage() {
   const [fetchMode, setFetchMode] = useState<PinFetchMode>('bounds');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   // Initial view: shared link (?lat&lng&z) > last saved view > fallback. Never block on GPS.
-  const [initialView] = useState(() => readUrlView(window.location.search) ?? readSavedView());
+  const [initialView] = useState(() => (readUrlView(window.location.search) ?? readUrlView(window.location.hash.split('?')[1] ?? '')) ?? readSavedView());
   const [center, setCenter] = useState<[number, number]>(initialView?.center ?? FALLBACK_CENTER);
   const [zoom, setZoom] = useState(initialView?.zoom ?? 13);
   const userMovedRef = useRef(false);
@@ -235,9 +235,11 @@ export default function HomePage() {
       return;
     }
     // Avoid duplicates: tapping on/next to an existing report opens it instead.
+    const metersPerPx = (156543.03 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+    const radiusM = Math.max(20, 40 * metersPerPx);
     const nearby = pins.find(
       (p) => !isDefaultLocationPin(p) && hasValidPinLocation(p) && p.approvalStatus !== 'rejected' &&
-        Math.hypot((p.location.lat - lat) * 111_000, (p.location.lng - lng) * 111_000 * Math.cos((lat * Math.PI) / 180)) < 35,
+        Math.hypot((p.location.lat - lat) * 111_000, (p.location.lng - lng) * 111_000 * Math.cos((lat * Math.PI) / 180)) < radiusM,
     );
     if (nearby && nearby.id !== dupeShownRef.current) {
       dupeShownRef.current = nearby.id;
@@ -251,7 +253,7 @@ export default function HomePage() {
     dupeShownRef.current = null;
     setNewPinLocation({ lat, lng });
     setReportModalOpen(true);
-  }, [mapMode, movePinId, pins]);
+  }, [mapMode, movePinId, pins, zoom]);
 
   const handleMapMove = useCallback((newCenter: [number, number], newZoom: number) => {
     userMovedRef.current = true;
