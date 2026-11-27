@@ -26,7 +26,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -96,6 +96,7 @@ export default function HomePage() {
   const [zoom, setZoom] = useState(initialView?.zoom ?? 13);
   const userMovedRef = useRef(false);
   const dupeShownRef = useRef<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const geo = useGeolocation();
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
@@ -226,6 +227,7 @@ export default function HomePage() {
   }, []);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
+    setPanelOpen(false);
     if (mapMode === 'move-pin' && movePinId) return;
     if (mapMode === 'place-default-marker') {
       setSetupLocation({ lat, lng });
@@ -581,7 +583,23 @@ export default function HomePage() {
         onBulkRegisterDefaultEntry={isAdmin ? openBulkEntryModal : undefined}
       />
 
-      <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 max-w-[240px]">
+      <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 w-[240px] max-w-[calc(100vw-5.5rem)] max-h-[calc(100dvh-2rem)]">
+        {/* Mobile: compact toggle so the panel doesn't cover the map */}
+        <button
+          onClick={() => setPanelOpen((o) => !o)}
+          className="md:hidden self-start flex items-center gap-2 h-11 px-3 rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 text-white shadow-lg"
+          aria-expanded={panelOpen}
+          aria-label={panelOpen ? 'Fechar menu' : 'Abrir menu'}
+        >
+          {panelOpen ? <X size={18} /> : <Menu size={18} />}
+          <span className="text-sm"><span className="font-semibold">{pins.length}</span> alertas</span>
+          {isModerator && pendingCount > 0 && (
+            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
+              {pendingCount > 99 ? '99+' : pendingCount}
+            </span>
+          )}
+        </button>
+        <div className={cn('flex-col gap-2 overflow-y-auto overscroll-contain', panelOpen ? 'flex' : 'hidden md:flex')}>
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 px-3 py-2 shadow-lg">
           <p className="text-xs text-gray-400">
             Mostrando <span className="text-white font-medium">{pins.length}</span> de{' '}
@@ -602,7 +620,7 @@ export default function HomePage() {
             <select
               value={fetchMode}
               onChange={(e) => setFetchMode(e.target.value as PinFetchMode)}
-              className="w-full h-7 rounded text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
+              className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
             >
               <option value="bounds">Área visível</option>
               <option value="nearby">Próximos (5 km)</option>
@@ -610,7 +628,7 @@ export default function HomePage() {
             <select
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value as DatePreset)}
-              className="w-full h-7 rounded text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
+              className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
             >
               <option value="all">Todo período</option>
               <option value="7d">Últimos 7 dias</option>
@@ -631,7 +649,7 @@ export default function HomePage() {
                 <>
                   <Link
                     to="/admin/moderation"
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
                   >
                     <ShieldCheck size={14} />
                     Moderação
@@ -643,7 +661,7 @@ export default function HomePage() {
                   </Link>
                   <Link
                     to="/admin/analytics"
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
                   >
                     <BarChart3 size={14} />
                     Painel analítico
@@ -654,21 +672,21 @@ export default function HomePage() {
                 <>
                   <Link
                     to="/admin/users"
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
                   >
                     <UserPlus size={14} />
                     Usuários
                   </Link>
                   <button
                     onClick={() => openEntryModal()}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <FilePlus size={14} />
                     Registrar sem endereço
                   </button>
                   <button
                     onClick={() => openBulkEntryModal()}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <Layers size={14} />
                     Substituir estatísticas
@@ -685,7 +703,7 @@ export default function HomePage() {
               )}
               <button
                 onClick={() => { logout(); toast({ title: 'Logout realizado' }); }}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
               >
                 <LogOut size={14} />
                 Sair
@@ -694,12 +712,13 @@ export default function HomePage() {
           ) : (
             <Link
               to="/login"
-              className={cn("flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors")}
+              className={cn("flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors")}
             >
               <LogIn size={14} />
               Entrar
             </Link>
           )}
+        </div>
         </div>
 
         {(mapMode === 'place-default-marker' || mapMode === 'move-pin') && (

@@ -3,11 +3,14 @@ import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
 import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
 import MapSearch from './MapSearch';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { reverseGeocode } from '@/lib/geocode';
 import {
   Clock,
   X,
@@ -257,9 +260,38 @@ function getOrCreateIcon(pin: Pin, currentZoom: number): L.DivIcon {
   return icon;
 }
 
-function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) => void }) {
+function clusterIcon(cluster: { getChildCount: () => number }) {
+  const n = cluster.getChildCount();
+  const size = n < 10 ? 36 : n < 50 ? 42 : 50;
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(239,68,68,0.9);border:3px solid rgba(255,255,255,0.85);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5);">${n}</div>`,
+    className: 'pin-cluster',
+    iconSize: [size, size],
+  });
+}
+
+const PinMarker = React.memo(function PinMarker({
+  pin, zoom, onClickRef,
+}: { pin: Pin; zoom: number; onClickRef: React.MutableRefObject<(pin: Pin) => void> }) {
+  const handlers = useMemo(
+    () => ({ click: (e: L.LeafletMouseEvent) => { e.originalEvent.stopPropagation(); onClickRef.current(pin); } }),
+    [pin, onClickRef],
+  );
+  return (
+    <Marker
+      position={[pin.location.lat, pin.location.lng]}
+      icon={getOrCreateIcon(pin, zoom)}
+      zIndexOffset={isDefaultLocationPin(pin) ? 1000 : 0}
+      eventHandlers={handlers}
+    />
+  );
+});
+
+const PinMarkers = React.memo(function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) => void }) {
   const map = useMap();
   const [currentZoom, setCurrentZoom] = useState(map.getZoom());
+  const onClickRef = useRef(onPinClick);
+  onClickRef.current = onPinClick;
 
   useEffect(() => {
     const handler = () => setCurrentZoom(map.getZoom());
@@ -267,45 +299,37 @@ function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) 
     return () => { map.off('zoomend', handler); };
   }, [map]);
 
+  const { regular, fixed } = useMemo(() => {
+    const valid = pins.filter(hasValidPinLocation);
+    return {
+      regular: valid.filter((p) => !isDefaultLocationPin(p)),
+      fixed: valid.filter(isDefaultLocationPin),
+    };
+  }, [pins]);
+
   return (
     <>
-      {pins.filter(hasValidPinLocation).map((pin) => (
-        <Marker
-          key={pin.id}
-          position={[pin.location.lat, pin.location.lng]}
-          icon={getOrCreateIcon(pin, currentZoom)}
-          zIndexOffset={isDefaultLocationPin(pin) ? 1000 : 0}
-          eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); onPinClick(pin); } }}
-        />
+      <MarkerClusterGroup
+        chunkedLoading
+        maxClusterRadius={45}
+        disableClusteringAtZoom={17}
+        spiderfyOnMaxZoom
+        showCoverageOnHover={false}
+        iconCreateFunction={clusterIcon}
+      >
+        {regular.map((pin) => (
+          <PinMarker key={pin.id} pin={pin} zoom={currentZoom} onClickRef={onClickRef} />
+        ))}
+      </MarkerClusterGroup>
+      {fixed.map((pin) => (
+        <PinMarker key={pin.id} pin={pin} zoom={currentZoom} onClickRef={onClickRef} />
       ))}
     </>
   );
-}
+});
 
 // --- Reverse geocoding ---
 
-async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`,
-      { headers: { 'User-Agent': 'MapSafetyNotifier/1.0' } },
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const addr = data.address;
-    if (!addr) return data.display_name || null;
-
-    const parts: string[] = [];
-    if (addr.road) parts.push(addr.road);
-    if (addr.house_number && parts.length) parts[0] = `${parts[0]}, ${addr.house_number}`;
-    if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
-    if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
-
-    return parts.length > 0 ? parts.join(' — ') : data.display_name || null;
-  } catch {
-    return null;
-  }
-}
 
 // --- Pin details modal ---
 
