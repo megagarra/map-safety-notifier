@@ -1,7 +1,7 @@
 import { precacheAndRoute } from 'workbox-precaching';
 
 const CACHE_NAME = 'map-safety-notifier-v1';
-const TILE_CACHE_NAME = 'map-tiles-v1';
+const TILE_CACHE_NAME = 'map-tiles-v2';
 const STATIC_CACHE_NAME = 'static-v1';
 
 // Workbox manifest injection point
@@ -17,7 +17,7 @@ const STATIC_ASSETS = [
 ];
 
 // Padrão para reconhecer URLs de tiles do mapa (CARTO, OSM, etc.)
-const TILE_URL_PATTERN = /^https?:\/\/([a-z]\.)?(tile\.openstreetmap\.org|basemaps\.cartocdn\.com)\/.+\/\d+\/\d+\/\d+/;
+const TILE_URL_PATTERN = /^https?:\/\/([a-z]\.)?(tile\.openstreetmap\.org|basemaps\.cartocdn\.com|server\.arcgisonline\.com)\/.+\/\d+\/\d+\/\d+/;
 
 // Lista de URLs de tiles que devem ser pré-carregados para melhorar a experiência inicial
 // Estes valores devem corresponder ao centro inicial do mapa e zoom

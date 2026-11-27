@@ -6,7 +6,7 @@ import { apiUrl, getAccessToken } from '@/lib/api';
 import { ApiError } from '@/lib/errors';
 
 export function useNotifications(isStaff = false) {
-  const subscribeUser = useCallback(async (withStaffToken = false) => {
+  const subscribeUser = useCallback(async (withStaffToken = false, silent = false) => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push messaging is not supported');
       return;
@@ -26,10 +26,13 @@ export function useNotifications(isStaff = false) {
         return;
       }
 
-      const subscription = await registration.pushManager.subscribe({
+      // Reaproveita a inscrição existente em vez de criar outra a cada carregamento
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(public_key),
-      });
+      }));
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (withStaffToken) {
@@ -46,6 +49,8 @@ export function useNotifications(isStaff = false) {
         throw new ApiError('Falha ao registrar inscrição.', subRes.status);
       }
 
+      if (silent) return;
+
       const body = withStaffToken
         ? 'Alertas de moderação e publicações no mapa.'
         : 'Alertas de pins aprovados e estatísticas atualizadas.';
@@ -53,6 +58,7 @@ export function useNotifications(isStaff = false) {
       toast({ title: 'Notificações ativadas', description: body });
     } catch (err) {
       console.error('Failed to subscribe the user: ', err);
+      if (silent) return;
       const message = err instanceof ApiError ? err.message : 'Não foi possível configurar as notificações.';
       toast({ title: 'Erro ao ativar', description: message, variant: 'destructive' });
     }
@@ -61,7 +67,7 @@ export function useNotifications(isStaff = false) {
   useEffect(() => {
     if (!('Notification' in window)) return;
 
-    const activate = () => subscribeUser(isStaff);
+    const activate = (silent = false) => subscribeUser(isStaff, silent);
 
     if (Notification.permission === 'default') {
       toast({
@@ -80,7 +86,8 @@ export function useNotifications(isStaff = false) {
         ),
       });
     } else if (Notification.permission === 'granted') {
-      activate();
+      // Já autorizado: apenas sincroniza a inscrição, sem toast a cada visita
+      activate(true);
     }
   }, [subscribeUser, isStaff]);
 

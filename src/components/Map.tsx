@@ -67,11 +67,19 @@ interface MapComponentProps {
   onEntriesChanged?: () => void;
 }
 
-const TILE_URLS = {
+const TILE_LAYERS = {
   /** Claro: OpenStreetMap - boa visibilidade */
-  light: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  /** Escuro: Dark Matter - tema escuro */
-  dark: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
+  light: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxNativeZoom: 19,
+  },
+  /** Escuro: Esri Dark Gray (CARTO passou a exigir chave de API) */
+  dark: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri',
+    maxNativeZoom: 16,
+  },
 };
 const MAP_THEME_KEY = 'map-safety-theme';
 
@@ -778,7 +786,7 @@ const MapComponent = ({
     }
   });
   const mapRef = useRef(null);
-  const tileUrl = TILE_URLS[mapTheme];
+  const tileLayer = TILE_LAYERS[mapTheme];
 
   const cycleMapTheme = () => {
     const idx = THEME_ORDER.indexOf(mapTheme);
@@ -849,7 +857,7 @@ const MapComponent = ({
         maxBoundsViscosity={1.0}
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
-        attributionControl={false}
+        attributionControl
         ref={mapRef}
         className="map-container"
         preferCanvas
@@ -872,9 +880,11 @@ const MapComponent = ({
       >
         <MapInstanceSetter setMapInstance={setMapInstance} />
         <TileLayer
-          url={tileUrl}
+          key={mapTheme}
+          url={tileLayer.url}
+          attribution={tileLayer.attribution}
           maxZoom={19}
-          maxNativeZoom={18}
+          maxNativeZoom={tileLayer.maxNativeZoom}
           updateWhenIdle
           updateWhenZooming={false}
           keepBuffer={6}

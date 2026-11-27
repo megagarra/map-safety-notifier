@@ -4,15 +4,33 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { lazy, Suspense } from "react";
 import HomePage from "./pages/HomePage";
-import LoginPage from "./pages/LoginPage";
-import AdminUsersPage from "./pages/AdminUsersPage";
-import ModerationPage from "./pages/ModerationPage";
-import AnalyticsPage from "./pages/AnalyticsPage";
-import NotFound from "./pages/NotFound";
+
+// Páginas secundárias carregadas sob demanda para reduzir o bundle inicial
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
+const ModerationPage = lazy(() => import("./pages/ModerationPage"));
+const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+const PageFallback = () => (
+  <div className="flex h-screen items-center justify-center text-muted-foreground">Carregando…</div>
+);
 import "./App.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        const status = (error as { status?: number })?.status;
+        if (status && status >= 400 && status < 500) return false;
+        return failureCount < 2;
+      },
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -22,6 +40,7 @@ const App = () => (
       <div className="app-container">
         <HashRouter>
           <AuthProvider>
+            <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<LoginPage />} />
@@ -30,6 +49,7 @@ const App = () => (
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
           </AuthProvider>
         </HashRouter>
       </div>

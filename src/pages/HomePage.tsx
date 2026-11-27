@@ -95,9 +95,13 @@ export default function HomePage() {
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
   const dateFilter = useMemo(() => getDateFilter(datePreset), [datePreset]);
 
-  const pinsQueryKey = fetchMode === 'nearby'
-    ? ['pins', 'nearby', center[0], center[1], datePreset, isStaff] as const
-    : ['pins', 'bounds', boundsKeyStr, datePreset, isStaff] as const;
+  const pinsQueryKey = useMemo(
+    () =>
+      fetchMode === 'nearby'
+        ? (['pins', 'nearby', center[0], center[1], datePreset, isStaff] as const)
+        : (['pins', 'bounds', boundsKeyStr, datePreset, isStaff] as const),
+    [fetchMode, center, boundsKeyStr, datePreset, isStaff],
+  );
 
   const { data: pinsPage, isLoading: isLoadingPins, isError } = useQuery({
     queryKey: pinsQueryKey,
@@ -143,7 +147,7 @@ export default function HomePage() {
 
   const pendingCount = pinStats?.pendingCount ?? 0;
 
-  const pins = pinsPage?.items ?? [];
+  const pins = useMemo(() => pinsPage?.items ?? [], [pinsPage]);
   const total = pinsPage?.total ?? 0;
   const hasMore = pins.length < total;
 
@@ -306,9 +310,11 @@ export default function HomePage() {
         title: 'Enviado para revisão',
         description: 'Aparecerá no mapa após aprovação.',
       });
+      return true;
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Tente novamente.';
       toast({ title: 'Erro ao enviar relatório', description: message, variant: 'destructive' });
+      return false;
     }
   }, [queryClient, isAuthenticated]);
 

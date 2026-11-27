@@ -43,7 +43,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
 interface ReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: CreatePinInput) => void;
+  onSubmit: (data: CreatePinInput) => Promise<boolean>;
   location: { lat: number; lng: number } | null;
 }
 
@@ -61,14 +61,20 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   const [validationError, setValidationError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   useEffect(() => {
     if (!location) { setAddress(null); return; }
+    // Ignora respostas de buscas antigas se o usuário mover o ponto antes de concluir
+    let cancelled = false;
     setIsLoadingAddress(true);
     reverseGeocode(location.lat, location.lng).then((result) => {
+      if (cancelled) return;
       setAddress(result);
       setIsLoadingAddress(false);
     });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só lat/lng importam
   }, [location?.lat, location?.lng]);
 
   const handleClose = () => {
@@ -81,7 +87,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
     onClose();
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!location) {
       setValidationError('É necessário definir uma localização. Clique no mapa para marcar o local.');
       return;
@@ -101,9 +107,11 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
       ...(address && { address }),
     };
 
+    // Só fecha (e limpa o formulário) se o envio deu certo; em caso de erro o usuário não perde o que digitou
     try {
-      onSubmit(data);
-      handleClose();
+      const ok = await onSubmit(data);
+      if (ok) handleClose();
+      else setValidationError('Não foi possível enviar o relatório. Tente novamente.');
     } catch {
       setValidationError('Ocorreu um erro ao enviar o relatório. Tente novamente.');
     } finally {
@@ -114,16 +122,22 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
-    for (const file of Array.from(files)) {
-      try {
-        const url = await uploadImage(file);
-        setImages((prev) => [...prev, url]);
-      } catch (err) {
-        const message = err instanceof ApiError ? err.message : 'Erro ao enviar imagem. Tente novamente.';
-        setValidationError(message);
-      }
-    }
+    const list = Array.from(files);
     e.target.value = '';
+    setUploadingCount((n) => n + list.length);
+    await Promise.all(
+      list.map(async (file) => {
+        try {
+          const url = await uploadImage(file);
+          setImages((prev) => [...prev, url]);
+        } catch (err) {
+          const message = err instanceof ApiError ? err.message : 'Erro ao enviar imagem. Tente novamente.';
+          setValidationError(message);
+        } finally {
+          setUploadingCount((n) => n - 1);
+        }
+      }),
+    );
   };
 
   return (
@@ -212,6 +226,11 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                   </button>
                 </div>
               ))}
+              {Array.from({ length: uploadingCount }).map((_, i) => (
+                <div key={`uploading-${i}`} className="flex h-24 sm:h-28 items-center justify-center rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] text-gray-500">
+                  <Loader2 size={20} className="animate-spin" />
+                </div>
+              ))}
               <label className="flex flex-col items-center justify-center h-24 sm:h-28 rounded-xl border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors group">
                 <div className="flex flex-col items-center text-gray-500 group-hover:text-gray-400 transition-colors">
                   <ImageIcon size={20} className="mb-2" />
@@ -249,7 +268,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || !description || !location}
+            disabled={isSubmitting || uploadingCount > 0 || !description.trim() || !location}
             className="bg-white text-black hover:bg-white/90 font-medium"
           >
             {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Enviar'}
