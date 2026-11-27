@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
 import ReportModal from '@/components/ReportModal';
 import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
@@ -103,7 +103,7 @@ export default function HomePage() {
     [fetchMode, center, boundsKeyStr, datePreset, isStaff],
   );
 
-  const { data: pinsPage, isLoading: isLoadingPins, isError } = useQuery({
+  const { data: pinsPage, isLoading: isLoadingPins, isFetching: isFetchingPins, isError } = useQuery({
     queryKey: pinsQueryKey,
     queryFn: () => {
       if (fetchMode === 'nearby') {
@@ -125,9 +125,11 @@ export default function HomePage() {
         ...dateFilter,
       });
     },
-    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
     refetchInterval: 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   const { data: pinStats } = useQuery({
@@ -265,7 +267,18 @@ export default function HomePage() {
   }, [updateUrl]);
 
   const handleBoundsChange = useCallback((newBounds: MapBounds) => {
-    setBounds(newBounds);
+    // Snap outward to a ~2 km grid so small pans hit the cache instead of refetching.
+    const step = 0.02;
+    const snapped: MapBounds = {
+      lat_min: Math.floor(newBounds.lat_min / step) * step,
+      lat_max: Math.ceil(newBounds.lat_max / step) * step,
+      lng_min: Math.floor(newBounds.lng_min / step) * step,
+      lng_max: Math.ceil(newBounds.lng_max / step) * step,
+    };
+    (Object.keys(snapped) as (keyof MapBounds)[]).forEach((k) => {
+      snapped[k] = Number(snapped[k].toFixed(4));
+    });
+    setBounds((prev) => (boundsKey(prev) === boundsKey(snapped) ? prev : snapped));
   }, []);
 
   const handleLoadMore = useCallback(async () => {
@@ -540,7 +553,7 @@ export default function HomePage() {
     }
   }, [handleDeleteDefaultLocation]);
 
-  if (isLoadingLocation || isLoadingPins) {
+  if (isLoadingLocation || (isLoadingPins && !pinsPage)) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-[#121212] fixed inset-0">
         <div className="text-center">
@@ -554,6 +567,11 @@ export default function HomePage() {
 
   return (
     <div className="h-screen w-full overflow-hidden fixed inset-0">
+      {isFetchingPins && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+          <Loader2 size={12} className="animate-spin" /> Atualizando...
+        </div>
+      )}
       <MapView
         pins={pins}
         onPinClick={handlePinClick}
