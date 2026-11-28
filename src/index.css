@@ -930,3 +930,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, [role="radio"]:focu
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Search results open: filter chips step aside so they don't cover the list */
+[data-search-open] .map-chips { visibility: hidden; }

@@ -73,6 +73,19 @@ const LEGEND = [
   { dot: 'bg-blue-500 border-2 border-white', label: 'Você' },
 ];
 
+export function LegendList() {
+  return (
+    <div className="space-y-2">
+      {LEGEND.map((l) => (
+        <div key={l.label} className="flex items-center gap-2 text-sm text-gray-200">
+          <span className={cn('w-4 h-4 rounded-full shrink-0', l.dot)} />
+          {l.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function LegendButton() {
   const [open, setOpen] = useState(false);
   return (

@@ -7,7 +7,7 @@ import { watchMyReport } from '@/hooks/useNotifications';
 import { ToastAction } from '@/components/ui/toast';
 import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
-import { FilterChips, FirstVisitHint, InstallBanner, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
+import { FilterChips, FirstVisitHint, InstallBanner, LegendList, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 // Heavy, rarely-first-needed UI is code-split so the map paints sooner on slow phones.
@@ -35,7 +35,8 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, Moon, Sun } from 'lucide-react';
+import { toggleMapTheme, useMapTheme } from '@/lib/mapTheme';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -104,6 +105,14 @@ export default function HomePage() {
   const userMovedRef = useRef(false);
   const dupeShownRef = useRef<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const mapTheme = useMapTheme();
+  // Side menu: Escape closes it.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPanelOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panelOpen]);
   const [nearbyOpen, setNearbyOpen] = useState(false);
   const [myReportsOpen, setMyReportsOpen] = useState(false);
   // Mount the report form on first use (keeps its own draft), and prefetch its code when the browser is idle.
@@ -618,7 +627,7 @@ export default function HomePage() {
   return (
     <div className="h-screen w-full overflow-hidden fixed inset-0">
       {/* Filter chips — below the menu button on mobile, hidden while the menu is open */}
-      <div className={cn('absolute z-[390] left-4 right-[4.5rem] top-[4.5rem] md:top-4 md:left-[272px] md:right-20', panelOpen && 'hidden md:block')}>
+      <div className={cn('map-chips absolute z-[390] left-4 right-4 top-[4.5rem] md:top-4 md:left-[272px] md:right-20')}>
         <FilterChips value={filters} onChange={setFilters} staff={isStaff} />
       </div>
 
@@ -716,23 +725,50 @@ export default function HomePage() {
         onBulkRegisterDefaultEntry={isAdmin ? openBulkEntryModal : undefined}
       />
 
-      <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 w-[240px] max-w-[calc(100vw-5.5rem)] max-h-[calc(100dvh-2rem)]">
-        {/* Mobile: compact toggle so the panel doesn't cover the map */}
+      <div className={cn('absolute top-4 left-4 flex flex-col gap-2 max-md:w-auto w-[240px] max-w-[calc(100vw-5.5rem)] max-h-[calc(100dvh-2rem)]', panelOpen ? 'z-[1600]' : 'z-[400]')}>
+        {/* Phones: menu button opens a side menu, so nothing else sits on top of the map */}
         <button
-          onClick={() => setPanelOpen((o) => !o)}
-          className="md:hidden self-start flex items-center gap-2 h-11 px-3 rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 text-white shadow-lg"
+          onClick={() => setPanelOpen(true)}
+          className="md:hidden relative self-start flex items-center justify-center w-11 h-11 rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 text-white shadow-lg"
           aria-expanded={panelOpen}
-          aria-label={panelOpen ? 'Fechar menu' : 'Abrir menu'}
+          aria-controls="side-menu"
+          aria-label="Abrir menu"
         >
-          {panelOpen ? <X size={18} /> : <Menu size={18} />}
-          <span className="text-sm"><span className="font-semibold">{visiblePins.length}</span> alertas{activeFilterCount > 0 && <span className="text-gray-400"> · filtro</span>}</span>
-          {isModerator && pendingCount > 0 && (
-            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
+          <Menu size={20} />
+          {(isModerator && pendingCount > 0) ? (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-yellow-500 text-[#1a1a1a] text-[11px] font-bold flex items-center justify-center">
               {pendingCount > 99 ? '99+' : pendingCount}
             </span>
-          )}
+          ) : activeFilterCount > 0 ? (
+            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-[#1a1a1a]" aria-label="Filtro ativo" />
+          ) : null}
         </button>
-        <div className={cn('flex-col gap-2 overflow-y-auto overscroll-contain', panelOpen ? 'flex' : 'hidden md:flex')}>
+        {panelOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/60 animate-in fade-in"
+            onClick={() => setPanelOpen(false)}
+            // Touch: stop the follow-up "ghost" click from reaching the map (it would start a report).
+            onTouchEnd={(e) => { e.preventDefault(); setPanelOpen(false); }}
+            aria-hidden="true"
+          />
+        )}
+        <div
+          id="side-menu"
+          role={panelOpen ? 'dialog' : undefined}
+          aria-modal={panelOpen ? true : undefined}
+          aria-label="Menu"
+          className={cn(
+            'flex-col gap-2 overflow-y-auto overscroll-contain',
+            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85vw] max-md:max-w-[320px] max-md:bg-[#121212] max-md:border-r max-md:border-white/10 max-md:shadow-2xl max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+            panelOpen ? 'flex max-md:animate-in max-md:slide-in-from-left-full max-md:duration-200' : 'hidden md:flex',
+          )}
+        >
+        <div className="md:hidden flex items-center justify-between pb-1">
+          <p className="text-base font-semibold text-white">Map Safety</p>
+          <button onClick={() => setPanelOpen(false)} className="w-11 h-11 -mr-2 flex items-center justify-center text-gray-300 hover:text-white" aria-label="Fechar menu">
+            <X size={20} />
+          </button>
+        </div>
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 px-3 py-2 shadow-lg">
           <p className="text-xs text-gray-400">
             Mostrando <span className="text-white font-medium">{visiblePins.length}</span> de{' '}
@@ -772,6 +808,22 @@ export default function HomePage() {
             </select>
           </div>
           <div className="-mx-3 mt-2"><AlertZonePicker gps={geo.pos} mapCenter={center} /></div>
+        </div>
+
+        <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 overflow-hidden">
+          <button
+            onClick={toggleMapTheme}
+            className="flex items-center gap-2 px-3 py-3 text-sm text-gray-300 hover:bg-white/5 w-full"
+          >
+            {mapTheme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
+            Tema do mapa
+            <span className="ml-auto text-xs text-gray-400">{mapTheme === 'dark' ? 'Escuro' : 'Claro'}</span>
+          </button>
+        </div>
+
+        <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 px-3 py-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Legenda</p>
+          <LegendList />
         </div>
 
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 shadow-lg overflow-hidden">

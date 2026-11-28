@@ -17,6 +17,9 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
+    // Lets the filter chips step aside so they don't cover the results.
+    document.documentElement.toggleAttribute('data-search-open', open);
+    return () => document.documentElement.removeAttribute('data-search-open');
   }, [open]);
 
   useEffect(() => {
@@ -72,17 +75,18 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
+        className="w-full h-11 px-3 gap-2 justify-start md:w-10 md:h-10 md:px-0 md:justify-center rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
         title="Buscar endereço"
         aria-label="Buscar endereço"
       >
-        <Search size={18} />
+        <Search size={18} className="shrink-0" />
+        <span className="md:hidden text-sm text-gray-400 truncate">Buscar rua ou bairro</span>
       </button>
     );
   }
 
   return (
-    <div className="absolute top-0 right-0 w-[calc(100vw-2rem)] max-w-sm rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 shadow-xl overflow-hidden">
+    <div className="relative md:absolute md:top-0 md:right-0 w-full md:w-[calc(100vw-2rem)] md:max-w-sm rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 shadow-xl overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-12 focus-within:ring-2 focus-within:ring-blue-500 rounded-lg">
         <Search size={16} className="text-gray-400 shrink-0" />
         <input

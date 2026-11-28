@@ -3,6 +3,7 @@ import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
 import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
 import MapSearch from './MapSearch';
+import { toggleMapTheme, useMapTheme, type MapTheme } from '@/lib/mapTheme';
 import HeatLayer from './HeatLayer';
 import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { LegendButton } from './MapOverlays';
@@ -96,7 +97,6 @@ const TILE_LAYERS = {
     maxNativeZoom: 16,
   },
 };
-const MAP_THEME_KEY = 'map-safety-theme';
 
 const MAP_BOUNDS: L.LatLngBoundsExpression = [
   [-23.45, -46.82],
@@ -857,7 +857,6 @@ function UserLocationDot() {
 
 // --- Main Map component ---
 
-type MapTheme = 'light' | 'dark';
 
 const THEME_ORDER: MapTheme[] = ['light', 'dark'];
 const THEME_LABELS: Record<MapTheme, string> = {
@@ -872,27 +871,11 @@ const MapComponent = ({
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
-  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
-    try {
-      const saved = localStorage.getItem(MAP_THEME_KEY);
-      return (saved === 'light' || saved === 'dark') ? saved : 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
+  const mapTheme = useMapTheme();
   const mapRef = useRef(null);
   const tileLayer = TILE_LAYERS[mapTheme];
 
-  const cycleMapTheme = () => {
-    const idx = THEME_ORDER.indexOf(mapTheme);
-    const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
-    setMapTheme(next);
-    try {
-      localStorage.setItem(MAP_THEME_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  };
+  const cycleMapTheme = toggleMapTheme;
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -1016,8 +999,10 @@ const MapComponent = ({
       )}
 
       {/* Theme toggle */}
-      <div className="absolute top-4 right-4 z-[450] flex flex-col gap-2 items-end">
+      {/* Phones: wide search bar next to the menu button (theme + legend live in the side menu). */}
+      <div className="absolute top-4 right-4 left-[4.25rem] md:left-auto z-[450] flex flex-col gap-2 items-stretch md:items-end">
         <MapSearch map={mapInstance} />
+        <div className="hidden md:flex flex-col gap-2 items-end">
         <button
           onClick={cycleMapTheme}
           aria-label={`Tema do mapa: ${THEME_LABELS[mapTheme]}`}
@@ -1027,6 +1012,7 @@ const MapComponent = ({
           {mapTheme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
         <LegendButton />
+        </div>
       </div>
 
       {/* Location button — automatically adjusts for mobile and desktop zooms */}
