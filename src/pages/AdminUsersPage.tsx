@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { parseCep, searchCep, searchPlaces, type Place } from '@/lib/placeSearch';
 import { Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,7 @@ import { fetchUsers, registerUser, updateUser, deleteUser } from '@/controllers/
 import { AgencyKind, AuthUser, PinType, UserRole, RegisterInput } from '@/types';
 import { toast } from '@/components/ui/use-toast';
 import { ApiError } from '@/lib/errors';
-import { ArrowLeft, Loader2, UserPlus, Pencil, Trash2, X, Check, BadgeCheck } from 'lucide-react';
+import { ArrowLeft, Loader2, UserPlus, Pencil, Trash2, X, Check, BadgeCheck, MapPin } from 'lucide-react';
 import { AGENCY_KIND_LABELS } from '@/components/OfficialResponse';
 import { cn } from '@/lib/utils';
 
@@ -36,7 +37,13 @@ const DEFAULT_TYPES: Record<AgencyKind, PinType[]> = {
   outro: ['infraestrutura'],
 };
 
-type AgencyFields = { organization: string; agencyKind: AgencyKind; answerTypes: PinType[] };
+type AgencyFields = {
+  organization: string;
+  agencyKind: AgencyKind;
+  answerTypes: PinType[];
+  hq: { lat: number; lng: number; address: string } | null;
+  radiusKm: number;
+};
 
 function AgencyFieldsEditor({ value, onChange, compact }: { value: AgencyFields; onChange: (v: AgencyFields) => void; compact?: boolean }) {
   const toggle = (t: PinType) =>
@@ -73,11 +80,95 @@ function AgencyFieldsEditor({ value, onChange, compact }: { value: AgencyFields;
           ))}
         </div>
       </div>
+      <HqPicker value={value.hq} onChange={(hq) => onChange({ ...value, hq })} />
+      <div>
+        <p className="text-xs text-gray-400 mb-1.5">Área atendida (raio a partir da sede)</p>
+        <select
+          value={value.radiusKm}
+          onChange={(e) => onChange({ ...value, radiusKm: Number(e.target.value) })}
+          className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm"
+          aria-label="Área atendida"
+        >
+          {[2, 3, 5, 8, 10, 15].map((km) => <option key={km} value={km}>{km} km</option>)}
+        </select>
+      </div>
     </div>
   );
 }
 
-const emptyAgency = (): AgencyFields => ({ organization: '', agencyKind: 'prefeitura', answerTypes: DEFAULT_TYPES.prefeitura });
+/** Headquarters address: search a street/place/CEP and pick it (shown on the map as a building). */
+function HqPicker({ value, onChange }: { value: AgencyFields['hq']; onChange: (v: AgencyFields['hq']) => void }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<Place[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    const term = q.trim();
+    const cep = parseCep(term);
+    if (!cep && term.length < 3) { setResults([]); return; }
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      setLoading(true);
+      try {
+        setResults(cep ? await searchCep(cep, ctrl.signal).then((p) => (p && !p.outside ? [p] : [])) : await searchPlaces(term, null, ctrl.signal));
+      } catch { /* aborted or offline */ } finally {
+        if (!ctrl.signal.aborted) setLoading(false);
+      }
+    }, 400);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [q]);
+  if (value) {
+    return (
+      <div className="flex items-start gap-2 rounded-md bg-[#121212] border border-[#2a2a2a] p-2">
+        <MapPin size={15} className="mt-0.5 text-emerald-400 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-white truncate">{value.address || 'Sede marcada'}</p>
+          <p className="text-[11px] text-gray-500">{value.lat.toFixed(5)}, {value.lng.toFixed(5)}</p>
+        </div>
+        <button type="button" onClick={() => onChange(null)} className="text-xs text-blue-400 min-h-8 px-1">Trocar</button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <Input
+          placeholder="Endereço da sede (rua, número ou CEP)"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="bg-[#121212] border-[#2a2a2a] text-white pr-8"
+        />
+        {loading && <Loader2 size={14} className="animate-spin text-gray-400 absolute right-2.5 top-3" />}
+      </div>
+      {results.length > 0 && (
+        <ul className="rounded-md border border-[#2a2a2a] bg-[#121212] max-h-48 overflow-y-auto">
+          {results.map((r) => (
+            <li key={r.id}>
+              <button
+                type="button"
+                onClick={() => { onChange({ lat: r.lat, lng: r.lng, address: [r.title, r.subtitle].filter(Boolean).join(' — ') }); setQ(''); setResults([]); }}
+                className="w-full text-left px-3 py-2 min-h-11 hover:bg-white/5"
+              >
+                <span className="block text-sm text-gray-100 truncate">{r.title}</span>
+                {r.subtitle && <span className="block text-xs text-gray-500 truncate">{r.subtitle}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] text-gray-500">Opcional. Com a sede marcada, o órgão aparece no mapa como um prédio com o placar de ocorrências resolvidas.</p>
+    </div>
+  );
+}
+
+const emptyAgency = (): AgencyFields => ({ organization: '', agencyKind: 'prefeitura', answerTypes: DEFAULT_TYPES.prefeitura, hq: null, radiusKm: 5 });
+
+const agencyPayload = (a: AgencyFields) => ({
+  organization: a.organization.trim(),
+  agencyKind: a.agencyKind,
+  answerTypes: a.answerTypes,
+  ...(a.hq && { hqLat: a.hq.lat, hqLng: a.hq.lng, hqAddress: a.hq.address }),
+  serviceRadiusKm: a.radiusKm,
+});
 
 export function AdminUsersPage() {
   const { isAdmin, isLoading: authLoading } = useAuth();
@@ -135,7 +226,7 @@ export function AdminUsersPage() {
         password,
         role,
         ...(name.trim() && { name: name.trim() }),
-        ...(role === 'agency' && { organization: agency.organization.trim(), agencyKind: agency.agencyKind, answerTypes: agency.answerTypes }),
+        ...(role === 'agency' && agencyPayload(agency)),
       };
       await registerUser(input);
       toast({ title: 'Conta criada', description: `${email} cadastrado como ${ROLE_LABELS[role].toLowerCase()}.` });
@@ -158,6 +249,8 @@ export function AdminUsersPage() {
       organization: u.organization ?? '',
       agencyKind: u.agencyKind ?? 'prefeitura',
       answerTypes: u.answerTypes?.length ? u.answerTypes : DEFAULT_TYPES[u.agencyKind ?? 'prefeitura'],
+      hq: u.hqLat != null && u.hqLng != null ? { lat: u.hqLat, lng: u.hqLng, address: u.hqAddress ?? '' } : null,
+      radiusKm: u.serviceRadiusKm ?? 5,
     });
   };
 
@@ -178,11 +271,7 @@ export function AdminUsersPage() {
         role: editRole,
         isActive: editActive,
         ...(editPassword && { password: editPassword }),
-        ...(editRole === 'agency' && {
-          organization: editAgency.organization.trim(),
-          agencyKind: editAgency.agencyKind,
-          answerTypes: editAgency.answerTypes,
-        }),
+        ...(editRole === 'agency' && agencyPayload(editAgency)),
       });
       toast({ title: 'Conta atualizada' });
       setEditingUser(null);

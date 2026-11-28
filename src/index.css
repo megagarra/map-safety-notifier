@@ -946,3 +946,15 @@ button:focus-visible, a:focus-visible, select:focus-visible, [role="radio"]:focu
 .search-pin { background: none; border: none; }
 .search-pin svg { display: block; filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); animation: search-pin-drop .45s cubic-bezier(.3,1.6,.6,1); transform-origin: bottom center; }
 @keyframes search-pin-drop { from { transform: translateY(-18px) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Public agency headquarters: small isometric building with its resolved % */
+.agency-marker { background: none; border: none; }
+.agency-building { position: relative; width: 56px; height: 64px; cursor: pointer; transition: transform .15s ease; transform-origin: 50% 90%; }
+.agency-building svg { display: block; filter: drop-shadow(0 4px 5px rgba(0,0,0,.45)); }
+.agency-marker:hover .agency-building, .agency-marker:focus-visible .agency-building { transform: translateY(-3px) scale(1.06); }
+.agency-badge { position: absolute; top: 2px; right: -6px; min-width: 30px; padding: 1px 5px; border-radius: 9999px; font: 700 11px/16px system-ui, sans-serif; color: #fff; text-align: center; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,.4); }
+.agency-badge-green { background: #16a34a; }
+.agency-badge-amber { background: #d97706; }
+.agency-badge-red { background: #dc2626; }
+.agency-badge-slate { background: #475569; }
+.agency-kind { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 4px; background: rgba(17,24,39,.9); color: #e5e7eb; font: 700 9px/13px system-ui, sans-serif; letter-spacing: .04em; white-space: nowrap; }

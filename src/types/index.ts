@@ -202,6 +202,10 @@ export interface AuthUser {
   organization?: string | null;
   agencyKind?: AgencyKind | null;
   answerTypes?: PinType[] | null;
+  hqLat?: number | null;
+  hqLng?: number | null;
+  hqAddress?: string | null;
+  serviceRadiusKm?: number | null;
 }
 
 export interface AuthTokens {
@@ -243,6 +247,10 @@ export interface UpdateUserInput {
   organization?: string;
   agencyKind?: AgencyKind;
   answerTypes?: PinType[];
+  hqLat?: number | null;
+  hqLng?: number | null;
+  hqAddress?: string | null;
+  serviceRadiusKm?: number | null;
 }
 
 export interface RegisterInput {
@@ -253,4 +261,34 @@ export interface RegisterInput {
   organization?: string;
   agencyKind?: AgencyKind;
   answerTypes?: PinType[];
+  hqLat?: number | null;
+  hqLng?: number | null;
+  hqAddress?: string | null;
+  serviceRadiusKm?: number | null;
+}
+
+/** Public agency on the map with its scoreboard (computed by the server from published reports). */
+export interface Agency {
+  id: string;
+  organization: string;
+  kind: AgencyKind;
+  answerTypes: PinType[];
+  lat: number;
+  lng: number;
+  address?: string | null;
+  radiusKm: number;
+  stats: {
+    total: number;
+    resolved: number;
+    inProgress: number;
+    acknowledged: number;
+    unanswered: number;
+    answeredByAgency: number;
+    resolvedByAgency: number;
+    resolvedRate: number;
+    medianResponseHours?: number | null;
+    last30Total: number;
+    last30Resolved: number;
+    lastAnswerAt?: string | null;
+  };
 }

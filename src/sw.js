@@ -239,7 +239,7 @@ self.addEventListener('notificationclick', event => {
 // --- API data cache: the map keeps working offline with the last pins it saw ---
 const API_CACHE_NAME = 'api-v1';
 const API_CACHE_MAX = 60;
-const API_CACHEABLE = /\/api\/(pins(\/nearby|\/stats)?|crime-types|pins\/default-locations)(\?|$)/;
+const API_CACHEABLE = /\/api\/(pins(\/nearby|\/stats)?|crime-types|pins\/default-locations|agencies)(\?|$)/;
 
 async function trimCache(name, max) {
   const cache = await caches.open(name);

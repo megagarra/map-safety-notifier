@@ -172,6 +172,7 @@ const LEGEND = [
   { dot: 'border-[3px] border-violet-400 bg-[#2d1f4e]', label: 'Estatísticas do bairro' },
   { dot: 'bg-red-500 border-2 border-white/80', label: 'Grupo de alertas (toque para ampliar)' },
   { dot: 'bg-blue-500 border-2 border-white', label: 'Você' },
+  { dot: 'rounded-sm bg-gradient-to-br from-emerald-300 to-emerald-700 border border-white/60', label: 'Órgão público (toque para ver o placar)' },
 ];
 
 export function LegendList() {
