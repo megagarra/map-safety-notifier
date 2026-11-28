@@ -16,6 +16,7 @@ import {
   UpdateDefaultLocationEntryInput,
   AdminPinLocationInput,
   RejectPinInput,
+  FlagReason,
 } from '@/types';
 import { api, apiFormData, buildQuery } from '@/lib/api';
 import { unwrapApiList } from '@/lib/apiList';
@@ -328,4 +329,9 @@ export const filterPinsByPersistence = (pins: Pin[], minDays: number, maxDays: n
     const days = pin.persistenceDays || 0;
     return days >= minDays && (maxDays === 0 || days <= maxDays);
   });
+};
+
+/** Anyone: report a pin as fake, offensive, advertising... Enough people send it back to review. */
+export const flagPin = async (pinId: string, reason: FlagReason): Promise<void> => {
+  await api<void>(`/api/pins/${pinId}/flag`, { method: 'POST', body: JSON.stringify({ reason }) });
 };

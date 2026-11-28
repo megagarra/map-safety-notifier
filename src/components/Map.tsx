@@ -17,7 +17,9 @@ import { cn } from '@/lib/utils';
 import { reverseGeocode } from '@/lib/geocode';
 import { apiUrl } from '@/lib/api';
 import { toast } from '@/components/ui/use-toast';
-import { unarchivePin } from '@/controllers/pins';
+import { flagPin, unarchivePin } from '@/controllers/pins';
+import type { FlagReason } from '@/types';
+import { ApiError } from '@/lib/errors';
 import {
   Clock,
   Share2,
@@ -33,6 +35,7 @@ import {
   Moon,
   Trash2,
   Save,
+  Flag,
 } from 'lucide-react';
 import { ImageGallery } from './ImageGallery';
 import PinHistory from './PinHistory';
@@ -740,6 +743,7 @@ function PinDetailsModal({
             )}
 
             {!isDefault && <ShareButton pin={pin} />}
+            {!isDefault && !isModerator && <ReportAbuse pinId={pin.id} />}
 
             {/* Admin: mover pin no mapa */}
             {isAdmin && !isDefault && onStartMovePin && (
@@ -1156,6 +1160,68 @@ ${url}`)}`, '_blank', 'noopener');
       >
         <Route size={15} /> Como chegar
       </a>
+    </div>
+  );
+}
+
+// --- "Denunciar": public report of fake / offensive / advertising content ---
+
+const FLAG_REASONS: { key: FlagReason; label: string }[] = [
+  { key: 'falso', label: 'Não existe / é falso' },
+  { key: 'ofensivo', label: 'Ofensivo ou impróprio' },
+  { key: 'propaganda', label: 'Propaganda ou política' },
+  { key: 'duplicado', label: 'Repetido' },
+  { key: 'outro', label: 'Outro motivo' },
+];
+const FLAGGED_KEY = 'map-safety:flagged';
+
+function ReportAbuse({ pinId }: { pinId: string }) {
+  const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(() => {
+    try { return (JSON.parse(localStorage.getItem(FLAGGED_KEY) || '[]') as string[]).includes(pinId); } catch { return false; }
+  });
+  const send = async (reason: FlagReason) => {
+    setSending(true);
+    try {
+      await flagPin(pinId, reason);
+      setDone(true);
+      setOpen(false);
+      try {
+        const list = JSON.parse(localStorage.getItem(FLAGGED_KEY) || '[]') as string[];
+        localStorage.setItem(FLAGGED_KEY, JSON.stringify([pinId, ...list.filter((x) => x !== pinId)].slice(0, 200)));
+      } catch { /* ignore */ }
+      toast({ title: 'Denúncia enviada', description: 'Obrigado. Se outras pessoas também denunciarem, a moderação revisa de novo.' });
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Não foi possível enviar a denúncia.', variant: 'destructive' });
+    } finally {
+      setSending(false);
+    }
+  };
+  if (done) return <p className="text-center text-xs text-gray-500">Você denunciou esta ocorrência.</p>;
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="w-full h-10 flex items-center justify-center gap-1.5 text-xs text-gray-400 hover:text-red-300">
+        <Flag size={13} /> Denunciar ocorrência falsa ou imprópria
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-2">
+      <p className="text-xs text-gray-300">Qual o problema com esta ocorrência?</p>
+      <div className="flex flex-wrap gap-1.5">
+        {FLAG_REASONS.map((r) => (
+          <button
+            key={r.key}
+            disabled={sending}
+            onClick={() => send(r.key)}
+            className="h-9 px-3 rounded-full border border-white/15 text-xs text-gray-200 hover:bg-white/10 disabled:opacity-50"
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => setOpen(false)} className="text-xs text-gray-500 hover:text-gray-300 min-h-8">Cancelar</button>
     </div>
   );
 }

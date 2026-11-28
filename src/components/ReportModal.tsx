@@ -86,6 +86,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const submittingRef = useRef(false);
+  const honeypotRef = useRef<HTMLInputElement>(null);
   const hasDraft = description.trim().length > 0 || images.length > 0;
 
   // Keep the draft on the device: closing by accident (backdrop/back button) never loses it.
@@ -150,6 +151,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
       images,
       ...(address && { address }),
       ...(type === 'crime' && crimeTypeId && crimeTypes.some((c) => c.id === crimeTypeId) && { crimeTypeId }),
+      ...(honeypotRef.current?.value && { website: honeypotRef.current.value }),
     };
 
     try {
@@ -280,6 +282,9 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
               </div>
             </div>
           )}
+
+          {/* Anti-bot trap: invisible to people (and screen readers), bots that fill every field get caught */}
+          <input ref={honeypotRef} name="website" type="text" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute -left-[9999px] w-px h-px opacity-0" />
 
           {/* Description */}
           <div className="space-y-2">

@@ -85,6 +85,7 @@ function PinModerationCard({
         </span>
       </div>
       <p className="text-sm text-gray-200">{pin.description}</p>
+      <AbuseSignals pin={pin} />
       {!!pin.possibleDuplicates?.length && onReject && (
         <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 p-2.5 space-y-2">
           <p className="text-xs text-orange-200">
@@ -202,6 +203,9 @@ export function ModerationPage() {
   const [tab, setTab] = useState<ModerationTab>('pending');
   const [rejectPin, setRejectPin] = useState<Pin | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [blockReporter, setBlockReporter] = useState(false);
+  const [rejectOthers, setRejectOthers] = useState(false);
+  useEffect(() => { setBlockReporter(false); setRejectOthers(false); }, [rejectPin]);
   const [acting, setActing] = useState<Set<string>>(new Set());
   const startAct = (id: string) => setActing((s) => new Set(s).add(id));
   const endAct = (id: string) => setActing((s) => { const n = new Set(s); n.delete(id); return n; });
@@ -391,8 +395,11 @@ export function ModerationPage() {
     startAct(rejectingId);
     const rollback = removeFromLists(rejectPin.id);
     try {
-      await PinsController.rejectPin(rejectPin.id, { reason: rejectReason.trim() });
-      toast({ title: 'Ocorrência rejeitada' });
+      await PinsController.rejectPin(rejectPin.id, { reason: rejectReason.trim(), blockReporter, blockDays: 7, rejectOthers });
+      toast({
+        title: 'Ocorrência rejeitada',
+        description: [blockReporter && 'Autor bloqueado por 7 dias.', rejectOthers && 'Os outros relatos pendentes dele também foram rejeitados.'].filter(Boolean).join(' ') || undefined,
+      });
       setRejectPin(null);
       setRejectReason('');
       invalidateAll();
@@ -561,6 +568,20 @@ export function ModerationPage() {
               maxLength={2000}
               className="min-h-[100px] bg-[#121212] border-[#2a2a2a] text-white text-[16px] sm:text-sm"
             />
+            {rejectPin?.reporterStats && (
+              <div className="space-y-2 pt-1">
+                <label className="flex items-start gap-2 text-sm text-gray-200 cursor-pointer">
+                  <input type="checkbox" checked={blockReporter} onChange={(e) => setBlockReporter(e.target.checked)} className="mt-1 accent-red-600 w-4 h-4" />
+                  <span>Bloquear o autor por 7 dias<span className="block text-xs text-gray-500">Para spam, propaganda, conteúdo impróprio ou relatos falsos de propósito.</span></span>
+                </label>
+                {(rejectPin.reporterStats.pending ?? 0) > 1 && (
+                  <label className="flex items-start gap-2 text-sm text-gray-200 cursor-pointer">
+                    <input type="checkbox" checked={rejectOthers} onChange={(e) => setRejectOthers(e.target.checked)} className="mt-1 accent-red-600 w-4 h-4" />
+                    <span>Rejeitar também os outros {(rejectPin.reporterStats.pending ?? 1) - 1} relatos pendentes deste autor</span>
+                  </label>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setRejectPin(null)} className="border-[#2a2a2a] text-white">
@@ -586,3 +607,41 @@ export function ModerationPage() {
 }
 
 export default ModerationPage;
+
+const FLAG_LABELS: Record<string, string> = {
+  falso: 'falso', ofensivo: 'ofensivo', propaganda: 'propaganda', duplicado: 'repetido', outro: 'outro',
+};
+
+/** Signals that help spot spam and fake reports: public reports, the sender's history, automatic notes. */
+function AbuseSignals({ pin }: { pin: Pin }) {
+  const flags = pin.flags ? Object.entries(pin.flags).filter(([, n]) => n) : [];
+  const st = pin.reporterStats;
+  const sentMany = st && (st.pending ?? 0) + (st.approved ?? 0) + (st.rejected ?? 0) > 1;
+  if (!flags.length && !sentMany && !st?.blocked && !pin.moderationHints?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 text-[11px]">
+      {flags.length > 0 && (
+        <span className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-300 border border-red-500/30">
+          Denunciado: {flags.map(([k, n]) => `${n}× ${FLAG_LABELS[k] ?? k}`).join(', ')}
+        </span>
+      )}
+      {st?.blocked ? (
+        <span className="px-2 py-0.5 rounded-full bg-red-600/20 text-red-200 border border-red-500/40">Autor bloqueado</span>
+      ) : null}
+      {sentMany && (
+        <span
+          className={cn(
+            'px-2 py-0.5 rounded-full border',
+            (st!.rejected ?? 0) > (st!.approved ?? 0) ? 'bg-orange-500/15 text-orange-200 border-orange-500/30' : 'bg-white/5 text-gray-300 border-white/10',
+          )}
+          title="Relatos enviados da mesma conexão de internet"
+        >
+          Mesmo autor: {st!.pending ?? 0} pendentes · {st!.approved ?? 0} aprovados · {st!.rejected ?? 0} rejeitados
+        </span>
+      )}
+      {pin.moderationHints?.map((h) => (
+        <span key={h} className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-200 border border-yellow-500/30">{h}</span>
+      ))}
+    </div>
+  );
+}

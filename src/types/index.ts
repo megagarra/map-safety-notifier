@@ -45,6 +45,12 @@ export interface Pin {
   periodLabel?: string;
   asOfDate?: string;
   rejectionReason?: string;
+  /** Moderation only: public reports by reason */
+  flags?: Partial<Record<FlagReason, number>> | null;
+  /** Moderation only: same sender's reports by status (+ blocked=1) */
+  reporterStats?: { pending?: number; approved?: number; rejected?: number; blocked?: number } | null;
+  /** Moderation only: automatic notes */
+  moderationHints?: string[] | null;
 }
 
 export interface CrimeType {
@@ -82,6 +88,8 @@ export interface CreatePinInput {
   images: string[];
   address?: string;
   crimeTypeId?: string;
+  /** Honeypot (must stay empty) */
+  website?: string;
 }
 
 export interface CreateDefaultLocationInput {
@@ -147,7 +155,14 @@ export interface AdminPinLocationInput {
 
 export interface RejectPinInput {
   reason: string;
+  /** Block the sender from new reports for blockDays days */
+  blockReporter?: boolean;
+  blockDays?: number;
+  /** Also reject the sender's other pending reports */
+  rejectOthers?: boolean;
 }
+
+export type FlagReason = 'falso' | 'ofensivo' | 'propaganda' | 'duplicado' | 'outro';
 
 export interface PaginatedResponse<T> {
   items: T[];

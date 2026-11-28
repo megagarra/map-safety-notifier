@@ -9,6 +9,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
       'Fotos: são recomprimidas no servidor e os metadados (incluindo a localização GPS da câmera) são apagados.',
       'Votos e confirmações ("Eu também vi", "Ainda está aí"): guardamos um código derivado do seu endereço IP e navegador, cifrado com chave secreta, só para evitar votos repetidos. Não guardamos o IP em si.',
       'Notificações: se você ativar, guardamos o endereço técnico de notificação do seu navegador e, se escolher, o ponto e raio da sua área de alertas.',
+      'Proteção contra spam: cada relato e cada denúncia guarda um código cifrado derivado do seu endereço IP (não o IP), usado só para limitar envios por pessoa e permitir que a moderação bloqueie quem abusa. O código é apagado dos relatos após 90 dias.',
       'Contas de moderação: e-mail, nome e senha (guardada apenas como hash).',
     ],
   },
