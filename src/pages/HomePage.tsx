@@ -35,7 +35,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, Moon, Sun, ChevronDown } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, Moon, Sun, ChevronDown, BadgeCheck } from 'lucide-react';
 import { toggleMapTheme, useMapTheme } from '@/lib/mapTheme';
 import { cn } from '@/lib/utils';
 
@@ -93,7 +93,7 @@ function removeMarkerFromCache(
 export default function HomePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAuthenticated, isAdmin, isModerator, isStaff, user, logout, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isAdmin, isModerator, isStaff, user, logout, isLoading: authLoading, isAgency } = useAuth();
 
   const [bounds, setBounds] = useState<MapBounds>(DEFAULT_BOUNDS);
   const [fetchMode, setFetchMode] = useState<PinFetchMode>('bounds');
@@ -883,6 +883,15 @@ export default function HomePage() {
                 <p className="text-xs text-gray-400 truncate">{user?.email}</p>
                 <p className="text-xs text-blue-400 capitalize">{user?.role}</p>
               </div>
+              {(isAgency || isAdmin) && (
+                <Link
+                  to="/orgao"
+                  className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-emerald-300 hover:bg-white/5 transition-colors w-full"
+                >
+                  <BadgeCheck size={14} />
+                  {isAgency ? 'Painel do órgão' : 'Painel de órgãos'}
+                </Link>
+              )}
               {isModerator && (
                 <>
                   <Link

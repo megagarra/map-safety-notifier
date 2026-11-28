@@ -335,3 +335,11 @@ export const filterPinsByPersistence = (pins: Pin[], minDays: number, maxDays: n
 export const flagPin = async (pinId: string, reason: FlagReason): Promise<void> => {
   await api<void>(`/api/pins/${pinId}/flag`, { method: 'POST', body: JSON.stringify({ reason }) });
 };
+
+/** Agency panel: published reports this agency can answer. */
+export const fetchAgencyQueue = async (state: 'open' | 'resolved' | 'all' = 'open'): Promise<PaginatedResponse<Pin>> =>
+  api<PaginatedResponse<Pin>>(buildQuery('/api/pins/agency/queue', { state, limit: 200 }), { auth: true });
+
+/** Agency: mark a report as received / in progress / resolved (signed with the agency name). */
+export const officialAnswer = async (pinId: string, status: PinStatus, comment?: string): Promise<Pin> =>
+  api<Pin>(`/api/pins/${pinId}/official`, { method: 'POST', auth: true, body: JSON.stringify({ status, comment: comment || undefined }) });

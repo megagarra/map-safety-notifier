@@ -18,6 +18,7 @@ import { reverseGeocode } from '@/lib/geocode';
 import { apiUrl } from '@/lib/api';
 import { toast } from '@/components/ui/use-toast';
 import { flagPin, unarchivePin } from '@/controllers/pins';
+import { OfficialSection } from './OfficialResponse';
 import type { FlagReason } from '@/types';
 import { ApiError } from '@/lib/errors';
 import {
@@ -742,6 +743,7 @@ function PinDetailsModal({
               </div>
             )}
 
+            {!isDefault && <OfficialSection key={pin.id} pin={pin} />}
             {!isDefault && <ShareButton pin={pin} />}
             {!isDefault && !isModerator && <ReportAbuse pinId={pin.id} />}
 

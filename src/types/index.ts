@@ -51,6 +51,8 @@ export interface Pin {
   reporterStats?: { pending?: number; approved?: number; rejected?: number; blocked?: number } | null;
   /** Moderation only: automatic notes */
   moderationHints?: string[] | null;
+  /** Public answer from a city hall / guard / police account */
+  officialResponse?: OfficialResponse | null;
 }
 
 export interface CrimeType {
@@ -178,7 +180,17 @@ export interface MapBounds {
   lng_max: number;
 }
 
-export type UserRole = 'admin' | 'moderator' | 'user';
+export type UserRole = 'admin' | 'moderator' | 'user' | 'agency';
+
+export type AgencyKind = 'prefeitura' | 'guarda' | 'policia' | 'outro';
+
+export interface OfficialResponse {
+  org: string;
+  kind?: AgencyKind | 'admin' | null;
+  status: PinStatus;
+  comment?: string | null;
+  at?: string | null;
+}
 
 export interface AuthUser {
   id: string;
@@ -186,6 +198,10 @@ export interface AuthUser {
   role: UserRole;
   name?: string;
   isActive: boolean;
+  /** Agency accounts only */
+  organization?: string | null;
+  agencyKind?: AgencyKind | null;
+  answerTypes?: PinType[] | null;
 }
 
 export interface AuthTokens {
@@ -224,6 +240,9 @@ export interface UpdateUserInput {
   role?: UserRole;
   isActive?: boolean;
   password?: string;
+  organization?: string;
+  agencyKind?: AgencyKind;
+  answerTypes?: PinType[];
 }
 
 export interface RegisterInput {
@@ -231,4 +250,7 @@ export interface RegisterInput {
   password: string;
   role: UserRole;
   name?: string;
+  organization?: string;
+  agencyKind?: AgencyKind;
+  answerTypes?: PinType[];
 }

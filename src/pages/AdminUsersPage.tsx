@@ -1,38 +1,100 @@
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchUsers, registerUser, updateUser, deleteUser } from '@/controllers/auth';
-import { AuthUser, UserRole, RegisterInput } from '@/types';
+import { AgencyKind, AuthUser, PinType, UserRole, RegisterInput } from '@/types';
 import { toast } from '@/components/ui/use-toast';
 import { ApiError } from '@/lib/errors';
-import { ArrowLeft, Loader2, UserPlus, Pencil, Trash2, X, Check } from 'lucide-react';
+import { ArrowLeft, Loader2, UserPlus, Pencil, Trash2, X, Check, BadgeCheck } from 'lucide-react';
+import { AGENCY_KIND_LABELS } from '@/components/OfficialResponse';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Administrador',
   moderator: 'Moderador',
+  agency: 'Órgão público',
   user: 'Usuário',
 };
 
+const ROLE_HELP: Record<UserRole, string> = {
+  admin: 'Acesso total: moderação, usuários, órgãos e configurações.',
+  moderator: 'Aprova ou rejeita relatos, bloqueia autores, vê o painel analítico.',
+  agency: 'Prefeitura, Guarda ou Polícia: marca ocorrências como recebidas, em andamento ou resolvidas, com resposta pública assinada. Não modera.',
+  user: 'Conta comum, sem limites de envio. Não modera.',
+};
+
+const TYPE_LABELS: Record<PinType, string> = { infraestrutura: 'Infraestrutura', crime: 'Crime' };
+
+// What each kind of agency answers by default (same as the server).
+const DEFAULT_TYPES: Record<AgencyKind, PinType[]> = {
+  prefeitura: ['infraestrutura'],
+  guarda: ['crime'],
+  policia: ['crime'],
+  outro: ['infraestrutura'],
+};
+
+type AgencyFields = { organization: string; agencyKind: AgencyKind; answerTypes: PinType[] };
+
+function AgencyFieldsEditor({ value, onChange, compact }: { value: AgencyFields; onChange: (v: AgencyFields) => void; compact?: boolean }) {
+  const toggle = (t: PinType) =>
+    onChange({ ...value, answerTypes: value.answerTypes.includes(t) ? value.answerTypes.filter((x) => x !== t) : [...value.answerTypes, t] });
+  return (
+    <div className={cn('space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5', compact ? 'p-2' : 'p-3')}>
+      <Input
+        placeholder="Nome público do órgão (ex.: Prefeitura de Franco da Rocha)"
+        value={value.organization}
+        onChange={(e) => onChange({ ...value, organization: e.target.value })}
+        className="bg-[#121212] border-[#2a2a2a] text-white"
+      />
+      <select
+        value={value.agencyKind}
+        onChange={(e) => {
+          const k = e.target.value as AgencyKind;
+          onChange({ ...value, agencyKind: k, answerTypes: DEFAULT_TYPES[k] });
+        }}
+        className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm"
+        aria-label="Tipo de órgão"
+      >
+        {(Object.keys(AGENCY_KIND_LABELS) as AgencyKind[]).map((k) => (
+          <option key={k} value={k}>{AGENCY_KIND_LABELS[k]}</option>
+        ))}
+      </select>
+      <div>
+        <p className="text-xs text-gray-400 mb-1.5">Pode responder ocorrências de:</p>
+        <div className="flex gap-2">
+          {(Object.keys(TYPE_LABELS) as PinType[]).map((t) => (
+            <label key={t} className="flex items-center gap-2 h-9 px-3 rounded-full border border-white/15 text-sm text-gray-200 cursor-pointer">
+              <input type="checkbox" checked={value.answerTypes.includes(t)} onChange={() => toggle(t)} className="accent-emerald-500" />
+              {TYPE_LABELS[t]}
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const emptyAgency = (): AgencyFields => ({ organization: '', agencyKind: 'prefeitura', answerTypes: DEFAULT_TYPES.prefeitura });
+
 export function AdminUsersPage() {
   const { isAdmin, isLoading: authLoading } = useAuth();
-  const queryClient = useQueryClient();
 
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<UserRole>('user');
+  const [role, setRole] = useState<UserRole>('agency');
+  const [agency, setAgency] = useState<AgencyFields>(emptyAgency);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingUser, setEditingUser] = useState<AuthUser | null>(null);
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<UserRole>('user');
   const [editActive, setEditActive] = useState(true);
   const [editPassword, setEditPassword] = useState('');
+  const [editAgency, setEditAgency] = useState<AgencyFields>(emptyAgency);
   const [actionId, setActionId] = useState<string | null>(null);
 
   const { data: users = [], isLoading, refetch } = useQuery({
@@ -53,18 +115,31 @@ export function AdminUsersPage() {
     return <Navigate to="/login" replace />;
   }
 
+  const agencyInvalid = (a: AgencyFields) =>
+    !a.organization.trim() ? 'Informe o nome público do órgão.' : !a.answerTypes.length ? 'Escolha ao menos um tipo de ocorrência.' : null;
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || password.length < 10) {
       toast({ title: 'Dados inválidos', description: 'Email e senha (mín. 10 caracteres, não óbvia) são obrigatórios.', variant: 'destructive' });
       return;
     }
+    if (role === 'agency' && agencyInvalid(agency)) {
+      toast({ title: 'Dados do órgão', description: agencyInvalid(agency)!, variant: 'destructive' });
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const input: RegisterInput = { email: email.trim(), password, role, ...(name.trim() && { name: name.trim() }) };
+      const input: RegisterInput = {
+        email: email.trim(),
+        password,
+        role,
+        ...(name.trim() && { name: name.trim() }),
+        ...(role === 'agency' && { organization: agency.organization.trim(), agencyKind: agency.agencyKind, answerTypes: agency.answerTypes }),
+      };
       await registerUser(input);
-      toast({ title: 'Usuário criado', description: `${email} cadastrado.` });
-      setEmail(''); setPassword(''); setName(''); setRole('user');
+      toast({ title: 'Conta criada', description: `${email} cadastrado como ${ROLE_LABELS[role].toLowerCase()}.` });
+      setEmail(''); setPassword(''); setName(''); setAgency(emptyAgency());
       refetch();
     } catch (err) {
       toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Falha ao criar.', variant: 'destructive' });
@@ -79,12 +154,21 @@ export function AdminUsersPage() {
     setEditRole(u.role);
     setEditActive(u.isActive);
     setEditPassword('');
+    setEditAgency({
+      organization: u.organization ?? '',
+      agencyKind: u.agencyKind ?? 'prefeitura',
+      answerTypes: u.answerTypes?.length ? u.answerTypes : DEFAULT_TYPES[u.agencyKind ?? 'prefeitura'],
+    });
   };
 
   const handleSaveEdit = async () => {
     if (!editingUser) return;
     if (editPassword && editPassword.length < 10) {
       toast({ title: 'Senha muito curta', description: 'A nova senha precisa ter pelo menos 10 caracteres.', variant: 'destructive' });
+      return;
+    }
+    if (editRole === 'agency' && agencyInvalid(editAgency)) {
+      toast({ title: 'Dados do órgão', description: agencyInvalid(editAgency)!, variant: 'destructive' });
       return;
     }
     setActionId(editingUser.id);
@@ -94,8 +178,13 @@ export function AdminUsersPage() {
         role: editRole,
         isActive: editActive,
         ...(editPassword && { password: editPassword }),
+        ...(editRole === 'agency' && {
+          organization: editAgency.organization.trim(),
+          agencyKind: editAgency.agencyKind,
+          answerTypes: editAgency.answerTypes,
+        }),
       });
-      toast({ title: 'Usuário atualizado' });
+      toast({ title: 'Conta atualizada' });
       setEditingUser(null);
       refetch();
     } catch (err) {
@@ -105,11 +194,12 @@ export function AdminUsersPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    setActionId(id);
+  const handleDelete = async (u: AuthUser) => {
+    if (!window.confirm(`Excluir a conta ${u.email}? Essa ação não pode ser desfeita.`)) return;
+    setActionId(u.id);
     try {
-      await deleteUser(id);
-      toast({ title: 'Usuário excluído' });
+      await deleteUser(u.id);
+      toast({ title: 'Conta excluída' });
       refetch();
     } catch (err) {
       toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Falha ao excluir.', variant: 'destructive' });
@@ -118,42 +208,47 @@ export function AdminUsersPage() {
     }
   };
 
+  const roleOptions = (['agency', 'moderator', 'admin', 'user'] as UserRole[]).map((r) => (
+    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+  ));
+
   return (
     <div className="min-h-screen bg-[#121212] text-white">
       <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6">
         <div className="flex items-center gap-3">
-          <Link to="/" className="text-gray-400 hover:text-white"><ArrowLeft size={20} /></Link>
+          <Link to="/" className="text-gray-400 hover:text-white" aria-label="Voltar ao mapa"><ArrowLeft size={20} /></Link>
           <div>
-            <h1 className="text-xl font-semibold">Gestão de usuários</h1>
+            <h1 className="text-xl font-semibold">Contas e órgãos públicos</h1>
             <p className="text-sm text-gray-400">Somente administradores</p>
           </div>
         </div>
 
         <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4">
-          <h2 className="text-sm font-medium mb-3 flex items-center gap-2"><UserPlus size={16} /> Novo usuário</h2>
+          <h2 className="text-sm font-medium mb-3 flex items-center gap-2"><UserPlus size={16} /> Nova conta</h2>
           <form onSubmit={handleCreate} className="space-y-3">
-            <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
-            <Input placeholder="Nome (opcional)" value={name} onChange={(e) => setName(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
-            <Input placeholder="Senha (mín. 10)" autoComplete="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
-            <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm">
-              <option value="user">Usuário</option>
-              <option value="moderator">Moderador</option>
-              <option value="admin">Administrador</option>
+            <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm" aria-label="Tipo de conta">
+              {roleOptions}
             </select>
+            <p className="text-xs text-gray-400 -mt-1">{ROLE_HELP[role]}</p>
+            {role === 'agency' && <AgencyFieldsEditor value={agency} onChange={setAgency} />}
+            <Input placeholder="Email de acesso" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <Input placeholder={role === 'agency' ? 'Responsável (opcional, não aparece ao público)' : 'Nome (opcional)'} value={name} onChange={(e) => setName(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <Input placeholder="Senha (mín. 10)" autoComplete="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
             <Button type="submit" disabled={isSubmitting} className="w-full">
-              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Criar usuário'}
+              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Criar conta'}
             </Button>
           </form>
         </div>
 
         <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium">Usuários ({users.length})</h2>
-            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-8 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-2 text-xs">
-              <option value="">Todos</option>
-              <option value="user">Usuários</option>
+            <h2 className="text-sm font-medium">Contas ({users.length})</h2>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-8 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-2 text-xs" aria-label="Filtrar por tipo">
+              <option value="">Todas</option>
+              <option value="agency">Órgãos públicos</option>
               <option value="moderator">Moderadores</option>
               <option value="admin">Admins</option>
+              <option value="user">Usuários</option>
             </select>
           </div>
           {isLoading ? (
@@ -164,38 +259,46 @@ export function AdminUsersPage() {
                 <div key={u.id} className="p-3 rounded-lg bg-[#121212] border border-[#2a2a2a]">
                   {editingUser?.id === u.id ? (
                     <div className="space-y-2">
-                      <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nome" className="h-8 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
-                      <select value={editRole} onChange={(e) => setEditRole(e.target.value as UserRole)} className="w-full h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-2 text-xs">
-                        <option value="user">Usuário</option>
-                        <option value="moderator">Moderador</option>
-                        <option value="admin">Admin</option>
+                      <select value={editRole} onChange={(e) => setEditRole(e.target.value as UserRole)} className="w-full h-9 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] text-white px-2 text-sm" aria-label="Tipo de conta">
+                        {roleOptions}
                       </select>
-                      <label className="flex items-center gap-2 text-xs text-gray-300">
+                      {editRole === 'agency' && <AgencyFieldsEditor value={editAgency} onChange={setEditAgency} compact />}
+                      <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nome" className="h-9 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
+                      <label className="flex items-center gap-2 text-sm text-gray-300">
                         <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
                         Conta ativa
                       </label>
-                      <Input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Nova senha (opcional, mín. 10)" type="password" autoComplete="new-password" className="h-8 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
+                      <Input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Nova senha (opcional, mín. 10)" type="password" autoComplete="new-password" className="h-9 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={handleSaveEdit} disabled={actionId === u.id} className="flex-1 h-7 text-xs">
-                          {actionId === u.id ? <Loader2 size={12} className="animate-spin" /> : <><Check size={12} className="mr-1" /> Salvar</>}
+                        <Button size="sm" onClick={handleSaveEdit} disabled={actionId === u.id} className="flex-1 h-9 text-sm">
+                          {actionId === u.id ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} className="mr-1" /> Salvar</>}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setEditingUser(null)} className="h-7 text-xs border-[#2a2a2a] text-white"><X size={12} /></Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingUser(null)} className="h-9 border-[#2a2a2a] text-white" aria-label="Cancelar"><X size={14} /></Button>
                       </div>
                     </div>
                   ) : (
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium">{u.name || u.email}</p>
-                        {u.name && <p className="text-xs text-gray-500">{u.email}</p>}
-                        <div className="flex gap-2 mt-1">
-                          <span className="text-xs text-blue-400">{ROLE_LABELS[u.role]}</span>
-                          {!u.isActive && <span className="text-xs text-red-400">Inativo</span>}
+                      <div className="min-w-0">
+                        {u.role === 'agency' && u.organization ? (
+                          <p className="text-sm font-medium flex items-center gap-1.5"><BadgeCheck size={14} className="text-emerald-400 shrink-0" /> {u.organization}</p>
+                        ) : (
+                          <p className="text-sm font-medium">{u.name || u.email}</p>
+                        )}
+                        <p className="text-xs text-gray-500 truncate">{u.email}{u.role === 'agency' && u.name ? ` · ${u.name}` : ''}</p>
+                        <div className="flex flex-wrap gap-x-2 mt-1">
+                          <span className="text-xs text-blue-400">
+                            {u.role === 'agency' && u.agencyKind ? AGENCY_KIND_LABELS[u.agencyKind] : ROLE_LABELS[u.role]}
+                          </span>
+                          {u.role === 'agency' && !!u.answerTypes?.length && (
+                            <span className="text-xs text-gray-400">responde: {u.answerTypes.map((t) => TYPE_LABELS[t]).join(', ')}</span>
+                          )}
+                          {!u.isActive && <span className="text-xs text-red-400">Inativa</span>}
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => startEdit(u)} className="p-1.5 text-gray-400 hover:text-white"><Pencil size={14} /></button>
-                        <button onClick={() => handleDelete(u.id)} disabled={actionId === u.id} className="p-1.5 text-red-400 hover:text-red-300">
-                          {actionId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => startEdit(u)} className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white" aria-label={`Editar ${u.email}`}><Pencil size={15} /></button>
+                        <button onClick={() => handleDelete(u)} disabled={actionId === u.id} className="w-10 h-10 flex items-center justify-center text-red-400 hover:text-red-300" aria-label={`Excluir ${u.email}`}>
+                          {actionId === u.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                         </button>
                       </div>
                     </div>

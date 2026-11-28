@@ -15,6 +15,7 @@ const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const AboutPage = lazy(() => import("./pages/AboutPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
+const AgencyPage = lazy(() => import("./pages/AgencyPage"));
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const PageFallback = () => (
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/admin/users" element={<AdminUsersPage />} />
+              <Route path="/orgao" element={<AgencyPage />} />
               <Route path="/admin/moderation" element={<ModerationPage />} />
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
               <Route path="/sobre" element={<AboutPage />} />
