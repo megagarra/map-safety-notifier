@@ -74,6 +74,14 @@ export const fetchCitizenResolved = async (): Promise<Pin[]> => {
   return unwrapApiList<Pin>(data);
 };
 
+export const bulkModerate = async (
+  ids: string[],
+  action: 'approve' | 'reject',
+  reason?: string,
+): Promise<{ processed: number; skipped: number }> => {
+  return api('/api/pins/moderation/bulk', { method: 'POST', auth: true, body: JSON.stringify({ ids, action, reason }) });
+};
+
 export const approvePin = async (id: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${id}/approve`, { method: 'POST', auth: true });
 };

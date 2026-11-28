@@ -5,7 +5,9 @@ const TILE_CACHE_NAME = 'map-tiles-v2';
 const STATIC_CACHE_NAME = 'static-v2';
 
 // Workbox manifest injection point
-precacheAndRoute(self.__WB_MANIFEST);
+// directoryIndex: null -> Workbox does not map "/" to the precached index.html; navigations go to
+// our network-first handler below (so a new deploy is picked up). Hashed assets still come from the precache.
+precacheAndRoute(self.__WB_MANIFEST, { directoryIndex: null, cleanURLs: false });
 
 // Recursos estáticos a serem cacheados
 const STATIC_ASSETS = [
@@ -242,13 +244,16 @@ async function trimCache(name, max) {
 
 async function handleApiRequest(request) {
   const cache = await caches.open(API_CACHE_NAME);
+  const hasCopy = !!(await cache.match(request));
   try {
+    // Slow network + a saved copy: give up after 6 s and show the copy. No copy: wait as long as it takes.
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
+    const timer = hasCopy ? setTimeout(() => controller.abort(), 6000) : null;
     const response = await fetch(request, { signal: controller.signal });
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     if (response.ok) {
-      cache.put(request, response.clone()).then(() => trimCache(API_CACHE_NAME, API_CACHE_MAX));
+      const copy = response.clone();
+      cache.put(request, copy).then(() => trimCache(API_CACHE_NAME, API_CACHE_MAX));
     }
     return response;
   } catch (err) {
@@ -286,7 +291,10 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request)
         .then(response => {
-          if (response.ok) caches.open(STATIC_CACHE_NAME).then(c => c.put('/index.html', response.clone()));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(STATIC_CACHE_NAME).then(c => c.put('/index.html', copy));
+          }
           return response;
         })
         .catch(async () => (await caches.match('/index.html')) || (await caches.match(request)) || Response.error()),
@@ -300,7 +308,10 @@ self.addEventListener('fetch', event => {
       const cached = await cache.match(request);
       const network = fetch(request)
         .then(response => {
-          if (response.ok && response.type === 'basic') cache.put(request, response.clone());
+          if (response.ok && response.type === 'basic') {
+            const copy = response.clone();
+            cache.put(request, copy);
+          }
           return response;
         })
         .catch(() => cached);

@@ -128,7 +128,7 @@ export default function HomePage() {
     [fetchMode, center, boundsKeyStr, datePreset, isStaff, pageLimit],
   );
 
-  const { data: pinsPage, isFetching: isFetchingPins, isError } = useQuery({
+  const { data: pinsPage, isFetching: isFetchingPins, isError, dataUpdatedAt: pinsUpdatedAt } = useQuery({
     queryKey: pinsQueryKey,
     queryFn: () => {
       if (fetchMode === 'nearby') {
@@ -657,7 +657,7 @@ export default function HomePage() {
         </Suspense>
       )}
 
-      {!online && <OfflineBanner />}
+      {!online && <OfflineBanner dataTime={pinsUpdatedAt || undefined} />}
 
       {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
       {!hint.show && installApp.showBanner && !reportModalOpen && !selectedPin && (

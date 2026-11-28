@@ -135,11 +135,14 @@ export function useOnline() {
   return useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
 }
 
-export function OfflineBanner() {
+export function OfflineBanner({ dataTime }: { dataTime?: number }) {
+  const when = dataTime
+    ? new Date(dataTime).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+    : null;
   return (
     <div className="absolute top-0 inset-x-0 z-[1500] flex justify-center pt-[max(0.5rem,env(safe-area-inset-top))] pointer-events-none">
       <div className="flex items-center gap-2 rounded-full bg-amber-500 text-[#1a1a1a] text-xs font-semibold px-3 py-1.5 shadow-lg">
-        <WifiOff size={14} /> Sem conexão — mostrando dados salvos
+        <WifiOff size={14} /> Sem conexão — {when ? `dados de ${when}` : 'mostrando dados salvos'}
       </div>
     </div>
   );

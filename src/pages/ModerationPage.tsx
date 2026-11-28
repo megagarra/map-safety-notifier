@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,9 @@ function PinModerationCard({
   onRejectDuplicate,
   showRejectionReason,
   onPreview,
+  selected,
+  focused,
+  onToggleSelect,
 }: {
   pin: Pin;
   badge: string;
@@ -51,12 +54,26 @@ function PinModerationCard({
   onRejectDuplicate?: () => void;
   showRejectionReason?: boolean;
   onPreview: (url: string) => void;
+  selected?: boolean;
+  focused?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const cfg = getPinConfig(pin.type);
   return (
-    <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4 space-y-3">
+    <div
+      data-pin-card={pin.id}
+      className={cn(
+        'rounded-xl border bg-[#1a1a1a] p-4 space-y-3 scroll-mt-24',
+        focused ? 'border-blue-500 ring-1 ring-blue-500/50' : selected ? 'border-blue-500/60' : 'border-[#2a2a2a]',
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
+          {onToggleSelect && (
+            <label className="w-11 h-11 -m-3 flex items-center justify-center cursor-pointer">
+              <input type="checkbox" checked={!!selected} onChange={onToggleSelect} className="w-5 h-5 accent-blue-500" aria-label="Selecionar ocorrência" />
+            </label>
+          )}
           {getTypeIcon(pin.type)}
           <span className={cn('text-sm font-medium', cfg.color)}>
             {cfg.label}{pin.crimeTypeLabel ? ` · ${pin.crimeTypeLabel.replace(/\s*\(Art\.[^)]*\)/, '')}` : ''}
@@ -189,6 +206,16 @@ export function ModerationPage() {
   const startAct = (id: string) => setActing((s) => new Set(s).add(id));
   const endAct = (id: string) => setActing((s) => { const n = new Set(s); n.delete(id); return n; });
   const [preview, setPreview] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [focusIdx, setFocusIdx] = useState(0);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const pendingRef = useRef<Pin[]>([]);
+  const focusIdxRef = useRef(0);
+  const approveRef = useRef<(p: Pin) => void>(() => {});
+  const bulkApproveRef = useRef<() => void>(() => {});
+  const toggleSelect = (id: string) =>
+    setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const navigate = useNavigate();
 
   const { data: pending = [], isLoading: loadingPending, isError: errorPending, refetch: refetchPending } = useQuery({
@@ -212,6 +239,35 @@ export function ModerationPage() {
     refetchInterval: 120_000,
   });
 
+  // Keyboard: J/K move, A approve, R reject, X select, Shift+A approve selected, ? help.
+  useEffect(() => {
+    if (tab !== 'pending') return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('input, textarea, select, [role="dialog"]') || e.ctrlKey || e.metaKey || e.altKey) return;
+      const items = pendingRef.current;
+      if (!items.length) return;
+      const idx = Math.min(focusIdxRef.current, items.length - 1);
+      const pin = items[idx];
+      const k = e.key.toLowerCase();
+      if (k === 'j' || k === 'arrowdown') { e.preventDefault(); setFocusIdx(Math.min(items.length - 1, idx + 1)); }
+      else if (k === 'k' || k === 'arrowup') { e.preventDefault(); setFocusIdx(Math.max(0, idx - 1)); }
+      else if (k === 'x') { e.preventDefault(); toggleSelect(pin.id); }
+      else if (k === 'a' && e.shiftKey) { e.preventDefault(); bulkApproveRef.current(); }
+      else if (k === 'a') { e.preventDefault(); approveRef.current(pin); }
+      else if (k === 'r') { e.preventDefault(); setRejectPin(pin); setRejectReason(''); }
+      else if (e.key === '?') { e.preventDefault(); setShowHelp((v) => !v); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== 'pending') return;
+    const id = pending[Math.min(focusIdx, pending.length - 1)]?.id;
+    if (id) document.querySelector(`[data-pin-card="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [focusIdx, tab, pending]);
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center">
@@ -227,6 +283,8 @@ export function ModerationPage() {
   const list = tab === 'pending' ? pending : tab === 'rejected' ? rejected : citizenResolved;
   const isLoading = tab === 'pending' ? loadingPending : tab === 'rejected' ? loadingRejected : loadingResolved;
   const isError = tab === 'pending' ? errorPending : tab === 'rejected' ? errorRejected : errorResolved;
+  pendingRef.current = pending;
+  focusIdxRef.current = focusIdx;
 
   // Optimistic: remove the card right away; put it back if the request fails.
   const removeFromLists = (id: string) => {
@@ -275,6 +333,26 @@ export function ModerationPage() {
       endAct(pin.id);
     }
   };
+
+  const handleBulkApprove = async () => {
+    const ids = pending.filter((p) => selected.has(p.id)).map((p) => p.id);
+    if (!ids.length || bulkBusy) return;
+    setBulkBusy(true);
+    queryClient.setQueryData<Pin[]>(['moderation', 'pending'], (l) => l?.filter((p) => !selected.has(p.id)));
+    try {
+      const r = await PinsController.bulkModerate(ids, 'approve');
+      toast({ title: `${r.processed} aprovada(s)`, description: r.skipped ? `${r.skipped} já tinham sido revisadas.` : 'Publicadas no mapa.' });
+      setSelected(new Set());
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Erro ao aprovar em lote.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      setBulkBusy(false);
+      invalidateAll();
+    }
+  };
+  approveRef.current = (p: Pin) => { if (!acting.has(p.id)) handleApprove(p); };
+  bulkApproveRef.current = handleBulkApprove;
 
   const handleCitizenResolved = async (pin: Pin, resolve: boolean) => {
     startAct(pin.id);
@@ -371,7 +449,27 @@ export function ModerationPage() {
           </button>
         </div>
 
-        {isLoading ? (
+        {tab === 'pending' && pending.length > 0 && (
+          <div className="flex items-center gap-2 mb-3 text-xs text-gray-400">
+            <button
+              onClick={() => setSelected(selected.size === pending.length ? new Set() : new Set(pending.map((p) => p.id)))}
+              className="h-9 px-3 rounded-lg border border-[#2a2a2a] text-gray-200"
+            >
+              {selected.size === pending.length ? 'Limpar seleção' : 'Selecionar todas'}
+            </button>
+            <button onClick={() => setShowHelp((v) => !v)} className="hidden md:inline h-9 px-3 rounded-lg border border-[#2a2a2a] text-gray-300" aria-expanded={showHelp}>
+              Atalhos (?)
+            </button>
+          </div>
+        )}
+        {showHelp && (
+          <div className="mb-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-100 grid grid-cols-2 gap-1">
+            <span><b>J / K</b> próxima / anterior</span><span><b>A</b> aprovar</span>
+            <span><b>R</b> rejeitar</span><span><b>X</b> selecionar</span>
+            <span><b>Shift + A</b> aprovar selecionadas</span><span><b>?</b> mostrar/ocultar</span>
+          </div>
+        )}
+                {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="animate-spin text-gray-400" size={28} />
           </div>
@@ -406,6 +504,9 @@ export function ModerationPage() {
                 onApprove={() => handleApprove(pin)}
                 onReject={tab === 'pending' ? () => { setRejectPin(pin); setRejectReason(''); } : undefined}
                 onRejectDuplicate={() => { setRejectPin(pin); setRejectReason('Duplicada'); }}
+                selected={tab === 'pending' && selected.has(pin.id)}
+                focused={tab === 'pending' && pending[Math.min(focusIdx, pending.length - 1)]?.id === pin.id}
+                onToggleSelect={tab === 'pending' ? () => toggleSelect(pin.id) : undefined}
                 showRejectionReason={tab === 'rejected'}
                 onPreview={setPreview}
               />
@@ -413,6 +514,19 @@ export function ModerationPage() {
           </div>
         )}
       </div>
+
+      {tab === 'pending' && selected.size > 0 && (
+        <div className="fixed bottom-0 inset-x-0 z-50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-[#161618]/95 backdrop-blur border-t border-white/10">
+          <div className="max-w-2xl mx-auto flex gap-2">
+            <Button variant="outline" onClick={() => setSelected(new Set())} className="h-11 border-[#2a2a2a] bg-transparent text-gray-200">
+              Cancelar
+            </Button>
+            <Button onClick={handleBulkApprove} disabled={bulkBusy} className="h-11 flex-1 bg-green-600 hover:bg-green-700">
+              {bulkBusy ? <Loader2 size={16} className="animate-spin" /> : <><Check size={16} className="mr-1" /> Aprovar {selected.size} selecionada{selected.size === 1 ? '' : 's'}</>}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!rejectPin} onOpenChange={(open) => !open && setRejectPin(null)}>
         <DialogContent className="bg-[#1a1a1a] border-[#2a2a2a] text-white">

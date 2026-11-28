@@ -17,7 +17,8 @@ export type MyReport = {
 export function loadMyReports(): Stored[] {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) || '[]');
-    return Array.isArray(v) ? v.filter((x) => x && x.id && x.key) : [];
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return Array.isArray(v) ? v.filter((x) => x && uuid.test(String(x.id)) && /^[0-9a-f]{32}$/.test(String(x.key))) : [];
   } catch {
     return [];
   }
