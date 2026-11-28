@@ -109,7 +109,7 @@ export function useFirstVisitHint() {
 
 export function FirstVisitHint({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[450] w-[calc(100vw-2rem)] max-w-sm rounded-xl bg-[#1f1f23] border border-white/15 shadow-2xl p-4 flex gap-3">
+    <div className="absolute bottom-[11.5rem] left-4 right-[4.5rem] md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-96 z-[450] rounded-xl bg-[#1f1f23] border border-white/15 shadow-2xl p-4 flex gap-3">
       <Hand size={22} className="text-blue-400 shrink-0 mt-0.5" />
       <div className="flex-1">
         <p className="text-sm font-semibold text-white">Viu algum problema?</p>

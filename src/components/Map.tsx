@@ -1057,7 +1057,7 @@ function LocateButton({ map }: { map: L.Map | null }) {
 function ShareButton({ pin }: { pin: Pin }) {
   const [copied, setCopied] = useState(false);
   const share = async () => {
-    const url = `${window.location.origin}/#/?pin=${pin.id}&lat=${pin.location.lat.toFixed(5)}&lng=${pin.location.lng.toFixed(5)}&z=17`;
+    const url = `${window.location.origin}${window.location.pathname}#/?pin=${pin.id}&lat=${pin.location.lat.toFixed(5)}&lng=${pin.location.lng.toFixed(5)}&z=17`;
     const label = getPinConfig(pin.type).label;
     const text = `⚠️ Alerta de ${label.toLowerCase()} no Map Safety${pin.address ? `: ${pin.address}` : ''}`;
     if (navigator.share) {
