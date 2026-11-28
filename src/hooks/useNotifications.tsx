@@ -6,7 +6,7 @@ import { apiUrl, getAccessToken } from '@/lib/api';
 import { ApiError } from '@/lib/errors';
 
 export function useNotifications(isStaff = false) {
-  const subscribeUser = useCallback(async (withStaffToken = false) => {
+  const subscribeUser = useCallback(async (withStaffToken = false, silent = false) => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push messaging is not supported');
       return;
@@ -26,10 +26,13 @@ export function useNotifications(isStaff = false) {
         return;
       }
 
-      const subscription = await registration.pushManager.subscribe({
+      // Reaproveita a inscrição existente em vez de criar outra a cada carregamento
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(public_key),
-      });
+      }));
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (withStaffToken) {
@@ -45,6 +48,17 @@ export function useNotifications(isStaff = false) {
       if (!subRes.ok) {
         throw new ApiError('Falha ao registrar inscrição.', subRes.status);
       }
+      // Keep the saved alert zone attached even if the browser rotated the subscription.
+      const zone = loadAlertZone();
+      if (zone) {
+        fetch(apiUrl('/api/notifications/zone'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: subscription.endpoint, auth: subscription.toJSON().keys?.auth, ...zone }),
+        }).catch(() => undefined);
+      }
+
+      if (silent) return;
 
       const body = withStaffToken
         ? 'Alertas de moderação e publicações no mapa.'
@@ -53,6 +67,7 @@ export function useNotifications(isStaff = false) {
       toast({ title: 'Notificações ativadas', description: body });
     } catch (err) {
       console.error('Failed to subscribe the user: ', err);
+      if (silent) return;
       const message = err instanceof ApiError ? err.message : 'Não foi possível configurar as notificações.';
       toast({ title: 'Erro ao ativar', description: message, variant: 'destructive' });
     }
@@ -61,7 +76,7 @@ export function useNotifications(isStaff = false) {
   useEffect(() => {
     if (!('Notification' in window)) return;
 
-    const activate = () => subscribeUser(isStaff);
+    const activate = (silent = false) => subscribeUser(isStaff, silent);
 
     if (Notification.permission === 'default') {
       toast({
@@ -80,7 +95,8 @@ export function useNotifications(isStaff = false) {
         ),
       });
     } else if (Notification.permission === 'granted') {
-      activate();
+      // Já autorizado: apenas sincroniza a inscrição, sem toast a cada visita
+      activate(true);
     }
   }, [subscribeUser, isStaff]);
 
@@ -88,11 +104,112 @@ export function useNotifications(isStaff = false) {
     if ('serviceWorker' in navigator) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data && event.data.type === 'NAVIGATE') {
+          // Hash-only changes don't reload: force it so the deep link (pin / Meus relatos) is applied.
           window.location.href = event.data.url;
+          if (String(event.data.url).includes('#')) window.location.reload();
         }
       };
       navigator.serviceWorker.addEventListener('message', handleMessage);
       return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
     }
   }, []);
+}
+
+// --- Alert zone (receive push only near a point) ---
+
+export type AlertZone = { lat: number; lng: number; radiusM: number } | null;
+const ZONE_KEY = 'map-safety:alert-zone';
+
+export function loadAlertZone(): AlertZone {
+  try {
+    const z = JSON.parse(localStorage.getItem(ZONE_KEY) || 'null');
+    return z && Number.isFinite(z.lat) && Number.isFinite(z.radiusM) ? z : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ensures push permission + subscription, then stores the zone on the server. Returns false if not possible. */
+/** Asks permission if needed, subscribes this browser and registers it on the server. Null if not possible. */
+export async function ensurePushSubscription(): Promise<PushSubscription | null> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    toast({ title: 'Não suportado', description: 'Este navegador não suporta notificações.', variant: 'destructive' });
+    return null;
+  }
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') {
+      toast({ title: 'Notificações bloqueadas', description: 'Permita notificações no navegador para receber avisos.' });
+      return null;
+    }
+  }
+  const registration = await navigator.serviceWorker.ready;
+  let sub = await registration.pushManager.getSubscription();
+  if (!sub) {
+    const r = await fetch(apiUrl('/api/notifications/vapid-public-key'));
+    const { public_key } = await r.json();
+    sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(public_key) });
+  }
+  const token = getAccessToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const subRes = await fetch(apiUrl('/api/notifications/subscribe'), { method: 'POST', headers, body: JSON.stringify(sub.toJSON()) });
+  if (!subRes.ok) throw new ApiError('Este navegador não pôde ser registrado para notificações.', subRes.status);
+  return sub;
+}
+
+/** Notify this browser when the given report (proven by its reporterKey) is approved, rejected or resolved. */
+export async function watchMyReport(pinId: string, key: string, { ask = true } = {}): Promise<boolean> {
+  try {
+    if (!ask) {
+      // Silent mode: only if this browser is already subscribed (no prompts, no new subscription).
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
+      if (Notification.permission !== 'granted') return false;
+      const existing = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (!existing) return false;
+    }
+    const sub = await ensurePushSubscription();
+    if (!sub) return false;
+    const res = await fetch(apiUrl(`/api/pins/${pinId}/watch`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, endpoint: sub.endpoint }),
+    });
+    if (!res.ok) throw new ApiError('Não foi possível ativar o aviso para este relato.', res.status);
+    return true;
+  } catch (err) {
+    if (ask) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível ativar o aviso.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    }
+    return false;
+  }
+}
+
+export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
+  try {
+    const sub = await ensurePushSubscription();
+    if (!sub) return false;
+    const res = await fetch(apiUrl('/api/notifications/zone'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, auth: sub.toJSON().keys?.auth, lat: zone?.lat ?? null, lng: zone?.lng ?? null, radiusM: zone?.radiusM ?? null }),
+    });
+    if (!res.ok) throw new ApiError('Falha ao salvar a área de alertas.', res.status);
+    try {
+      if (zone) localStorage.setItem(ZONE_KEY, JSON.stringify(zone));
+      else localStorage.removeItem(ZONE_KEY);
+    } catch { /* ignore */ }
+    toast({
+      title: 'Alertas atualizados',
+      description: zone
+        ? `Você receberá alertas num raio de ${zone.radiusM >= 1000 ? `${zone.radiusM / 1000} km` : `${zone.radiusM} m`} deste ponto.`
+        : 'Você receberá alertas de toda a cidade.',
+    });
+    return true;
+  } catch (err) {
+    const message = err instanceof ApiError ? err.message : 'Não foi possível salvar.';
+    toast({ title: 'Erro', description: message, variant: 'destructive' });
+    return false;
+  }
 }

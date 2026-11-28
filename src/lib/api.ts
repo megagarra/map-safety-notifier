@@ -43,12 +43,20 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
+let sessionExpiredNotified = false;
+
 async function parseErrorBody(res: Response): Promise<string | undefined> {
   try {
     const body = await res.json();
     if (typeof body.detail === 'string') return body.detail;
     if (Array.isArray(body.detail)) {
-      return body.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join(', ');
+      return body.detail
+        .map((d: { msg?: string; type?: string; ctx?: { min_length?: number } }) => {
+          if (d.type === 'string_too_short' && d.ctx?.min_length) return `Mínimo de ${d.ctx.min_length} caracteres`;
+          return d.msg?.replace(/^Value error, /, '');
+        })
+        .filter(Boolean)
+        .join(', ');
     }
     return undefined;
   } catch {
@@ -75,7 +83,7 @@ async function refreshAccessToken(): Promise<boolean> {
   }
 }
 
-async function tryRefreshToken(): Promise<boolean> {
+export async function tryRefreshToken(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = refreshAccessToken().finally(() => {
       refreshPromise = null;
@@ -88,6 +96,33 @@ export interface ApiOptions extends RequestInit {
   auth?: boolean;
   errorContext?: string;
   skipAuthRefresh?: boolean;
+}
+
+// --- Age of the oldest data currently shown from the offline copy (null = all fresh) ---
+let cachedDataTime: number | null = null;
+const cachedListeners = new Set<() => void>();
+
+function noteCacheState(res: Response) {
+  let next: number | null = null;
+  if (res.headers.get('X-From-Cache') === '1') {
+    const at = Number(res.headers.get('X-Cached-At'));
+    next = Number.isFinite(at) && at > 0 ? at : cachedDataTime ?? 0;
+  }
+  if (next === null && cachedDataTime === null) return;
+  // Keep the oldest offline timestamp until a fresh response arrives.
+  const value = next === null ? null : cachedDataTime ? Math.min(cachedDataTime, next || cachedDataTime) : next;
+  if (value === cachedDataTime) return;
+  cachedDataTime = value;
+  cachedListeners.forEach((l) => l());
+}
+
+export function subscribeCachedDataTime(cb: () => void) {
+  cachedListeners.add(cb);
+  return () => { cachedListeners.delete(cb); };
+}
+
+export function getCachedDataTime(): number | null {
+  return cachedDataTime;
 }
 
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
@@ -119,7 +154,12 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
       res = await doFetch();
     } else {
       clearTokens();
-      onSessionExpired?.();
+      // Many requests can fail together: notify the app only once.
+      if (!sessionExpiredNotified) {
+        sessionExpiredNotified = true;
+        setTimeout(() => { sessionExpiredNotified = false; }, 3000);
+        onSessionExpired?.();
+      }
       const detail = await parseErrorBody(res);
       throw new ApiError(
         getFriendlyErrorMessage(401, detail),
@@ -132,6 +172,8 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   if (res.status === 204) {
     return undefined as T;
   }
+
+  if (res.ok && (!rest.method || rest.method === 'GET')) noteCacheState(res);
 
   if (!res.ok) {
     const detail = await parseErrorBody(res);
@@ -150,9 +192,11 @@ export async function apiFormData<T>(
   formData: FormData,
   options: { errorContext?: string } = {},
 ): Promise<T> {
+  const token = getAccessToken();
   const res = await fetch(apiUrl(path), {
     method: 'POST',
     body: formData,
+    ...(token && { headers: { Authorization: `Bearer ${token}` } }),
   });
 
   if (!res.ok) {

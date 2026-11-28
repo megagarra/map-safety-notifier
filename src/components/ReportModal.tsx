@@ -1,112 +1,169 @@
-import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
+import * as CrimeTypesController from '@/controllers/crimeTypes';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { PinType, CreatePinInput } from '@/types';
 import { uploadImage } from '@/controllers/pins';
-import { resolveImageUrl } from '@/lib/media';
+import { resolveImageUrl, thumbUrl, fallbackToFull } from '@/lib/media';
 import { ApiError } from '@/lib/errors';
 import {
   Image as ImageIcon,
+  Camera,
   X,
   MapPin,
   Loader2,
   Construction,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`,
-      { headers: { 'User-Agent': 'MapSafetyNotifier/1.0' } },
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const addr = data.address;
-    if (!addr) return data.display_name || null;
-
-    const parts: string[] = [];
-    if (addr.road) parts.push(addr.road);
-    if (addr.house_number && parts.length) parts[0] = `${parts[0]}, ${addr.house_number}`;
-    if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
-    if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
-
-    return parts.length > 0 ? parts.join(' — ') : data.display_name || null;
-  } catch {
-    return null;
-  }
-}
+import { reverseGeocode } from '@/lib/geocode';
 
 interface ReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: CreatePinInput) => void;
+  onSubmit: (data: CreatePinInput) => Promise<boolean>;
   location: { lat: number; lng: number } | null;
 }
 
+const MAX_DESC = 2000;
+const MAX_PHOTOS = 6;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const DRAFT_KEY = 'map-safety:report-draft';
+
+type Draft = { type: PinType; description: string; images: string[]; crimeTypeId?: string | null };
+
+function loadDraft(): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (d && typeof d.description === 'string') return d;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Downscale big phone photos before upload (faster on mobile data, avoids the 10 MB limit). */
+async function shrinkImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size < 1.5 * 1024 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' } as ImageBitmapOptions);
+    const scale = Math.min(1, 1920 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 const TYPE_OPTIONS: { value: PinType; label: string; desc: string; icon: React.ReactNode; activeClass: string }[] = [
-  { value: 'infraestrutura', label: 'Infraestrutura', desc: 'Problemas de estrutura urbana', icon: <Construction size={18} />, activeClass: 'border-orange-500 bg-orange-500/10' },
-  { value: 'crime', label: 'Crime', desc: 'Ocorrências de segurança', icon: <AlertTriangle size={18} />, activeClass: 'border-red-500 bg-red-500/10' },
+  { value: 'infraestrutura', label: 'Infraestrutura', desc: 'Buraco, iluminação, calçada…', icon: <Construction size={20} />, activeClass: 'border-orange-500 bg-orange-500/15' },
+  { value: 'crime', label: 'Crime', desc: 'Assalto, furto, violência…', icon: <AlertTriangle size={20} />, activeClass: 'border-red-500 bg-red-500/15' },
 ];
 
 const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, location }) => {
-  const [type, setType] = useState<PinType>('infraestrutura');
-  const [description, setDescription] = useState('');
-  const [images, setImages] = useState<string[]>([]);
+  const [type, setType] = useState<PinType>(() => loadDraft()?.type ?? 'infraestrutura');
+  const [description, setDescription] = useState(() => loadDraft()?.description ?? '');
+  const [images, setImages] = useState<string[]>(() => loadDraft()?.images ?? []);
+  const [crimeTypeId, setCrimeTypeId] = useState<string | null>(() => loadDraft()?.crimeTypeId ?? null);
+  const { data: crimeTypes = [] } = useQuery({
+    queryKey: ['crime-types'],
+    queryFn: CrimeTypesController.fetchCrimeTypes,
+    enabled: isOpen,
+    staleTime: 60 * 60_000,
+  });
   const [previewImg, setPreviewImg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const submittingRef = useRef(false);
+  const honeypotRef = useRef<HTMLInputElement>(null);
+  const hasDraft = description.trim().length > 0 || images.length > 0;
+
+  // Keep the draft on the device: closing by accident (backdrop/back button) never loses it.
+  useEffect(() => {
+    try {
+      if (hasDraft) localStorage.setItem(DRAFT_KEY, JSON.stringify({ type, description, images, crimeTypeId }));
+      else localStorage.removeItem(DRAFT_KEY);
+    } catch { /* ignore */ }
+  }, [type, description, images, crimeTypeId, hasDraft]);
 
   useEffect(() => {
     if (!location) { setAddress(null); return; }
+    let cancelled = false;
     setIsLoadingAddress(true);
     reverseGeocode(location.lat, location.lng).then((result) => {
+      if (cancelled) return;
       setAddress(result);
       setIsLoadingAddress(false);
     });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só lat/lng importam
   }, [location?.lat, location?.lng]);
 
-  const handleClose = () => {
+  const resetForm = () => {
     setType('infraestrutura');
+    setCrimeTypeId(null);
     setDescription('');
     setImages([]);
     setPreviewImg(null);
-    setAddress(null);
+    setValidationError(null);
+  };
+
+  const handleClose = () => {
     setValidationError(null);
     onClose();
   };
 
-  const handleSubmit = () => {
+  const handleDiscard = () => {
+    if (hasDraft && !window.confirm('Descartar este relato? O texto e as fotos serão apagados.')) return;
+    resetForm();
+    onClose();
+  };
+
+  const handleSubmit = async () => {
+    if (submittingRef.current) return;
     if (!location) {
-      setValidationError('É necessário definir uma localização. Clique no mapa para marcar o local.');
+      setValidationError('É necessário definir uma localização. Toque no mapa para marcar o local.');
       return;
     }
     if (!description.trim()) {
-      setValidationError('Por favor, adicione uma descrição do problema.');
+      setValidationError('Descreva o que aconteceu.');
       return;
     }
+    submittingRef.current = true;
     setIsSubmitting(true);
     setValidationError(null);
 
     const data: CreatePinInput = {
       type,
       location,
-      description,
+      description: description.trim(),
       images,
       ...(address && { address }),
+      ...(type === 'crime' && crimeTypeId && crimeTypes.some((c) => c.id === crimeTypeId) && { crimeTypeId }),
+      ...(honeypotRef.current?.value && { website: honeypotRef.current.value }),
     };
 
     try {
-      onSubmit(data);
-      handleClose();
+      const ok = await onSubmit(data);
+      if (ok) {
+        resetForm();
+        onClose();
+      } else setValidationError('Não foi possível enviar. Seu texto foi mantido — tente novamente.');
     } catch {
-      setValidationError('Ocorreu um erro ao enviar o relatório. Tente novamente.');
+      setValidationError('Ocorreu um erro ao enviar. Seu texto foi mantido — tente novamente.');
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -114,147 +171,229 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
-    for (const file of Array.from(files)) {
-      try {
-        const url = await uploadImage(file);
-        setImages((prev) => [...prev, url]);
-      } catch (err) {
-        const message = err instanceof ApiError ? err.message : 'Erro ao enviar imagem. Tente novamente.';
-        setValidationError(message);
-      }
-    }
+    const room = MAX_PHOTOS - images.length - uploadingCount;
+    const list = Array.from(files).slice(0, Math.max(0, room));
     e.target.value = '';
+    if (files.length > list.length) setValidationError(`Máximo de ${MAX_PHOTOS} fotos por relato.`);
+    if (!list.length) return;
+    setUploadingCount((n) => n + list.length);
+    await Promise.all(
+      list.map(async (original) => {
+        try {
+          if (!original.type.startsWith('image/')) throw new Error('Arquivo não é uma imagem.');
+          const file = await shrinkImage(original);
+          if (file.size > MAX_UPLOAD_BYTES) throw new Error('Foto muito grande (máx. 10 MB).');
+          const url = await uploadImage(file);
+          setImages((prev) => [...prev, url]);
+        } catch (err) {
+          const message = err instanceof ApiError || err instanceof Error ? err.message : 'Erro ao enviar foto. Tente novamente.';
+          setValidationError(message);
+        } finally {
+          setUploadingCount((n) => n - 1);
+        }
+      }),
+    );
   };
+
+  const canAddPhoto = images.length + uploadingCount < MAX_PHOTOS;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-[480px] sm:w-full p-0 overflow-hidden rounded-2xl border-0 bg-[#121212] shadow-2xl">
-        <DialogHeader className="p-4 sm:p-5 pb-3 sm:pb-4 border-b border-[#2a2a2a] bg-[#1a1a1a]">
-          <DialogTitle className="text-lg font-semibold text-white">Reportar Problema</DialogTitle>
+      <DialogContent
+        onEscapeKeyDown={(e) => { if (previewImg) { e.preventDefault(); setPreviewImg(null); } }}
+        onPointerDownOutside={(e) => { if (previewImg) e.preventDefault(); }}
+        className={cn(
+          'p-0 gap-0 overflow-hidden border-0 bg-[#121212] shadow-2xl flex flex-col',
+          // Mobile: bottom sheet that fits above the keyboard
+          'max-sm:top-auto max-sm:bottom-0 max-sm:translate-y-0 max-sm:w-full max-sm:max-w-full max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:max-h-[92dvh]',
+          'sm:max-w-[480px] sm:w-full sm:rounded-2xl sm:max-h-[85vh]',
+        )}
+      >
+        <DialogHeader className="p-4 sm:p-5 pb-3 border-b border-[#2a2a2a] bg-[#1a1a1a] text-left shrink-0">
+          <DialogTitle className="text-lg font-semibold text-white">Reportar problema</DialogTitle>
           <DialogDescription className="text-gray-400 text-sm">
             {!location ? (
-              <span className="text-yellow-400">Clique no mapa para definir uma localização.</span>
+              <span className="text-yellow-400">Toque no mapa para definir uma localização.</span>
             ) : isLoadingAddress ? (
               <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Buscando endereço...</span>
             ) : address ? (
-              <span className="flex items-center gap-1.5"><MapPin size={13} /> {address}</span>
+              <span className="flex items-center gap-1.5"><MapPin size={13} className="shrink-0" /> {address}</span>
             ) : (
               <span>{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</span>
             )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-4 sm:p-5 space-y-4 sm:space-y-5 max-h-[70vh] sm:max-h-[60vh] overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-5 space-y-5 flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar">
           {validationError && (
-            <div className="bg-red-900/20 border border-red-900/50 p-3 rounded-lg text-red-400 text-sm">{validationError}</div>
+            <div role="alert" className="bg-red-900/30 border border-red-700/60 p-3 rounded-lg text-red-300 text-sm">{validationError}</div>
           )}
 
           {/* Type selector */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-white">Tipo de problema</Label>
-            <div className="grid grid-cols-2 gap-3">
+            <Label id="type-label" className="text-sm font-medium text-white">Tipo de problema</Label>
+            <div role="radiogroup" aria-labelledby="type-label" className="grid grid-cols-2 gap-3">
               {TYPE_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={type === opt.value}
                   onClick={() => setType(opt.value)}
                   className={cn(
-                    'flex items-center gap-3 p-3 rounded-xl border transition-all text-left',
+                    'flex items-center gap-3 p-3 min-h-16 rounded-xl border-2 transition-all text-left',
                     type === opt.value ? opt.activeClass : 'border-[#2a2a2a] bg-[#1e1e1e] hover:border-[#444]',
                   )}
                 >
-                  <span className={cn('transition-colors', type === opt.value ? 'text-white' : 'text-gray-400')}>{opt.icon}</span>
-                  <div>
-                    <span className={cn('text-sm font-medium block', type === opt.value ? 'text-white' : 'text-gray-400')}>{opt.label}</span>
-                    <span className="text-[11px] text-gray-500">{opt.desc}</span>
-                  </div>
+                  <span className={cn(type === opt.value ? 'text-white' : 'text-gray-400')}>{opt.icon}</span>
+                  <span>
+                    <span className={cn('text-sm font-semibold block', type === opt.value ? 'text-white' : 'text-gray-300')}>{opt.label}</span>
+                    <span className="text-xs text-gray-400">{opt.desc}</span>
+                  </span>
                 </button>
               ))}
             </div>
           </div>
 
+          {type === 'crime' && crimeTypes.length > 0 && (
+            <div className="space-y-2">
+              <Label id="crime-type-label" className="text-sm font-medium text-white">
+                Qual ocorrência? <span className="text-gray-500 font-normal">(opcional)</span>
+              </Label>
+              <div role="radiogroup" aria-labelledby="crime-type-label" className="flex flex-wrap gap-2">
+                {crimeTypes.map((c) => {
+                  const active = crimeTypeId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setCrimeTypeId(active ? null : c.id)}
+                      className={cn(
+                        'h-10 px-3 rounded-full border text-sm transition-colors',
+                        active ? 'border-red-500 bg-red-500/20 text-white' : 'border-[#2a2a2a] bg-[#1e1e1e] text-gray-300',
+                      )}
+                    >
+                      {c.label.replace(/\s*\(Art\.[^)]*\)/, '')}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Anti-bot trap: invisible to people (and screen readers), bots that fill every field get caught */}
+          <input ref={honeypotRef} name="website" type="text" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute -left-[9999px] w-px h-px opacity-0" />
+
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="description" className="text-sm font-medium text-white">Descrição</Label>
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="description" className="text-sm font-medium text-white">O que aconteceu?</Label>
+              <span className={cn('text-xs', description.length > MAX_DESC - 100 ? 'text-yellow-400' : 'text-gray-500')}>
+                {description.length}/{MAX_DESC}
+              </span>
+            </div>
             <Textarea
               id="description"
-              placeholder="Descreva o problema ou situação..."
+              required
+              maxLength={MAX_DESC}
+              placeholder="Ex.: Poste apagado na esquina há 3 dias, rua muito escura à noite."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="min-h-[100px] resize-none bg-[#1e1e1e] border-[#2a2a2a] focus:border-white focus:ring-0 text-white placeholder-gray-500 rounded-xl text-[16px] sm:text-sm"
+              className="min-h-[110px] resize-none bg-[#1e1e1e] border-[#2a2a2a] focus:border-white focus:ring-0 text-white placeholder:text-gray-500 rounded-xl text-[16px] sm:text-sm"
             />
           </div>
 
           {/* Images */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-white">Fotos {images.length > 0 && `(${images.length})`}</Label>
-            <div className="flex flex-col gap-3">
+            <Label className="text-sm font-medium text-white">
+              Fotos <span className="text-gray-500 font-normal">(opcional{images.length > 0 ? ` · ${images.length}/${MAX_PHOTOS}` : ''})</span>
+            </Label>
+            <div className="grid grid-cols-3 gap-2">
               {images.map((img, i) => (
-                <div key={i} className="relative flex gap-2 items-start">
+                <div key={img} className="relative aspect-square">
                   <button
                     type="button"
                     onClick={() => setPreviewImg(img)}
-                    className="flex-1 min-w-0 relative h-28 sm:h-32 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#252525] hover:border-[#444] transition-colors cursor-pointer group"
+                    className="w-full h-full rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#252525]"
+                    aria-label={`Ver foto ${i + 1}`}
                   >
-                    <img
-                      src={resolveImageUrl(img)}
-                      alt={`Foto ${i + 1}`}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
+                    <img src={thumbUrl(img)} onError={fallbackToFull(img)} alt={`Foto ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </button>
                   <button
-                    onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}
-                    className="shrink-0 p-1.5 rounded-full bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-colors"
-                    title="Remover"
+                    type="button"
+                    onClick={() => setImages((prev) => prev.filter((u) => u !== img))}
+                    className="absolute -top-1 -right-1 w-11 h-11 rounded-full bg-black/80 border border-white/20 text-white flex items-center justify-center"
+                    aria-label={`Remover foto ${i + 1}`}
                   >
-                    <X size={14} />
+                    <X size={16} />
                   </button>
                 </div>
               ))}
-              <label className="flex flex-col items-center justify-center h-24 sm:h-28 rounded-xl border border-[#2a2a2a] border-dashed cursor-pointer hover:bg-[#252525] bg-[#1e1e1e] transition-colors group">
-                <div className="flex flex-col items-center text-gray-500 group-hover:text-gray-400 transition-colors">
-                  <ImageIcon size={20} className="mb-2" />
-                  <span className="text-xs font-medium">Adicionar foto</span>
+              {Array.from({ length: uploadingCount }).map((_, i) => (
+                <div key={`uploading-${i}`} className="aspect-square flex items-center justify-center rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] text-gray-400">
+                  <Loader2 size={20} className="animate-spin" />
                 </div>
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
-              </label>
+              ))}
             </div>
-            {previewImg && (
-              <div
-                className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/95 p-4"
-                onClick={() => setPreviewImg(null)}
-              >
-                <button
-                  onClick={() => setPreviewImg(null)}
-                  className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
-                  aria-label="Fechar"
-                >
-                  <X size={24} />
-                </button>
-                <img
-                  src={resolveImageUrl(previewImg)}
-                  alt="Preview"
-                  className="max-w-full max-h-[90vh] object-contain rounded-lg"
-                  onClick={(e) => e.stopPropagation()}
-                />
+            {canAddPhoto && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="h-12 flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#3a3a3a] bg-[#1e1e1e] text-sm text-gray-300 cursor-pointer hover:bg-[#252525] focus-within:ring-2 focus-within:ring-white/40">
+                  <Camera size={18} /> Tirar foto
+                  <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={handleImageUpload} />
+                </label>
+                <label className="h-12 flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#3a3a3a] bg-[#1e1e1e] text-sm text-gray-300 cursor-pointer hover:bg-[#252525] focus-within:ring-2 focus-within:ring-white/40">
+                  <ImageIcon size={18} /> Galeria
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={handleImageUpload} />
+                </label>
               </div>
             )}
           </div>
+
+          <p className="flex gap-2 text-xs text-gray-400 leading-relaxed">
+            <Info size={14} className="shrink-0 mt-0.5" />
+            <span>
+              O relato aparece no mapa na hora como "aguardando aprovação". Texto e fotos ficam visíveis para todos depois da revisão da moderação.{' '}
+              <a href="#/privacidade" className="text-blue-300 underline underline-offset-2">Privacidade</a>
+            </span>
+          </p>
         </div>
 
-        <DialogFooter className="p-4 sm:p-5 pt-3 border-t border-[#2a2a2a] flex justify-end gap-2 bg-[#1a1a1a]">
-          <Button variant="outline" onClick={handleClose} className="border-[#2a2a2a] bg-[#252525] text-white hover:bg-[#333]">
-            Cancelar
+        <div className="p-3 sm:p-4 border-t border-[#2a2a2a] bg-[#1a1a1a] grid grid-cols-[auto_1fr] gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDiscard}
+            className="h-12 border-[#2a2a2a] bg-[#252525] text-white hover:bg-[#333]"
+          >
+            {hasDraft ? 'Descartar' : 'Cancelar'}
           </Button>
           <Button
+            type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || !description || !location}
-            className="bg-white text-black hover:bg-white/90 font-medium"
+            disabled={isSubmitting || uploadingCount > 0 || !description.trim() || !location}
+            className="h-12 bg-red-600 text-white hover:bg-red-500 font-semibold disabled:bg-[#333] disabled:text-gray-400"
           >
-            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Enviar'}
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : uploadingCount > 0 ? 'Enviando fotos…' : 'Enviar relato'}
           </Button>
-        </DialogFooter>
+        </div>
+
+        {previewImg && createPortal(
+          <div role="dialog" aria-modal="true" aria-label="Foto ampliada" className="fixed inset-0 z-[2000] pointer-events-auto flex items-center justify-center bg-black/95 p-4" onClick={() => setPreviewImg(null)}>
+            <button
+              type="button"
+              onClick={() => setPreviewImg(null)}
+              autoFocus
+              className="absolute top-4 right-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+              aria-label="Fechar"
+            >
+              <X size={24} />
+            </button>
+            <img src={resolveImageUrl(previewImg)} alt="Foto ampliada" className="max-w-full max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+          </div>,
+          document.body,
+        )}
       </DialogContent>
     </Dialog>
   );

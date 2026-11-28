@@ -1,11 +1,24 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
-import ReportModal from '@/components/ReportModal';
-import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
-import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
-import { DefaultLocationBulkEntryModal } from '@/components/DefaultLocationBulkEntryModal';
+import { rememberMyReport } from '@/lib/myReports';
+import { watchMyReport } from '@/hooks/useNotifications';
+import { ToastAction } from '@/components/ui/toast';
+import { AlertZonePicker } from '@/components/AlertZonePicker';
+import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
+import { FilterChips, CrimeTypeFilter, NoResultsHint, countActiveFilters, NO_FILTERS, FirstVisitHint, InstallBanner, LegendList, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
+import { retryGeolocation, useGeolocation } from '@/hooks/useGeolocation';
+import { useSwipeMenu } from '@/hooks/useSwipeMenu';
+import { inRegion } from '@/lib/placeSearch';
+import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
+// Heavy, rarely-first-needed UI is code-split so the map paints sooner on slow phones.
+const loadReportModal = () => import('@/components/ReportModal');
+const ReportModal = lazy(loadReportModal);
+const DefaultLocationSetupModal = lazy(() => import('@/components/DefaultLocationSetupModal').then((m) => ({ default: m.DefaultLocationSetupModal })));
+const DefaultLocationEntryModal = lazy(() => import('@/components/DefaultLocationEntryModal').then((m) => ({ default: m.DefaultLocationEntryModal })));
+const DefaultLocationBulkEntryModal = lazy(() => import('@/components/DefaultLocationBulkEntryModal').then((m) => ({ default: m.DefaultLocationBulkEntryModal })));
+const MyReportsSheet = lazy(() => import('@/components/MyReportsSheet').then((m) => ({ default: m.MyReportsSheet })));
 import { DefaultLocationsAdminSection } from '@/components/DefaultLocationsAdminSection';
 import {
   Pin,
@@ -24,7 +37,8 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, ChevronDown, BadgeCheck } from 'lucide-react';
+import { MapTypePicker } from '@/components/MapTypePicker';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -54,17 +68,15 @@ function getDateFilter(preset: DatePreset) {
 function upsertMarkerInCache(
   prev: PaginatedResponse<Pin> | undefined,
   marker: Pin,
-): PaginatedResponse<Pin> {
-  if (!prev) {
-    return { items: [marker], total: 1, limit: 200, offset: 0 };
-  }
+): PaginatedResponse<Pin> | undefined {
+  if (!prev) return prev;
   const idx = prev.items.findIndex((p) => p.id === marker.id);
   if (idx >= 0) {
     const items = [...prev.items];
     items[idx] = mergePinUpdate(prev.items[idx], marker);
     return { ...prev, items };
   }
-  return { ...prev, items: [marker, ...prev.items], total: prev.total + 1 };
+  return prev; // not in this cached page; a refetch will bring it if it belongs here
 }
 
 function removeMarkerFromCache(
@@ -83,23 +95,71 @@ function removeMarkerFromCache(
 export default function HomePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAuthenticated, isAdmin, isModerator, isStaff, user, logout } = useAuth();
+  const { isAuthenticated, isAdmin, isModerator, isStaff, user, logout, isLoading: authLoading, isAgency } = useAuth();
 
   const [bounds, setBounds] = useState<MapBounds>(DEFAULT_BOUNDS);
   const [fetchMode, setFetchMode] = useState<PinFetchMode>('bounds');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
-  const [center, setCenter] = useState<[number, number]>(FALLBACK_CENTER);
-  const [zoom, setZoom] = useState(13);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  // Initial view: shared link (?lat&lng&z) > last saved view > fallback. Never block on GPS.
+  const [initialView] = useState(() => (readUrlView(window.location.hash.split('?')[1] ?? '') ?? readUrlView(window.location.search)) ?? readSavedView());
+  const [center, setCenter] = useState<[number, number]>(initialView?.center ?? FALLBACK_CENTER);
+  const [zoom, setZoom] = useState(initialView?.zoom ?? 13);
+  const userMovedRef = useRef(false);
+  const dupeShownRef = useRef<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const swipe = useSwipeMenu(panelOpen, setPanelOpen, menuRef);
+  const [menuMore, setMenuMore] = useState(false);
+  const updateMenuMore = useCallback(() => {
+    const el = menuRef.current;
+    if (el) setMenuMore(el.scrollHeight - el.scrollTop - el.clientHeight > 24);
+  }, []);
+  // Re-check when the menu opens or its content changes size.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const el = menuRef.current;
+    if (!el) return;
+    updateMenuMore();
+    const ro = new ResizeObserver(updateMenuMore);
+    ro.observe(el);
+    Array.from(el.children).forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+  }, [panelOpen, updateMenuMore]);
+  // Side menu: Escape closes it.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPanelOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panelOpen]);
+  const [nearbyOpen, setNearbyOpen] = useState(false);
+  const [myReportsOpen, setMyReportsOpen] = useState(false);
+  // Mount the report form on first use (keeps its own draft), and prefetch its code when the browser is idle.
+  const [reportModalUsed, setReportModalUsed] = useState(false);
+  useEffect(() => {
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    const t = idle ? idle(() => { loadReportModal(); }) : window.setTimeout(() => { loadReportModal(); }, 3000);
+    return () => { if (!idle) window.clearTimeout(t as number); };
+  }, []);
+  const online = useOnline();
+  const geo = useGeolocation();
+  const [filters, setFiltersState] = useState<MapFilters>(loadFilters);
+  // Page size for "Carregar mais", scoped to the current area/mode/period (resets when they change, without an extra fetch).
+  const [pageState, setPageState] = useState<{ scope: string; limit: number }>({ scope: '', limit: 200 });
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
+  const pageScope = `${fetchMode}|${fetchMode === 'nearby' ? center.map((c) => c.toFixed(3)).join(',') : boundsKeyStr}|${datePreset}`;
+  const pageLimit = pageState.scope === pageScope ? pageState.limit : 200;
   const dateFilter = useMemo(() => getDateFilter(datePreset), [datePreset]);
 
-  const pinsQueryKey = fetchMode === 'nearby'
-    ? ['pins', 'nearby', center[0], center[1], datePreset, isStaff] as const
-    : ['pins', 'bounds', boundsKeyStr, datePreset, isStaff] as const;
+  const pinsQueryKey = useMemo(
+    () =>
+      fetchMode === 'nearby'
+        ? (['pins', 'nearby', center[0].toFixed(3), center[1].toFixed(3), datePreset, isStaff, pageLimit] as const)
+        : (['pins', 'bounds', boundsKeyStr, datePreset, isStaff, pageLimit, isStaff && !!filters.archived] as const),
+    [fetchMode, center, boundsKeyStr, datePreset, isStaff, pageLimit, filters.archived],
+  );
 
-  const { data: pinsPage, isLoading: isLoadingPins, isError } = useQuery({
+  const { data: pinsPage, isFetching: isFetchingPins, isError, dataUpdatedAt: pinsUpdatedAt } = useQuery({
     queryKey: pinsQueryKey,
     queryFn: () => {
       if (fetchMode === 'nearby') {
@@ -107,7 +167,7 @@ export default function HomePage() {
           lat: center[0],
           lng: center[1],
           radius_km: 5,
-          limit: 200,
+          limit: pageLimit,
           offset: 0,
           auth: isStaff,
           ...dateFilter,
@@ -115,15 +175,18 @@ export default function HomePage() {
       }
       return PinsController.fetchPins({
         ...bounds,
-        limit: 200,
+        limit: pageLimit,
         offset: 0,
+        include_archived: isStaff && !!filters.archived,
         auth: isStaff,
         ...dateFilter,
       });
     },
-    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
     refetchInterval: 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   const { data: pinStats } = useQuery({
@@ -143,9 +206,11 @@ export default function HomePage() {
 
   const pendingCount = pinStats?.pendingCount ?? 0;
 
-  const pins = pinsPage?.items ?? [];
+  const pins = useMemo(() => pinsPage?.items ?? [], [pinsPage]);
   const total = pinsPage?.total ?? 0;
   const hasMore = pins.length < total;
+  const isLoadingMore = isFetchingPins && pageLimit > pins.length;
+  // New area/mode/period starts again from the first page.
 
   const defaultMarkers = useMemo(() => {
     const fromPins = pins.filter(isDefaultLocationPin).filter(hasValidPinLocation);
@@ -159,7 +224,58 @@ export default function HomePage() {
   }, [pins, defaultLocations, isAdmin]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
+  const setFilters = useCallback((f: MapFilters) => { setFiltersState(f); saveFilters(f); }, []);
+  const hint = useFirstVisitHint();
+  const installApp = useInstallPrompt();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!filters.recent) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [filters.recent]);
+  const activeFilterCount = countActiveFilters(filters); // heat is a view mode, not a filter
+  const visiblePins = useMemo(() => {
+    if (!activeFilterCount) return pins;
+    return pins.filter((p) => {
+      // Neighbourhood statistics markers aren't single reports: hide them when filtering reports by detail.
+      if (isDefaultLocationPin(p)) return !filters.onlyPending && !filters.recent && !filters.confirmed && !filters.crimeTypeIds?.length;
+      if (filters.types.length && !filters.types.includes(p.type)) return false;
+      if (filters.hideResolved && p.status === 'resolved') return false;
+      if (filters.onlyPending && p.approvalStatus !== 'pending') return false;
+      if (filters.recent && now - new Date(p.reportedAt).getTime() > 24 * 3600 * 1000) return false;
+      if (filters.confirmed && !((p.votes ?? 0) > 0 || (p.stillThereCount ?? 0) > 0)) return false;
+      if (filters.crimeTypeIds?.length && !(p.type === 'crime' && p.crimeTypeId && filters.crimeTypeIds.includes(p.crimeTypeId))) return false;
+      return true;
+    });
+  }, [pins, filters, activeFilterCount, now]);
+
+  // Deep link: #/?pin=<id> opens that report (shared via WhatsApp etc.). Waits for auth so staff can open pending pins.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (authLoading || deepLinkDone.current) return;
+    deepLinkDone.current = true;
+    const qs = new URLSearchParams((window.location.hash.split('?')[1] ?? '') + '&' + window.location.search.slice(1));
+    if (qs.get('myreports')) setMyReportsOpen(true);
+    const id = qs.get('pin');
+    // A real ?query (push notification links) was consumed at init — drop it so reloads don't jump back.
+    if (window.location.search) {
+      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+    }
+    if (!id) return;
+    PinsController.fetchPinById(id, isStaff).then((p) => {
+      if (p && hasValidPinLocation(p)) {
+        setSelectedPin(p);
+        setCenter([p.location.lat, p.location.lng]);
+        setZoom(17);
+      } else {
+        toast({ title: 'Alerta não encontrado', description: 'Ele pode ter sido removido.' });
+      }
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading]);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  useEffect(() => { if (reportModalOpen) setReportModalUsed(true); }, [reportModalOpen]);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const [mapMode, setMapMode] = useState<'normal' | 'place-default-marker' | 'move-pin'>('normal');
@@ -180,48 +296,14 @@ export default function HomePage() {
   }, [isError]);
 
   const urlTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (urlTimeout.current) clearTimeout(urlTimeout.current); }, []);
 
-  useEffect(() => {
-    setIsLoadingLocation(true);
-    if (!('geolocation' in navigator)) {
-      setCenter(FALLBACK_CENTER);
-      setIsLoadingLocation(false);
-      return;
-    }
-
-    let resolved = false;
-
-    const onSuccess = ({ coords }: GeolocationPosition) => {
-      if (resolved) return;
-      resolved = true;
-      setCenter([coords.latitude, coords.longitude]);
-      setIsLoadingLocation(false);
-    };
-
-    navigator.geolocation.getCurrentPosition(onSuccess, () => {
-      navigator.geolocation.getCurrentPosition(onSuccess, () => {
-        if (resolved) return;
-        resolved = true;
-        setCenter(FALLBACK_CENTER);
-        setIsLoadingLocation(false);
-      }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
-
-    const safetyTimer = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      setCenter(FALLBACK_CENTER);
-      setIsLoadingLocation(false);
-    }, 15000);
-
-    return () => clearTimeout(safetyTimer);
-  }, []);
 
   const updatePinsCache = useCallback(
     (updater: (prev: PaginatedResponse<Pin> | undefined) => PaginatedResponse<Pin> | undefined) => {
-      queryClient.setQueryData<PaginatedResponse<Pin>>(pinsQueryKey, updater);
+      queryClient.setQueriesData<PaginatedResponse<Pin>>({ queryKey: ['pins'] }, (prev) => (prev ? updater(prev) : prev));
     },
-    [queryClient, pinsQueryKey],
+    [queryClient],
   );
 
   const invalidateDefaultLocations = useCallback(() => {
@@ -237,10 +319,11 @@ export default function HomePage() {
 
   const handlePinClick = useCallback((pin: Pin | null) => {
     setSelectedPin(pin);
-    if (pin && hasValidPinLocation(pin)) updateUrl(pin.location.lat, pin.location.lng, zoom);
-  }, [zoom, updateUrl]);
+  }, []);
 
-  const handleMapClick = useCallback((lat: number, lng: number) => {
+  const handleMapClick = useCallback((lat: number, lng: number, dupRadiusM?: number) => {
+    setPanelOpen(false);
+    if (hint.show) hint.dismiss();
     if (mapMode === 'move-pin' && movePinId) return;
     if (mapMode === 'place-default-marker') {
       setSetupLocation({ lat, lng });
@@ -249,68 +332,157 @@ export default function HomePage() {
       setMapMode('normal');
       return;
     }
+    // Avoid duplicates: tapping on/next to an existing report opens it instead.
+    const metersPerPx = (156543.03 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+    const radiusM = dupRadiusM ?? Math.max(20, 40 * metersPerPx);
+    const nearby = visiblePins.find(
+      (p) => !isDefaultLocationPin(p) && hasValidPinLocation(p) && p.approvalStatus !== 'rejected' &&
+        Math.hypot((p.location.lat - lat) * 111_000, (p.location.lng - lng) * 111_000 * Math.cos((lat * Math.PI) / 180)) < radiusM,
+    );
+    if (nearby && nearby.id !== dupeShownRef.current) {
+      dupeShownRef.current = nearby.id;
+      setSelectedPin(nearby);
+      toast({
+        title: 'Já existe uma ocorrência aqui',
+        description: 'Se for o mesmo problema, toque em "Eu também vi". Para registrar outra, toque de novo no mapa.',
+      });
+      return;
+    }
+    dupeShownRef.current = null;
     setNewPinLocation({ lat, lng });
     setReportModalOpen(true);
-    updateUrl(lat, lng, zoom);
-  }, [mapMode, movePinId, zoom, updateUrl]);
+  }, [mapMode, movePinId, visiblePins, zoom, hint]);
 
   const handleMapMove = useCallback((newCenter: [number, number], newZoom: number) => {
+    userMovedRef.current = true;
     setCenter(newCenter);
     setZoom(newZoom);
+    saveView(newCenter, newZoom);
     updateUrl(newCenter[0], newCenter[1], newZoom);
   }, [updateUrl]);
 
+  // --- Open where the person is right now ---
+  // Every new visit centers on the live GPS position (even if the map was left elsewhere last time).
+  // A reload inside the same visit keeps the view, and links to a report (?pin=) win over GPS.
+  const [freshVisit] = useState(() => {
+    try {
+      const seen = sessionStorage.getItem('map-safety:visit');
+      sessionStorage.setItem('map-safety:visit', '1');
+      return !seen;
+    } catch {
+      return true;
+    }
+  });
+  const deepLinked = useMemo(() => /[?&](pin|myreports)=/.test(window.location.hash + window.location.search), []);
+  // Only real touches/scrolls on the map count as "the person moved it" (our own centering doesn't).
+  const userInteractedRef = useRef(false);
+  useEffect(() => {
+    const onInteract = (e: Event) => {
+      if ((e.target as Element | null)?.closest?.('.leaflet-container')) userInteractedRef.current = true;
+    };
+    document.addEventListener('pointerdown', onInteract, true);
+    document.addEventListener('wheel', onInteract, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', onInteract, true);
+      document.removeEventListener('wheel', onInteract, true);
+    };
+  }, []);
+  const gpsFitAccuracyRef = useRef<number | null>(null);
+  const [outsideArea, setOutsideArea] = useState(false);
+  useEffect(() => {
+    if (!geo.pos || deepLinked || userInteractedRef.current) return;
+    const prev = gpsFitAccuracyRef.current;
+    // Same visit (reload) with a saved/linked view: keep it.
+    if (prev === null && !freshVisit && initialView) return;
+    const acc = geo.accuracy ?? 5000;
+    // The first fix is often coarse (Wi-Fi/cell); refine while GPS gets much more precise.
+    if (prev !== null && !(prev > 60 && acc < prev / 2)) return;
+    gpsFitAccuracyRef.current = acc;
+    if (!inRegion(geo.pos[0], geo.pos[1])) {
+      setOutsideArea(true);
+      return;
+    }
+    setOutsideArea(false);
+    const z = acc <= 60 ? 17 : acc <= 300 ? 16 : 15;
+    setCenter(geo.pos);
+    setZoom(z);
+    // Remember it, so a reload in this visit reopens here (not at an older spot).
+    saveView(geo.pos, z);
+    updateUrl(geo.pos[0], geo.pos[1], z);
+  }, [geo.pos, geo.accuracy, deepLinked, freshVisit, initialView, updateUrl]);
+  const [geoNoticeClosed, setGeoNoticeClosed] = useState(false);
+  const locating = freshVisit && !deepLinked && !geo.pos && !geo.error;
+
   const handleBoundsChange = useCallback((newBounds: MapBounds) => {
-    setBounds(newBounds);
+    // Snap outward to a ~2 km grid so small pans hit the cache instead of refetching.
+    const step = 0.02;
+    const snapped: MapBounds = {
+      lat_min: Math.floor(newBounds.lat_min / step) * step,
+      lat_max: Math.ceil(newBounds.lat_max / step) * step,
+      lng_min: Math.floor(newBounds.lng_min / step) * step,
+      lng_max: Math.ceil(newBounds.lng_max / step) * step,
+    };
+    (Object.keys(snapped) as (keyof MapBounds)[]).forEach((k) => {
+      snapped[k] = Number(snapped[k].toFixed(4));
+    });
+    setBounds((prev) => (boundsKey(prev) === boundsKey(snapped) ? prev : snapped));
   }, []);
 
-  const handleLoadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore) return;
-    setIsLoadingMore(true);
-    try {
-      const next = fetchMode === 'nearby'
-        ? await PinsController.fetchNearbyPins({
-          lat: center[0],
-          lng: center[1],
-          radius_km: 5,
-          limit: 200,
-          offset: pins.length,
-          auth: isStaff,
-          ...dateFilter,
-        })
-        : await PinsController.fetchPins({
-          ...bounds,
-          limit: 200,
-          offset: pins.length,
-          auth: isStaff,
-          ...dateFilter,
-        });
-      updatePinsCache((prev) => {
-        if (!prev) return next;
-        return { ...next, items: [...prev.items, ...next.items] };
-      });
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Não foi possível carregar mais alertas.';
-      toast({ title: 'Erro', description: message, variant: 'destructive' });
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [hasMore, isLoadingMore, bounds, pins.length, updatePinsCache, isStaff, fetchMode, center, dateFilter]);
+  // "Carregar mais" grows the page size (part of the query key), so the 60s refetch keeps all loaded pins.
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore) return;
+    setPageState({ scope: pageScope, limit: Math.min(1000, pageLimit + 200) });
+  }, [hasMore, pageScope, pageLimit]);
 
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
-      await PinsController.createPin(data, isAuthenticated);
+      const created = await PinsController.createPin(data, isAuthenticated);
+      rememberMyReport(created.id, created.reporterKey);
+      queryClient.invalidateQueries({ queryKey: ['pins'] });
       queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
+      const key = created.reporterKey;
+      // Notifications already allowed: follow this report silently. Otherwise offer it in the toast.
+      const watching = key ? await watchMyReport(created.id, key, { ask: false }) : false;
       toast({
-        title: 'Enviado para revisão',
-        description: 'Aparecerá no mapa após aprovação.',
+        title: created.approvalStatus === 'approved' ? 'Ocorrência publicada' : 'Ocorrência enviada',
+        description: created.approvalStatus === 'approved'
+          ? 'Ela já está no mapa com seu nome e foto.'
+          : watching
+          ? 'Ela já aparece no mapa como "aguardando aprovação". Avisaremos quando for revisada.'
+          : 'Ela já aparece no mapa como "aguardando aprovação". Obrigado!',
+        action: !watching && key && 'Notification' in window && Notification.permission !== 'denied' ? (
+          <ToastAction
+            altText="Avisar quando for revisada"
+            onClick={() => {
+              watchMyReport(created.id, key).then((ok) => {
+                if (ok) toast({ title: 'Combinado!', description: 'Você será avisado quando o relato for revisado.' });
+              });
+            }}
+          >
+            Avisar-me
+          </ToastAction>
+        ) : undefined,
       });
+      return true;
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Tente novamente.';
       toast({ title: 'Erro ao enviar relatório', description: message, variant: 'destructive' });
+      return false;
     }
   }, [queryClient, isAuthenticated]);
+
+  const handleFeedback = useCallback(async (pinId: string, kind: 'still' | 'resolved') => {
+    try {
+      const updated = await PinsController.sendPinFeedback(pinId, kind);
+      updatePinsCache((prev) => (prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev));
+      setSelectedPin((prev) => (prev?.id === pinId ? updated : prev));
+      toast({ title: 'Obrigado!', description: kind === 'resolved' ? 'Sua indicação ajuda a manter o mapa atualizado.' : 'Confirmado que o problema continua.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Tente novamente.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    }
+  }, [updatePinsCache]);
 
   const handleVote = useCallback(async (pinId: string) => {
     const pin = pins.find((p) => p.id === pinId);
@@ -347,14 +519,7 @@ export default function HomePage() {
   const handleDeletePin = useCallback(async (pinId: string) => {
     try {
       await PinsController.deletePin(pinId);
-      updatePinsCache((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          items: prev.items.filter((p) => p.id !== pinId),
-          total: Math.max(0, prev.total - 1),
-        };
-      });
+      updatePinsCache((prev) => removeMarkerFromCache(prev, pinId));
       setSelectedPin(null);
       toast({ title: 'Pin excluído', description: 'O alerta foi removido do mapa.' });
     } catch (err) {
@@ -367,7 +532,7 @@ export default function HomePage() {
   const handleCreateDefaultLocation = useCallback(async (data: CreateDefaultLocationInput) => {
     try {
       const marker = await PinsController.createDefaultLocation(data);
-      updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
+      queryClient.invalidateQueries({ queryKey: ['pins'] });
       invalidateDefaultLocations();
       setSelectedPin(hasValidPinLocation(marker) ? marker : null);
       toast({ title: 'Marcador criado', description: `Bairro ${data.neighborhood} configurado.` });
@@ -376,7 +541,7 @@ export default function HomePage() {
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
-  }, [updatePinsCache, invalidateDefaultLocations]);
+  }, [queryClient, invalidateDefaultLocations]);
 
   const handleUpdateDefaultLocation = useCallback(async (id: string, data: UpdateDefaultLocationInput) => {
     try {
@@ -534,22 +699,107 @@ export default function HomePage() {
     }
   }, [handleDeleteDefaultLocation]);
 
-  if (isLoadingLocation || isLoadingPins) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-[#121212] fixed inset-0">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-t-blue-500 border-blue-300/30 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-white text-lg">{isLoadingPins ? 'Carregando dados do mapa...' : 'Obtendo sua localização...'}</p>
-          <p className="text-gray-400 text-sm mt-2">{isLoadingLocation ? 'Permita o acesso à localização quando solicitado' : 'Aguarde um momento'}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-screen w-full overflow-hidden fixed inset-0">
+    <div className="h-[100dvh] w-full overflow-hidden fixed inset-0">
+      {/* Filter chips — below the menu button on mobile, hidden while the menu is open */}
+      <div className={cn('map-chips absolute z-[390] left-4 right-4 top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4 md:left-[272px] md:right-20')}>
+        <FilterChips value={filters} onChange={setFilters} staff={isStaff} />
+      </div>
+
+      {/* Report at my GPS position */}
+      {mapMode === 'normal' && !reportModalOpen && !selectedPin && (
+        <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[420] flex items-center gap-2">
+        <NearbyButton onClick={() => setNearbyOpen(true)} count={visiblePins.filter((p) => !isDefaultLocationPin(p)).length} />
+        <button
+          onClick={() => {
+            if (!geo.pos) {
+              toast({
+                title: geo.error === 'denied' ? 'Localização bloqueada' : 'Buscando sua localização',
+                description: geo.error === 'denied'
+                  ? 'Ative a localização no navegador ou toque no mapa no local do problema.'
+                  : 'Aguarde alguns segundos ou toque no mapa no local do problema.',
+              });
+              return;
+            }
+            if ((geo.accuracy ?? 0) > 150) {
+              toast({ title: 'Localização imprecisa', description: `Precisão de ~${Math.round(geo.accuracy!)} m. Toque no mapa no local exato para mais precisão.` });
+            }
+            handleMapClick(geo.pos[0], geo.pos[1], Math.min(50, Math.max(20, geo.accuracy ?? 30)));
+          }}
+          className="h-12 px-5 rounded-full bg-red-600 whitespace-nowrap hover:bg-red-500 text-white font-semibold text-sm shadow-xl shadow-black/40 flex items-center gap-2"
+        >
+          <MapPinPlus size={18} /> Reportar aqui
+        </button>
+        </div>
+      )}
+
+      {nearbyOpen && (
+        <NearbySheet
+          pins={visiblePins}
+          origin={geo.pos ?? center}
+          originIsUser={!!geo.pos}
+          onClose={() => setNearbyOpen(false)}
+          onSelect={(p) => {
+            setNearbyOpen(false);
+            setSelectedPin(p);
+            setCenter([p.location.lat, p.location.lng]);
+            setZoom(17);
+          }}
+        />
+      )}
+
+      {myReportsOpen && (
+        <Suspense fallback={null}>
+        <MyReportsSheet
+          onClose={() => setMyReportsOpen(false)}
+          onOpen={(r) => {
+            setMyReportsOpen(false);
+            setCenter([r.lat, r.lng]);
+            setZoom(17);
+            PinsController.fetchPinById(r.id, isStaff).then((p) => p && setSelectedPin(p));
+          }}
+        />
+        </Suspense>
+      )}
+
+      {activeFilterCount > 0 && pins.length > 0 && visiblePins.length === 0 && !panelOpen && (
+        <NoResultsHint onClear={() => setFilters({ ...NO_FILTERS, heat: filters.heat, archived: filters.archived })} />
+      )}
+
+      {locating && (
+        <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-1/2 -translate-x-1/2 z-[395] pointer-events-none flex items-center gap-2 rounded-full bg-[#1a1a1a]/95 border border-sky-500/30 shadow-xl px-4 py-2 text-sm text-sky-100" role="status">
+          <Loader2 size={14} className="animate-spin" /> Localizando você…
+        </div>
+      )}
+      {!geoNoticeClosed && !deepLinked && !geo.pos && (geo.error === 'denied' || geo.error === 'unavailable') && (
+        <LocationHelp
+          denied={geo.error === 'denied'}
+          onRetry={retryGeolocation}
+          onSearch={() => { setGeoNoticeClosed(true); window.dispatchEvent(new Event('map-search-open')); }}
+          onClose={() => setGeoNoticeClosed(true)}
+        />
+      )}
+      {outsideArea && !geoNoticeClosed && (
+        <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-96 z-[395] rounded-xl bg-[#1f1f23] border border-white/15 shadow-2xl p-3 text-sm text-gray-200 flex items-start gap-2">
+          <span className="flex-1">Você está fora da área coberta pelo mapa (Franco da Rocha e região). Mostrando a região mais próxima.</span>
+          <button onClick={() => setGeoNoticeClosed(true)} className="w-8 h-8 -m-1 flex items-center justify-center text-gray-400" aria-label="Fechar"><X size={16} /></button>
+        </div>
+      )}
+
+      {!online && <OfflineBanner dataTime={pinsUpdatedAt || undefined} />}
+
+      {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
+      {!hint.show && installApp.showBanner && !reportModalOpen && !selectedPin && (
+        <InstallBanner onInstall={installApp.install} onDismiss={installApp.dismiss} />
+      )}
+
+      {isFetchingPins && (
+        <div className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+          <Loader2 size={12} className="animate-spin" /> Carregando ocorrências...
+        </div>
+      )}
       <MapView
-        pins={pins}
+        pins={visiblePins}
         onPinClick={handlePinClick}
         onMapClick={handleMapClick}
         onMapMove={handleMapMove}
@@ -559,6 +809,8 @@ export default function HomePage() {
         center={center}
         zoom={zoom}
         onVote={handleVote}
+        onFeedback={handleFeedback}
+        showHeat={!!filters.heat}
         onUpdatePin={handleUpdatePin}
         onDeletePin={isAdmin ? handleDeletePin : undefined}
         mapMode={mapMode}
@@ -572,10 +824,66 @@ export default function HomePage() {
         onBulkRegisterDefaultEntry={isAdmin ? openBulkEntryModal : undefined}
       />
 
-      <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 max-w-[240px]">
+      <div className={cn('absolute top-[calc(1rem+env(safe-area-inset-top))] md:top-4 left-4 flex flex-col gap-2 max-md:w-auto w-[240px] max-w-[calc(100vw-5.5rem)] max-h-[calc(100dvh-2rem)]', panelOpen ? 'z-[1600]' : 'z-[400]')}>
+        {/* Phones: menu button opens a side menu, so nothing else sits on top of the map */}
+        <button
+          onClick={() => setPanelOpen(true)}
+          className="md:hidden relative self-start flex items-center justify-center w-11 h-11 rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 text-white shadow-lg"
+          aria-expanded={panelOpen}
+          aria-controls="side-menu"
+          aria-label="Abrir menu"
+        >
+          <Menu size={20} />
+          {(isModerator && pendingCount > 0) ? (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-yellow-500 text-[#1a1a1a] text-[11px] font-bold flex items-center justify-center">
+              {pendingCount > 99 ? '99+' : pendingCount}
+            </span>
+          ) : activeFilterCount > 0 ? (
+            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-[#1a1a1a]" aria-label="Filtro ativo" />
+          ) : null}
+        </button>
+        {/* Phones: swipe right from the left edge to open the menu */}
+        <div
+          className="md:hidden fixed left-0 top-[calc(7.5rem+env(safe-area-inset-top))] bottom-[calc(6rem+env(safe-area-inset-bottom))] w-4 z-[405]"
+          {...swipe.edgeHandlers}
+          aria-hidden="true"
+        />
+        {panelOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/60 animate-in fade-in"
+            style={swipe.backdropStyle}
+            onClick={() => setPanelOpen(false)}
+            // Touch: stop the follow-up "ghost" click from reaching the map (it would start a report).
+            onTouchEnd={(e) => { e.preventDefault(); setPanelOpen(false); }}
+            aria-hidden="true"
+          />
+        )}
+        <div
+          id="side-menu"
+          ref={menuRef}
+          onScroll={updateMenuMore}
+          role={panelOpen ? 'dialog' : undefined}
+          aria-modal={panelOpen ? true : undefined}
+          aria-label="Menu"
+          style={swipe.panelStyle}
+          className={cn(
+            'flex-col gap-2 overflow-y-auto overscroll-contain [&>*]:shrink-0 max-md:touch-pan-y max-md:[-webkit-overflow-scrolling:touch] side-menu-scroll',
+            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85vw] max-md:max-w-[320px] max-md:bg-[#121212] max-md:border-r max-md:border-white/10 max-md:shadow-2xl max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
+            panelOpen ? cn('flex', swipe.animateIn && 'max-md:animate-in max-md:slide-in-from-left-full max-md:duration-200') : 'hidden md:flex',
+          )}
+        >
+        <div className="md:hidden flex items-center justify-between pb-1">
+          <div>
+            <p className="text-base font-semibold text-white">Map Safety</p>
+            <p className="text-[11px] text-gray-500">Arraste para a esquerda para fechar</p>
+          </div>
+          <button onClick={() => setPanelOpen(false)} className="w-11 h-11 -mr-2 flex items-center justify-center text-gray-300 hover:text-white" aria-label="Fechar menu">
+            <X size={20} />
+          </button>
+        </div>
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 px-3 py-2 shadow-lg">
           <p className="text-xs text-gray-400">
-            Mostrando <span className="text-white font-medium">{pins.length}</span> de{' '}
+            Mostrando <span className="text-white font-medium">{visiblePins.length}</span> de{' '}
             <span className="text-white font-medium">{total}</span> alertas
           </p>
           {hasMore && (
@@ -589,19 +897,21 @@ export default function HomePage() {
             </button>
           )}
           <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Carregar pins</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Carregar pins</p>
             <select
+              aria-label="Carregar pins"
               value={fetchMode}
               onChange={(e) => setFetchMode(e.target.value as PinFetchMode)}
-              className="w-full h-7 rounded text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
+              className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
             >
               <option value="bounds">Área visível</option>
               <option value="nearby">Próximos (5 km)</option>
             </select>
             <select
+              aria-label="Período"
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value as DatePreset)}
-              className="w-full h-7 rounded text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
+              className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
             >
               <option value="all">Todo período</option>
               <option value="7d">Últimos 7 dias</option>
@@ -609,20 +919,56 @@ export default function HomePage() {
               <option value="90d">Últimos 90 dias</option>
             </select>
           </div>
+          <div className="-mx-3 mt-2"><AlertZonePicker gps={geo.pos} mapCenter={center} /></div>
+        </div>
+
+        <CrimeTypeFilter value={filters} onChange={setFilters} />
+
+        <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 px-3 py-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Tipo de mapa</p>
+          <MapTypePicker center={{ lat: center[0], lng: center[1] }} />
+        </div>
+
+        <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 px-3 py-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Legenda</p>
+          <LegendList />
         </div>
 
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 shadow-lg overflow-hidden">
+          <button
+            onClick={() => { setPanelOpen(false); setMyReportsOpen(true); }}
+            className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full border-b border-white/10"
+          >
+            <FileText size={14} />
+            Meus relatos
+          </button>
+          <Link
+            to="/sobre"
+            className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full border-b border-white/10"
+          >
+            <Info size={14} />
+            Como funciona
+          </Link>
           {isAuthenticated ? (
             <>
               <div className="px-3 py-2 border-b border-white/10">
                 <p className="text-xs text-gray-400 truncate">{user?.email}</p>
                 <p className="text-xs text-blue-400 capitalize">{user?.role}</p>
               </div>
+              {(isAgency || isAdmin) && (
+                <Link
+                  to="/orgao"
+                  className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-emerald-300 hover:bg-white/5 transition-colors w-full"
+                >
+                  <BadgeCheck size={14} />
+                  {isAgency ? 'Painel do órgão' : 'Painel de órgãos'}
+                </Link>
+              )}
               {isModerator && (
                 <>
                   <Link
                     to="/admin/moderation"
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
                   >
                     <ShieldCheck size={14} />
                     Moderação
@@ -634,7 +980,7 @@ export default function HomePage() {
                   </Link>
                   <Link
                     to="/admin/analytics"
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
                   >
                     <BarChart3 size={14} />
                     Painel analítico
@@ -645,21 +991,21 @@ export default function HomePage() {
                 <>
                   <Link
                     to="/admin/users"
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
                   >
                     <UserPlus size={14} />
                     Usuários
                   </Link>
                   <button
                     onClick={() => openEntryModal()}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <FilePlus size={14} />
                     Registrar sem endereço
                   </button>
                   <button
                     onClick={() => openBulkEntryModal()}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
+                    className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <Layers size={14} />
                     Substituir estatísticas
@@ -676,7 +1022,7 @@ export default function HomePage() {
               )}
               <button
                 onClick={() => { logout(); toast({ title: 'Logout realizado' }); }}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
+                className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
               >
                 <LogOut size={14} />
                 Sair
@@ -685,12 +1031,24 @@ export default function HomePage() {
           ) : (
             <Link
               to="/login"
-              className={cn("flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors")}
+              className={cn("flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors")}
             >
               <LogIn size={14} />
               Entrar
             </Link>
           )}
+        </div>
+        {/* Phones: shows there is more below; tapping scrolls down */}
+        {panelOpen && menuMore && (
+          <button
+            onClick={() => menuRef.current?.scrollBy({ top: menuRef.current.clientHeight * 0.7, behavior: 'smooth' })}
+            className="md:hidden fixed bottom-0 left-0 w-[85vw] max-w-[320px] pt-6 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-0.5 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent text-xs text-gray-300"
+            aria-label="Rolar para ver mais opções"
+          >
+            Mais opções abaixo
+            <ChevronDown size={18} className="animate-bounce" />
+          </button>
+        )}
         </div>
 
         {(mapMode === 'place-default-marker' || mapMode === 'move-pin') && (
@@ -703,13 +1061,18 @@ export default function HomePage() {
         )}
       </div>
 
-      <ReportModal
-        isOpen={reportModalOpen}
-        onClose={() => { setReportModalOpen(false); setNewPinLocation(null); }}
-        onSubmit={handleReportSubmit}
-        location={newPinLocation}
-      />
+      <Suspense fallback={null}>
+      {reportModalUsed && (
+        <ReportModal
+          isOpen={reportModalOpen}
+          onClose={() => { setReportModalOpen(false); setNewPinLocation(null); }}
+          onSubmit={handleReportSubmit}
+          location={newPinLocation}
+        />
+      )}
 
+      {isAdmin && (
+      <>
       <DefaultLocationSetupModal
         isOpen={setupModalOpen}
         onClose={() => { setSetupModalOpen(false); setSetupLocation(null); setEditingMarker(null); }}
@@ -734,6 +1097,32 @@ export default function HomePage() {
         initialMarkerId={entryMarkerId}
         onReplace={handleReplaceDefaultLocationEntries}
       />
+      </>
+      )}
+      </Suspense>
+    </div>
+  );
+}
+
+/** Location blocked or unavailable: how to turn it on, or find the neighbourhood instead. */
+function LocationHelp({ denied, onRetry, onSearch, onClose }: { denied: boolean; onRetry: () => void; onSearch: () => void; onClose: () => void }) {
+  return (
+    <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-[26rem] z-[395] rounded-xl bg-[#1f1f23] border border-sky-500/30 shadow-2xl p-3.5 space-y-2.5" role="alert">
+      <div className="flex items-start gap-2">
+        <p className="flex-1 text-sm font-semibold text-white">
+          {denied ? 'Permita sua localização para ver o que acontece perto de você' : 'Não conseguimos achar sua localização'}
+        </p>
+        <button onClick={onClose} className="w-8 h-8 -m-1 flex items-center justify-center text-gray-400 hover:text-white" aria-label="Fechar"><X size={16} /></button>
+      </div>
+      <p className="text-xs text-gray-300 leading-relaxed">
+        {denied
+          ? 'No celular: toque no cadeado (ou ⓘ) ao lado do endereço do site → Permissões → Localização → Permitir. Depois toque em "Tentar de novo".'
+          : 'Ative a localização (GPS) do celular e toque em "Tentar de novo".'}
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onRetry} className="h-10 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold">Tentar de novo</button>
+        <button onClick={onSearch} className="h-10 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">Buscar meu bairro</button>
+      </div>
     </div>
   );
 }

@@ -20,6 +20,10 @@ interface AuthContextValue {
   isStaff: boolean;
   isModerator: boolean;
   isAdmin: boolean;
+  /** Public agency account (prefeitura, guarda, polícia) */
+  isAgency: boolean;
+  /** Partner: unlimited reports published directly, signed with name and photo */
+  isPartner: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -83,6 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isStaff: user?.role === 'moderator' || user?.role === 'admin',
       isModerator: user?.role === 'moderator' || user?.role === 'admin',
       isAdmin: user?.role === 'admin',
+      isAgency: user?.role === 'agency',
+      isPartner: user?.role === 'partner',
       login,
       logout,
     }),

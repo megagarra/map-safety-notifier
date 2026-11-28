@@ -1,13 +1,34 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
-import { MapContainer, TileLayer, Marker, CircleMarker, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
+import MapSearch from './MapSearch';
+import { useMapTheme, type MapTheme } from '@/lib/mapTheme';
+import { MapTypePicker, MAP_THEME_LABELS } from './MapTypePicker';
+import HeatLayer from './HeatLayer';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
+import { LegendButton } from './MapOverlays';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { reverseGeocode } from '@/lib/geocode';
+import { apiUrl } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
+import { flagPin, unarchivePin } from '@/controllers/pins';
+import { OfficialSection } from './OfficialResponse';
+import { ReportAuthor } from './ReportAuthor';
+import { AgencyLayer, AgencyScoreSheet, FitAgencyArea } from './AgencyLayer';
+import type { CityScore } from '@/types';
+import type { FlagReason } from '@/types';
+import { ApiError } from '@/lib/errors';
 import {
   Clock,
+  Share2,
+  Route,
   X,
   ThumbsUp,
   Users,
@@ -19,6 +40,8 @@ import {
   Moon,
   Trash2,
   Save,
+  Flag,
+  Layers,
 } from 'lucide-react';
 import { ImageGallery } from './ImageGallery';
 import PinHistory from './PinHistory';
@@ -54,6 +77,8 @@ interface MapComponentProps {
   center: [number, number];
   zoom: number;
   onVote: (pinId: string) => void;
+  onFeedback?: (pinId: string, kind: 'still' | 'resolved') => void;
+  showHeat?: boolean;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
   mapMode?: 'normal' | 'place-default-marker' | 'move-pin';
@@ -67,13 +92,34 @@ interface MapComponentProps {
   onEntriesChanged?: () => void;
 }
 
-const TILE_URLS = {
-  /** Claro: OpenStreetMap - boa visibilidade */
-  light: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  /** Escuro: Dark Matter - tema escuro */
-  dark: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+
+type TileDef = { url: string; attribution: string; maxNativeZoom: number; overlays?: { url: string; maxNativeZoom: number }[] };
+
+const TILE_LAYERS: Record<MapTheme, TileDef> = {
+  /** Claro: OpenStreetMap (ruas mais completas da região, atualizado minutos após correções) */
+  light: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: OSM_ATTRIBUTION, maxNativeZoom: 19 },
+  /** Escuro: o mesmo OpenStreetMap com cores invertidas (CSS), para mostrar o nome de todas as ruas.
+   *  (O Esri Dark Gray só nomeia vias principais; CARTO exige chave de API.) */
+  dark: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: OSM_ATTRIBUTION, maxNativeZoom: 19 },
+  /** Satélite: foto aérea recente + nomes de ruas e bairros por cima */
+  satellite: {
+    url: `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`,
+    attribution: 'Imagens &copy; Esri, Maxar, Earthstar Geographics',
+    maxNativeZoom: 19,
+    overlays: [
+      { url: `${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, maxNativeZoom: 19 },
+      { url: `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, maxNativeZoom: 19 },
+    ],
+  },
+  /** Ruas Esri: outra fonte de dados (HERE, Garmin…) para comparar quando uma rua do OSM parece errada */
+  esri: {
+    url: `${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`,
+    attribution: 'Mapa &copy; Esri, HERE, Garmin, USGS',
+    maxNativeZoom: 19,
+  },
 };
-const MAP_THEME_KEY = 'map-safety-theme';
 
 const MAP_BOUNDS: L.LatLngBoundsExpression = [
   [-23.45, -46.82],
@@ -141,15 +187,6 @@ function MapEvents({
   useMapEvents({
     click: (e) => onMapClick(e.latlng.lat, e.latlng.lng),
     moveend: () => {
-      if (isUserInteraction.current && onMapMove) {
-        const c = map.getCenter();
-        onMapMove([c.lat, c.lng], map.getZoom());
-      }
-      isUserInteraction.current = true;
-      if (boundsTimer.current) clearTimeout(boundsTimer.current);
-      boundsTimer.current = setTimeout(emitBounds, 400);
-    },
-    zoomend: () => {
       if (isUserInteraction.current && onMapMove) {
         const c = map.getCenter();
         onMapMove([c.lat, c.lng], map.getZoom());
@@ -236,7 +273,7 @@ function createPinHTML(pin: Pin, currentZoom: number) {
              class="${isPending ? '' : cfg.border} ${cfg.color}">
           ${cfg.icon}
         </div>
-        ${isPending ? `<div style="position:absolute;top:-6px;right:-6px;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;background:#eab308;color:#1a1a1a;border:1.5px solid #1a1a1a;">!</div>` : ''}
+        ${isPending ? `<div style="position:absolute;top:-6px;right:-6px;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;background:#eab308;color:#1a1a1a;border:1.5px solid #1a1a1a;white-space:nowrap;">${pin.votes ? `+${pin.votes}` : '…'}</div>` : ''}
         ${(!isPending && pin.votes && pin.votes > 0) ? `<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #1a1a1a;" class="${cfg.bg} ${cfg.color}">${pin.votes}</div>` : ''}
       </div>`,
     size,
@@ -249,16 +286,48 @@ function getOrCreateIcon(pin: Pin, currentZoom: number): L.DivIcon {
   const key = `${pin.kind ?? 'normal'}-${pin.approvalStatus ?? 'approved'}-${pin.type}-${pin.votes || 0}-${pin.entryCount ?? 0}-${pin.neighborhood ?? ''}-${Math.floor(currentZoom)}`;
   let icon = iconCache.get(key);
   if (!icon) {
-    const { html, size } = createPinHTML(pin, currentZoom);
+    const { html, size } = createPinHTML(pin, Math.floor(currentZoom));
     icon = L.divIcon({ className: 'custom-div-icon', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
     iconCache.set(key, icon);
   }
   return icon;
 }
 
-function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) => void }) {
+function clusterIcon(cluster: { getChildCount: () => number }) {
+  const n = cluster.getChildCount();
+  const size = n < 10 ? 36 : n < 50 ? 42 : 50;
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(239,68,68,0.9);border:3px solid rgba(255,255,255,0.85);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5);">${n}</div>`,
+    className: 'pin-cluster',
+    iconSize: [size, size],
+  });
+}
+
+const PinMarker = React.memo(function PinMarker({
+  pin, zoom, onClickRef,
+}: { pin: Pin; zoom: number; onClickRef: React.MutableRefObject<(pin: Pin) => void> }) {
+  const handlers = useMemo(
+    () => ({ click: (e: L.LeafletMouseEvent) => { e.originalEvent.stopPropagation(); onClickRef.current(pin); } }),
+    [pin, onClickRef],
+  );
+  return (
+    <Marker
+      position={[pin.location.lat, pin.location.lng]}
+      icon={getOrCreateIcon(pin, zoom)}
+      title={isDefaultLocationPin(pin) ? (pin.neighborhood ?? 'Bairro') : `${getPinConfig(pin.type).label}${isPendingPin(pin) ? ' (aguardando aprovação)' : ''}`}
+      alt={getPinConfig(pin.type).label}
+      keyboard
+      zIndexOffset={isDefaultLocationPin(pin) ? 1000 : 0}
+      eventHandlers={handlers}
+    />
+  );
+});
+
+const PinMarkers = React.memo(function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) => void }) {
   const map = useMap();
   const [currentZoom, setCurrentZoom] = useState(map.getZoom());
+  const onClickRef = useRef(onPinClick);
+  onClickRef.current = onPinClick;
 
   useEffect(() => {
     const handler = () => setCurrentZoom(map.getZoom());
@@ -266,45 +335,37 @@ function PinMarkers({ pins, onPinClick }: { pins: Pin[]; onPinClick: (pin: Pin) 
     return () => { map.off('zoomend', handler); };
   }, [map]);
 
+  const { regular, fixed } = useMemo(() => {
+    const valid = pins.filter(hasValidPinLocation);
+    return {
+      regular: valid.filter((p) => !isDefaultLocationPin(p)),
+      fixed: valid.filter(isDefaultLocationPin),
+    };
+  }, [pins]);
+
   return (
     <>
-      {pins.filter(hasValidPinLocation).map((pin) => (
-        <Marker
-          key={pin.id}
-          position={[pin.location.lat, pin.location.lng]}
-          icon={getOrCreateIcon(pin, currentZoom)}
-          zIndexOffset={isDefaultLocationPin(pin) ? 1000 : 0}
-          eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); onPinClick(pin); } }}
-        />
+      <MarkerClusterGroup
+        chunkedLoading
+        maxClusterRadius={45}
+        disableClusteringAtZoom={17}
+        spiderfyOnMaxZoom
+        showCoverageOnHover={false}
+        iconCreateFunction={clusterIcon}
+      >
+        {regular.map((pin) => (
+          <PinMarker key={pin.id} pin={pin} zoom={currentZoom} onClickRef={onClickRef} />
+        ))}
+      </MarkerClusterGroup>
+      {fixed.map((pin) => (
+        <PinMarker key={pin.id} pin={pin} zoom={currentZoom} onClickRef={onClickRef} />
       ))}
     </>
   );
-}
+});
 
 // --- Reverse geocoding ---
 
-async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`,
-      { headers: { 'User-Agent': 'MapSafetyNotifier/1.0' } },
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const addr = data.address;
-    if (!addr) return data.display_name || null;
-
-    const parts: string[] = [];
-    if (addr.road) parts.push(addr.road);
-    if (addr.house_number && parts.length) parts[0] = `${parts[0]}, ${addr.house_number}`;
-    if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
-    if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
-
-    return parts.length > 0 ? parts.join(' — ') : data.display_name || null;
-  } catch {
-    return null;
-  }
-}
 
 // --- Pin details modal ---
 
@@ -319,6 +380,7 @@ function PinDetailsModal({
   pin,
   onClose,
   onVote,
+  onFeedback,
   onUpdatePin,
   onDeletePin,
   onRegisterDefaultEntry,
@@ -332,6 +394,7 @@ function PinDetailsModal({
   pin: Pin;
   onClose: () => void;
   onVote: (id: string) => void;
+  onFeedback?: (id: string, kind: 'still' | 'resolved') => void;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
   onRegisterDefaultEntry?: (markerId: string) => void;
@@ -373,10 +436,13 @@ function PinDetailsModal({
       return;
     }
     setIsLoadingAddress(true);
+    let cancelled = false;
     reverseGeocode(pin.location.lat, pin.location.lng).then((result) => {
+      if (cancelled) return;
       setAddress(result);
       setIsLoadingAddress(false);
     });
+    return () => { cancelled = true; };
   }, [pin.id, pin.address, pin.location?.lat, pin.location?.lng, isDefault]);
 
   const handleSave = async () => {
@@ -420,11 +486,17 @@ function PinDetailsModal({
     }
   };
 
+  const dialogRef = useDialogA11y<HTMLDivElement>(onClose);
+
   return (
     <>
-      <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
         <div
-          className={cn("relative w-[95vw] sm:w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-h-[80vh] mx-auto")}
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : `Ocorrência: ${cfg.label}`}
+          className={cn("relative w-full sm:w-[92%] sm:max-w-[420px] max-h-[85dvh] overflow-y-auto overscroll-contain custom-scrollbar rounded-t-2xl sm:rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn pb-[env(safe-area-inset-bottom)]", isMobile && "mx-auto")}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -440,7 +512,7 @@ function PinDetailsModal({
               />
               <div>
                 <h3 className="text-base font-semibold text-white">
-                  {isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : cfg.label}
+                  {isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : pin.crimeTypeLabel ? `${cfg.label} · ${pin.crimeTypeLabel.replace(/\s*\(Art\.[^)]*\)/, '')}` : cfg.label}
                 </h3>
                 {!isDefault && (
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -459,7 +531,7 @@ function PinDetailsModal({
                 )}
               </div>
             </div>
-            <button onClick={onClose} className="h-8 w-8 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
+            <button onClick={onClose} aria-label="Fechar" className="h-11 w-11 shrink-0 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
               <X size={16} />
             </button>
           </div>
@@ -480,18 +552,46 @@ function PinDetailsModal({
             </div>
 
             {/* Description */}
+            {(pin.description || (pin.rejectionReason && isModerator)) && (
             <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-              <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>
+              {pin.description && <p className="text-sm text-gray-200 leading-relaxed">{pin.description}</p>}
               {pin.rejectionReason && isModerator && (
                 <p className="text-xs text-red-400 mt-2 border-t border-[#2a2a2a] pt-2">
                   Motivo da rejeição: {pin.rejectionReason}
                 </p>
               )}
             </div>
+            )}
 
-            {isPending && isModerator && (
-              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-300">
-                Esta ocorrência aguarda aprovação e não é visível para visitantes.
+            {pin.archived && (
+              <div className="p-3 rounded-lg bg-white/5 border border-white/15 text-xs text-gray-200 leading-relaxed space-y-2">
+                <p>Arquivado: ninguém confirmou esta ocorrência há muito tempo, por isso ela saiu do mapa. Se ainda acontece, toque em "Ainda está aí".</p>
+                {isModerator && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await unarchivePin(pin.id);
+                        toast({ title: 'Restaurado ao mapa' });
+                        onEntriesChanged?.();
+                        onClose();
+                      } catch {
+                        toast({ title: 'Não foi possível restaurar', variant: 'destructive' });
+                      }
+                    }}
+                    className="h-9 px-3 rounded-lg bg-white/10 text-white text-xs font-medium"
+                  >
+                    Restaurar ao mapa
+                  </button>
+                )}
+              </div>
+            )}
+
+            {isPending && (
+              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-200 leading-relaxed">
+                {isModerator
+                  ? 'Aguardando aprovação. Visitantes veem só o pin, sem descrição e fotos.'
+                  : 'Esta ocorrência já foi registrada e está aguardando aprovação. Se você também viu, toque em "Eu também vi" em vez de registrar de novo.'}
               </div>
             )}
 
@@ -576,8 +676,9 @@ function PinDetailsModal({
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-blue-500/20 space-y-3">
                 <h4 className="text-sm font-medium text-blue-400">Moderação</h4>
                 <div className="space-y-2">
-                  <label className="text-xs text-gray-400">Status</label>
+                  <label htmlFor="pin-status" className="text-xs text-gray-400">Status</label>
                   <select
+                    id="pin-status"
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as PinStatus)}
                     className="w-full h-9 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm"
@@ -609,8 +710,8 @@ function PinDetailsModal({
               </div>
             )}
 
-            {/* Voting — não disponível para marcador padrão ou pendentes */}
-            {!isDefault && !isPending && (
+            {/* Voting — também em pendentes, para confirmar em vez de duplicar */}
+            {!isDefault && (
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -621,16 +722,49 @@ function PinDetailsModal({
                     onClick={() => onVote(pin.id)}
                     disabled={pin.userVoted}
                     className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                      "flex items-center gap-1.5 px-3 h-11 rounded-lg text-sm font-medium transition-colors",
                       pin.userVoted ? "bg-green-500/15 text-green-400" : "bg-white/10 text-white hover:bg-white/20"
                     )}
                   >
                     <ThumbsUp size={14} />
-                    {pin.userVoted ? 'Confirmado' : 'Confirmar'}
+                    {pin.userVoted ? 'Confirmado' : isPending ? 'Eu também vi' : 'Confirmar'}
                   </button>
                 </div>
               </div>
             )}
+
+            {/* Citizens keep reports fresh: still there / already fixed */}
+            {!isDefault && !isPending && pin.status !== 'resolved' && onFeedback && (
+              <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] space-y-2">
+                <p className="text-sm text-gray-200 font-medium">Ainda está assim?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onFeedback(pin.id, 'still')}
+                    aria-pressed={pin.userFeedback === 'still'}
+                    className={cn('h-11 rounded-lg text-sm font-medium border', pin.userFeedback === 'still' ? 'bg-orange-500/20 border-orange-500 text-white' : 'bg-white/5 border-white/10 text-gray-200')}
+                  >
+                    Ainda está aí{pin.stillThereCount ? ` · ${pin.stillThereCount}` : ''}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onFeedback(pin.id, 'resolved')}
+                    aria-pressed={pin.userFeedback === 'resolved'}
+                    className={cn('h-11 rounded-lg text-sm font-medium border', pin.userFeedback === 'resolved' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-white/5 border-white/10 text-gray-200')}
+                  >
+                    Já foi resolvido{pin.resolvedReports ? ` · ${pin.resolvedReports}` : ''}
+                  </button>
+                </div>
+                {(pin.resolvedReports ?? 0) >= 3 && (
+                  <p className="text-xs text-emerald-300">Várias pessoas indicaram que foi resolvido — a moderação foi avisada.</p>
+                )}
+              </div>
+            )}
+
+            {!isDefault && pin.author && <ReportAuthor author={pin.author} />}
+            {!isDefault && <OfficialSection key={pin.id} pin={pin} />}
+            {!isDefault && <ShareButton pin={pin} />}
+            {!isDefault && !isModerator && <ReportAbuse pinId={pin.id} />}
 
             {/* Admin: mover pin no mapa */}
             {isAdmin && !isDefault && onStartMovePin && (
@@ -730,66 +864,41 @@ function PinDetailsModal({
 // --- User location blue dot ---
 
 function UserLocationDot() {
-  const [pos, setPos] = useState<[number, number] | null>(null);
-
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return;
-    const id = navigator.geolocation.watchPosition(
-      ({ coords }) => setPos([coords.latitude, coords.longitude]),
-      () => { },
-      { enableHighAccuracy: true, maximumAge: 5000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
-  }, []);
-
+  const { pos, accuracy } = useGeolocation();
   if (!pos) return null;
-
   return (
     <>
-      <CircleMarker center={pos} radius={12} pathOptions={{ color: 'transparent', fillColor: 'rgba(66,133,244,0.15)', fillOpacity: 1 }} />
-      <CircleMarker center={pos} radius={5} pathOptions={{ color: '#fff', weight: 2, fillColor: '#4285F4', fillOpacity: 1 }} />
+      {accuracy != null && accuracy < 3000 && (
+        <Circle
+          center={pos}
+          radius={accuracy}
+          interactive={false}
+          pathOptions={{ color: '#4285F4', weight: 1, opacity: 0.4, fillColor: '#4285F4', fillOpacity: 0.12 }}
+        />
+      )}
+      <CircleMarker center={pos} radius={7} interactive={false} pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#4285F4', fillOpacity: 1 }} />
     </>
   );
 }
 
 // --- Main Map component ---
 
-type MapTheme = 'light' | 'dark';
 
-const THEME_ORDER: MapTheme[] = ['light', 'dark'];
-const THEME_LABELS: Record<MapTheme, string> = {
-  light: 'Claro',
-  dark: 'Escuro',
-};
 
 const MapComponent = ({
   pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom,
-  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onBulkRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
+  onVote, onFeedback, showHeat, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onBulkRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
 }: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
-  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
-    try {
-      const saved = localStorage.getItem(MAP_THEME_KEY);
-      return (saved === 'light' || saved === 'dark') ? saved : 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
+  const [selectedAgency, setSelectedAgency] = useState<CityScore | null>(null);
+  const [agencyAreaNonce, setAgencyAreaNonce] = useState(0);
+  const mapTheme = useMapTheme();
   const mapRef = useRef(null);
-  const tileUrl = TILE_URLS[mapTheme];
+  const tileLayer = TILE_LAYERS[mapTheme];
 
-  const cycleMapTheme = () => {
-    const idx = THEME_ORDER.indexOf(mapTheme);
-    const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
-    setMapTheme(next);
-    try {
-      localStorage.setItem(MAP_THEME_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  };
+  const [mapTypeOpen, setMapTypeOpen] = useState(false);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -803,6 +912,9 @@ const MapComponent = ({
     if (!selectedPinTypes?.length) return withLocation;
     return withLocation.filter((p) => selectedPinTypes.includes(p.type));
   }, [pins, selectedPinTypes]);
+
+  // In heat mode only neighborhood markers stay as pins; reports become the density layer.
+  const heatOverlayPins = useMemo(() => filteredPins.filter(isDefaultLocationPin), [filteredPins]);
 
   const effectiveCenter = center || MAP_CENTER;
   const effectiveZoom = zoom || 13;
@@ -849,7 +961,7 @@ const MapComponent = ({
         maxBoundsViscosity={1.0}
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
-        attributionControl={false}
+        attributionControl
         ref={mapRef}
         className="map-container"
         preferCanvas
@@ -872,20 +984,54 @@ const MapComponent = ({
       >
         <MapInstanceSetter setMapInstance={setMapInstance} />
         <TileLayer
-          url={tileUrl}
+          key={mapTheme}
+          url={tileLayer.url}
+          attribution={tileLayer.attribution}
           maxZoom={19}
-          maxNativeZoom={18}
+          maxNativeZoom={tileLayer.maxNativeZoom}
           updateWhenIdle
           updateWhenZooming={false}
           keepBuffer={6}
           className="custom-tile-layer"
         />
+        {tileLayer.overlays?.map((o) => (
+          <TileLayer
+            key={`${mapTheme}-${o.url}`}
+            url={o.url}
+            maxZoom={19}
+            maxNativeZoom={o.maxNativeZoom}
+            updateWhenIdle
+            updateWhenZooming={false}
+            keepBuffer={6}
+            pane="overlayPane"
+          />
+        ))}
+
         <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} onBoundsChange={onBoundsChange} />
         <UserLocationDot />
-        <PinMarkers pins={filteredPins} onPinClick={onPinClick} />
+        {showHeat && <HeatLayer pins={filteredPins} />}
+        <PinMarkers pins={showHeat ? heatOverlayPins : filteredPins} onPinClick={onPinClick} />
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
-        <ZoomControl position="bottomright" />
+        <AgencyLayer selected={selectedAgency} onSelect={setSelectedAgency} />
+        <FitAgencyArea city={selectedAgency} nonce={agencyAreaNonce} />
+        {!isMobile && <ZoomControl position="bottomright" />}
       </MapContainer>
+
+      {selectedAgency && !agencyAreaNonce && (
+        <AgencyScoreSheet
+          city={selectedAgency}
+          onClose={() => setSelectedAgency(null)}
+          onShowArea={() => setAgencyAreaNonce(Date.now())}
+        />
+      )}
+      {selectedAgency && !!agencyAreaNonce && (
+        <button
+          onClick={() => { setSelectedAgency(null); setAgencyAreaNonce(0); }}
+          className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[460] h-10 px-4 rounded-full bg-[#1a1a1a]/95 border border-emerald-500/40 text-emerald-200 text-sm shadow-xl flex items-center gap-2"
+        >
+          Área de {selectedAgency.city} · fechar
+        </button>
+      )}
 
       {/* Pin details */}
       {selectedPin && hasValidPinLocation(selectedPin) && (
@@ -893,6 +1039,7 @@ const MapComponent = ({
           pin={selectedPin}
           onClose={() => onPinClick(null)}
           onVote={onVote}
+          onFeedback={onFeedback}
           onUpdatePin={onUpdatePin}
           onDeletePin={onDeletePin}
           onRegisterDefaultEntry={onRegisterDefaultEntry}
@@ -906,41 +1053,232 @@ const MapComponent = ({
       )}
 
       {/* Theme toggle */}
-      <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
-        <button
-          onClick={cycleMapTheme}
-          className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
-          title={`Tema do mapa: ${THEME_LABELS[mapTheme]}. Clique para alternar.`}
-        >
-          {mapTheme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+      {/* Phones: wide search bar next to the menu button (theme + legend live in the side menu). */}
+      <div className="absolute top-[calc(1rem+env(safe-area-inset-top))] md:top-4 right-4 left-[4.25rem] md:left-auto z-[450] flex flex-col gap-2 items-stretch md:items-end">
+        <MapSearch map={mapInstance} onReportAt={onMapClick} />
+        <div className="hidden md:flex flex-col gap-2 items-end">
+        <div className="relative">
+          <button
+            onClick={() => setMapTypeOpen((o) => !o)}
+            aria-label={`Tipo de mapa: ${MAP_THEME_LABELS[mapTheme]}`}
+            aria-expanded={mapTypeOpen}
+            className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
+            title={`Tipo de mapa: ${MAP_THEME_LABELS[mapTheme]}`}
+          >
+            {mapTheme === 'light' ? <Sun size={18} /> : mapTheme === 'dark' ? <Moon size={18} /> : <Layers size={18} />}
+          </button>
+          {mapTypeOpen && (
+            <div className="absolute right-full mr-2 top-0 w-72 rounded-lg bg-[#1a1a1a] border border-white/15 shadow-2xl p-3">
+              <p className="text-xs font-semibold text-white mb-2">Tipo de mapa</p>
+              <MapTypePicker compact center={() => (mapInstance ? { lat: mapInstance.getCenter().lat, lng: mapInstance.getCenter().lng } : null)} />
+            </div>
+          )}
+        </div>
+        <LegendButton />
+        </div>
       </div>
 
       {/* Location button — automatically adjusts for mobile and desktop zooms */}
-      <div className="absolute bottom-[130px] md:bottom-[196px] right-[16px] md:right-[24px] z-[400]">
-        <button
-          onClick={() => {
-            if (!("geolocation" in navigator) || !mapInstance) return;
-            navigator.geolocation.getCurrentPosition(
-              (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
-              () => {
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => mapInstance.flyTo([pos.coords.latitude, pos.coords.longitude], 19, { duration: 0.8 }),
-                  () => { },
-                  { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-                );
-              },
-              { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-            );
-          }}
-          className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
-          title="Minha localização"
-        >
-          <Navigation size={18} />
-        </button>
+      <div className="absolute bottom-[calc(130px+env(safe-area-inset-bottom))] md:bottom-[196px] right-[16px] md:right-[24px] z-[400]">
+        <LocateButton map={mapInstance} />
       </div>
     </div>
   );
 };
 
 export default MapComponent;
+
+// --- "My location" button ---
+
+function LocateButton({ map }: { map: L.Map | null }) {
+  const geo = useGeolocation();
+  const [waiting, setWaiting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const flyTo = (pos: [number, number], accuracy: number | null) => {
+    if (!map) return;
+    if (accuracy && accuracy > 150) {
+      map.flyToBounds(L.latLng(pos).toBounds(accuracy * 2), { maxZoom: 17, duration: 0.8 });
+    } else {
+      map.flyTo(pos, 17, { duration: 0.8 });
+    }
+  };
+
+  useEffect(() => {
+    if (!waiting) return;
+    if (geo.pos) {
+      setWaiting(false);
+      flyTo(geo.pos, geo.accuracy);
+    } else if (geo.error) {
+      setWaiting(false);
+      if (geo.error === 'unavailable') setMessage('Não foi possível obter sua localização. Verifique se o GPS está ligado.');
+    }
+  }, [waiting, geo.pos, geo.error]);
+
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => {
+      setWaiting(false);
+      setMessage('Não foi possível obter sua localização. Tente novamente.');
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [waiting]);
+
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), 5000);
+    return () => clearTimeout(t);
+  }, [message]);
+
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    if (!asked) return;
+    if (geo.error === 'denied') setMessage('Permissão de localização negada. Ative nas configurações do navegador.');
+    else if (geo.error === 'unsupported') setMessage('Seu navegador não suporta localização.');
+  }, [geo.error, asked]);
+
+  const onClick = () => {
+    const { pos, accuracy, error } = getGeoState();
+    setMessage(null);
+    setAsked(true);
+    if (error === 'denied') {
+      setMessage('Permissão de localização negada. Ative nas configurações do navegador.');
+    }
+    if (pos) {
+      flyTo(pos, accuracy);
+      return;
+    }
+    if (error === 'unsupported') {
+      setMessage('Seu navegador não suporta localização.');
+      return;
+    }
+    if (error) retryGeolocation();
+    setWaiting(true);
+  };
+
+  return (
+    <div className="relative">
+      {message && (
+        <div className="absolute right-full mr-2 bottom-0 w-60 rounded-lg bg-[#1a1a1a]/95 border border-white/10 px-3 py-2 text-xs text-gray-200 shadow-lg">
+          {message}
+        </div>
+      )}
+      <button
+        onClick={onClick}
+        className={cn(
+          'w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center hover:bg-[#2a2a2a] transition-colors shadow-lg',
+          geo.pos ? 'text-blue-400' : geo.error ? 'text-red-400' : 'text-white',
+        )}
+        title="Minha localização"
+        aria-label="Minha localização"
+      >
+        {waiting ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} />}
+      </button>
+    </div>
+  );
+}
+
+// --- Share an alert (native share sheet → WhatsApp → copy link) ---
+
+function ShareButton({ pin }: { pin: Pin }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    const url = new URL(apiUrl(`/share/pin/${pin.id}`), window.location.origin).href;
+    const label = pin.crimeTypeLabel?.replace(/\s*\(Art\.[^)]*\)/, '') || getPinConfig(pin.type).label;
+    const text = `⚠️ Alerta de ${label.toLowerCase()} no Map Safety${pin.address ? `: ${pin.address}` : ''}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Map Safety', text, url }); return; } catch (e) {
+        if ((e as Error).name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}
+${url}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${text}
+${url}`)}`, '_blank', 'noopener');
+    }
+  };
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <button
+        onClick={share}
+        className="h-11 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium flex items-center justify-center gap-2"
+      >
+        <Share2 size={15} /> {copied ? 'Link copiado!' : 'Compartilhar'}
+      </button>
+      <a
+        href={`https://www.google.com/maps/dir/?api=1&destination=${pin.location.lat},${pin.location.lng}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="h-11 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium flex items-center justify-center gap-2"
+      >
+        <Route size={15} /> Como chegar
+      </a>
+    </div>
+  );
+}
+
+// --- "Denunciar": public report of fake / offensive / advertising content ---
+
+const FLAG_REASONS: { key: FlagReason; label: string }[] = [
+  { key: 'falso', label: 'Não existe / é falso' },
+  { key: 'ofensivo', label: 'Ofensivo ou impróprio' },
+  { key: 'propaganda', label: 'Propaganda ou política' },
+  { key: 'duplicado', label: 'Repetido' },
+  { key: 'outro', label: 'Outro motivo' },
+];
+const FLAGGED_KEY = 'map-safety:flagged';
+
+function ReportAbuse({ pinId }: { pinId: string }) {
+  const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(() => {
+    try { return (JSON.parse(localStorage.getItem(FLAGGED_KEY) || '[]') as string[]).includes(pinId); } catch { return false; }
+  });
+  const send = async (reason: FlagReason) => {
+    setSending(true);
+    try {
+      await flagPin(pinId, reason);
+      setDone(true);
+      setOpen(false);
+      try {
+        const list = JSON.parse(localStorage.getItem(FLAGGED_KEY) || '[]') as string[];
+        localStorage.setItem(FLAGGED_KEY, JSON.stringify([pinId, ...list.filter((x) => x !== pinId)].slice(0, 200)));
+      } catch { /* ignore */ }
+      toast({ title: 'Denúncia enviada', description: 'Obrigado. Se outras pessoas também denunciarem, a moderação revisa de novo.' });
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Não foi possível enviar a denúncia.', variant: 'destructive' });
+    } finally {
+      setSending(false);
+    }
+  };
+  if (done) return <p className="text-center text-xs text-gray-500">Você denunciou esta ocorrência.</p>;
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="w-full h-10 flex items-center justify-center gap-1.5 text-xs text-gray-400 hover:text-red-300">
+        <Flag size={13} /> Denunciar ocorrência falsa ou imprópria
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-2">
+      <p className="text-xs text-gray-300">Qual o problema com esta ocorrência?</p>
+      <div className="flex flex-wrap gap-1.5">
+        {FLAG_REASONS.map((r) => (
+          <button
+            key={r.key}
+            disabled={sending}
+            onClick={() => send(r.key)}
+            className="h-9 px-3 rounded-full border border-white/15 text-xs text-gray-200 hover:bg-white/10 disabled:opacity-50"
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => setOpen(false)} className="text-xs text-gray-500 hover:text-gray-300 min-h-8">Cancelar</button>
+    </div>
+  );
+}

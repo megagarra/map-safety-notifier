@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DefaultLocationEntry, Pin, PinType } from '@/types';
 import * as PinsController from '@/controllers/pins';
 import { getEntryLabel } from '@/lib/entryLabels';
-import { resolveImageUrl } from '@/lib/media';
+import { resolveImageUrl, thumbUrl, fallbackToFull } from '@/lib/media';
 import { DefaultLocationEntryChart } from '@/components/DefaultLocationEntryChart';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -207,7 +207,7 @@ export function DefaultLocationEntriesPanel({
                       {images.length > 0 && (
                         <div className="flex gap-1 flex-wrap mt-1.5">
                           {images.map((img, i) => (
-                            <img key={i} src={resolveImageUrl(img)} alt="" className="w-10 h-10 rounded object-cover border border-[#2a2a2a]" />
+                            <img key={i} src={thumbUrl(img)} onError={fallbackToFull(img)} alt="" className="w-10 h-10 rounded object-cover border border-[#2a2a2a]" />
                           ))}
                         </div>
                       )}

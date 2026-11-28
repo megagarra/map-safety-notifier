@@ -16,11 +16,13 @@ import {
   UpdateDefaultLocationEntryInput,
   AdminPinLocationInput,
   RejectPinInput,
+  FlagReason,
 } from '@/types';
 import { api, apiFormData, buildQuery } from '@/lib/api';
 import { unwrapApiList } from '@/lib/apiList';
 
 export interface FetchPinsParams extends Partial<MapBounds> {
+  include_archived?: boolean;
   limit?: number;
   offset?: number;
   auth?: boolean;
@@ -40,9 +42,9 @@ export interface FetchNearbyParams {
 }
 
 export const fetchPins = async (params: FetchPinsParams = {}): Promise<PaginatedResponse<Pin>> => {
-  const { limit = 200, offset = 0, auth = false, reported_after, reported_before, ...bounds } = params;
+  const { limit = 200, offset = 0, auth = false, reported_after, reported_before, include_archived, ...bounds } = params;
   return api<PaginatedResponse<Pin>>(
-    buildQuery('/api/pins', { limit, offset, reported_after, reported_before, ...bounds }),
+    buildQuery('/api/pins', { limit, offset, reported_after, reported_before, include_archived: include_archived ? 'true' : undefined, ...bounds }),
     { auth },
   );
 };
@@ -63,6 +65,27 @@ export const fetchPendingModeration = async (): Promise<Pin[]> => {
 export const fetchRejectedModeration = async (): Promise<Pin[]> => {
   const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/moderation/rejected', { auth: true });
   return unwrapApiList<Pin>(data);
+};
+
+export const resetResolvedFeedback = async (id: string): Promise<void> => {
+  await api<void>(`/api/pins/${id}/feedback/reset`, { method: 'POST', auth: true });
+};
+
+export const fetchCitizenResolved = async (): Promise<Pin[]> => {
+  const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/moderation/citizen-resolved', { auth: true });
+  return unwrapApiList<Pin>(data);
+};
+
+export const bulkModerate = async (
+  ids: string[],
+  action: 'approve' | 'reject',
+  reason?: string,
+): Promise<{ processed: number; skipped: number }> => {
+  return api('/api/pins/moderation/bulk', { method: 'POST', auth: true, body: JSON.stringify({ ids, action, reason }) });
+};
+
+export const unarchivePin = async (id: string): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${id}/unarchive`, { method: 'POST', auth: true });
 };
 
 export const approvePin = async (id: string): Promise<Pin> => {
@@ -122,6 +145,10 @@ export const deletePin = async (id: string): Promise<void> => {
 
 export const voteOnPin = async (pinId: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${pinId}/vote`, { method: 'POST' });
+};
+
+export const sendPinFeedback = async (pinId: string, kind: 'still' | 'resolved'): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${pinId}/feedback`, { method: 'POST', body: JSON.stringify({ kind }) });
 };
 
 export const fetchDefaultLocations = async (): Promise<Pin[]> => {
@@ -303,3 +330,16 @@ export const filterPinsByPersistence = (pins: Pin[], minDays: number, maxDays: n
     return days >= minDays && (maxDays === 0 || days <= maxDays);
   });
 };
+
+/** Anyone: report a pin as fake, offensive, advertising... Enough people send it back to review. */
+export const flagPin = async (pinId: string, reason: FlagReason): Promise<void> => {
+  await api<void>(`/api/pins/${pinId}/flag`, { method: 'POST', body: JSON.stringify({ reason }) });
+};
+
+/** Agency panel: published reports this agency can answer. */
+export const fetchAgencyQueue = async (state: 'open' | 'resolved' | 'all' = 'open'): Promise<PaginatedResponse<Pin>> =>
+  api<PaginatedResponse<Pin>>(buildQuery('/api/pins/agency/queue', { state, limit: 200 }), { auth: true });
+
+/** Agency: mark a report as received / in progress / resolved (signed with the agency name). */
+export const officialAnswer = async (pinId: string, status: PinStatus, comment?: string): Promise<Pin> =>
+  api<Pin>(`/api/pins/${pinId}/official`, { method: 'POST', auth: true, body: JSON.stringify({ status, comment: comment || undefined }) });

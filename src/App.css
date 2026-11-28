@@ -3,6 +3,7 @@
   padding: 0;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   position: relative;
 }
@@ -137,11 +138,10 @@ body, html {
 /* Mobile specific fixes */
 @media (max-width: 767px) {
   #root, body, html {
-    height: 100vh !important; /* Use viewport height */
+    height: 100dvh !important; /* visible height (100vh hides the bottom behind Android bars) */
     width: 100vw !important;  /* Use viewport width */
     overflow: hidden !important;
     position: fixed !important;
-    max-height: -webkit-fill-available; /* iOS Safari fix */
   }
   
   .app-container {

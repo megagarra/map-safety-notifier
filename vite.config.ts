@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
         proxy: {
           "/api": { target: apiUrl, changeOrigin: true },
           "/uploads": { target: apiUrl, changeOrigin: true },
+          "/share": { target: apiUrl, changeOrigin: true },
         },
       }),
     },
@@ -55,6 +56,23 @@ export default defineConfig(({ mode }) => {
         }
       })
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          // Long-lived vendor chunks: app updates don't force users to re-download the map libs.
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return undefined;
+            // Pure Leaflet (no React) in one chunk, React + everything built on React (incl. react-leaflet)
+            // in another: keeps the chunk graph acyclic (a cycle left React undefined at startup).
+            if (/[\\/]node_modules[\\/](leaflet|leaflet\.markercluster|leaflet\.heat)[\\/]/.test(id)) return 'leaflet';
+            if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run|react-leaflet|@react-leaflet|react-leaflet-cluster)[\\/]/.test(id)) return 'react';
+            if (id.includes('@tanstack')) return 'query';
+            if (id.includes('date-fns')) return 'date';
+            return undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
