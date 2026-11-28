@@ -471,7 +471,7 @@ function PinDetailsModal({
               />
               <div>
                 <h3 className="text-base font-semibold text-white">
-                  {isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : cfg.label}
+                  {isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : pin.crimeTypeLabel ? `${cfg.label} · ${pin.crimeTypeLabel.replace(/\s*\(Art\.[^)]*\)/, '')}` : cfg.label}
                 </h3>
                 {!isDefault && (
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -1058,7 +1058,7 @@ function ShareButton({ pin }: { pin: Pin }) {
   const [copied, setCopied] = useState(false);
   const share = async () => {
     const url = `${window.location.origin}${window.location.pathname}#/?pin=${pin.id}&lat=${pin.location.lat.toFixed(5)}&lng=${pin.location.lng.toFixed(5)}&z=17`;
-    const label = getPinConfig(pin.type).label;
+    const label = pin.crimeTypeLabel?.replace(/\s*\(Art\.[^)]*\)/, '') || getPinConfig(pin.type).label;
     const text = `⚠️ Alerta de ${label.toLowerCase()} no Map Safety${pin.address ? `: ${pin.address}` : ''}`;
     if (navigator.share) {
       try { await navigator.share({ title: 'Map Safety', text, url }); return; } catch (e) {

@@ -28,6 +28,8 @@ export interface Pin {
   reportedAt: string;
   address?: string;
   history: PinHistoryEntry[];
+  crimeTypeId?: string | null;
+  crimeTypeLabel?: string | null;
   status: PinStatus;
   persistenceDays?: number;
   votes?: number;
@@ -73,6 +75,7 @@ export interface CreatePinInput {
   description: string;
   images: string[];
   address?: string;
+  crimeTypeId?: string;
 }
 
 export interface CreateDefaultLocationInput {

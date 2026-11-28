@@ -1,9 +1,9 @@
-﻿import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
-import { FilterChips, FirstVisitHint, loadFilters, saveFilters, useFirstVisitHint, type MapFilters } from '@/components/MapOverlays';
+import { FilterChips, FirstVisitHint, InstallBanner, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 import ReportModal from '@/components/ReportModal';
@@ -100,8 +100,11 @@ export default function HomePage() {
   const [nearbyOpen, setNearbyOpen] = useState(false);
   const online = useOnline();
   const geo = useGeolocation();
-  const [pageLimit, setPageLimit] = useState(200);
+  // Page size for "Carregar mais", scoped to the current area/mode/period (resets when they change, without an extra fetch).
+  const [pageState, setPageState] = useState<{ scope: string; limit: number }>({ scope: '', limit: 200 });
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
+  const pageScope = `${fetchMode}|${fetchMode === 'nearby' ? center.map((c) => c.toFixed(3)).join(',') : boundsKeyStr}|${datePreset}`;
+  const pageLimit = pageState.scope === pageScope ? pageState.limit : 200;
   const dateFilter = useMemo(() => getDateFilter(datePreset), [datePreset]);
 
   const pinsQueryKey = useMemo(
@@ -163,7 +166,6 @@ export default function HomePage() {
   const hasMore = pins.length < total;
   const isLoadingMore = isFetchingPins && pageLimit > pins.length;
   // New area/mode/period starts again from the first page.
-  useEffect(() => { setPageLimit(200); }, [boundsKeyStr, fetchMode, datePreset]);
 
   const defaultMarkers = useMemo(() => {
     const fromPins = pins.filter(isDefaultLocationPin).filter(hasValidPinLocation);
@@ -180,6 +182,7 @@ export default function HomePage() {
   const [filters, setFiltersState] = useState<MapFilters>(loadFilters);
   const setFilters = useCallback((f: MapFilters) => { setFiltersState(f); saveFilters(f); }, []);
   const hint = useFirstVisitHint();
+  const installApp = useInstallPrompt();
   const activeFilterCount = filters.types.length + (filters.hideResolved ? 1 : 0) + (filters.onlyPending ? 1 : 0);
   const visiblePins = useMemo(() => {
     if (!activeFilterCount) return pins;
@@ -199,7 +202,7 @@ export default function HomePage() {
     deepLinkDone.current = true;
     const qs = new URLSearchParams((window.location.hash.split('?')[1] ?? '') + '&' + window.location.search.slice(1));
     const id = qs.get('pin');
-    // A real ?query (push notification links) was consumed at init â€” drop it so reloads don't jump back.
+    // A real ?query (push notification links) was consumed at init — drop it so reloads don't jump back.
     if (window.location.search) {
       window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
     }
@@ -210,7 +213,7 @@ export default function HomePage() {
         setCenter([p.location.lat, p.location.lng]);
         setZoom(17);
       } else {
-        toast({ title: 'Alerta nÃ£o encontrado', description: 'Ele pode ter sido removido.' });
+        toast({ title: 'Alerta não encontrado', description: 'Ele pode ter sido removido.' });
       }
     }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,7 +234,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isError) {
-      toast({ title: 'Erro ao carregar pins', description: 'NÃ£o foi possÃ­vel carregar os dados do mapa', variant: 'destructive' });
+      toast({ title: 'Erro ao carregar pins', description: 'Não foi possível carregar os dados do mapa', variant: 'destructive' });
     }
   }, [isError]);
 
@@ -292,8 +295,8 @@ export default function HomePage() {
       dupeShownRef.current = nearby.id;
       setSelectedPin(nearby);
       toast({
-        title: 'JÃ¡ existe uma ocorrÃªncia aqui',
-        description: 'Se for o mesmo problema, toque em "Eu tambÃ©m vi". Para registrar outra, toque de novo no mapa.',
+        title: 'Já existe uma ocorrência aqui',
+        description: 'Se for o mesmo problema, toque em "Eu também vi". Para registrar outra, toque de novo no mapa.',
       });
       return;
     }
@@ -328,8 +331,8 @@ export default function HomePage() {
   // "Carregar mais" grows the page size (part of the query key), so the 60s refetch keeps all loaded pins.
   const handleLoadMore = useCallback(() => {
     if (!hasMore) return;
-    setPageLimit((l) => Math.min(1000, l + 200));
-  }, [hasMore]);
+    setPageState({ scope: pageScope, limit: Math.min(1000, pageLimit + 200) });
+  }, [hasMore, pageScope, pageLimit]);
 
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
@@ -338,13 +341,13 @@ export default function HomePage() {
       queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
       toast({
-        title: 'OcorrÃªncia enviada',
-        description: 'Ela jÃ¡ aparece no mapa como "aguardando aprovaÃ§Ã£o". Obrigado!',
+        title: 'Ocorrência enviada',
+        description: 'Ela já aparece no mapa como "aguardando aprovação". Obrigado!',
       });
       return true;
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Tente novamente.';
-      toast({ title: 'Erro ao enviar relatÃ³rio', description: message, variant: 'destructive' });
+      toast({ title: 'Erro ao enviar relatório', description: message, variant: 'destructive' });
       return false;
     }
   }, [queryClient, isAuthenticated]);
@@ -373,9 +376,9 @@ export default function HomePage() {
         prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev,
       );
       setSelectedPin((prev) => (prev?.id === pinId ? updated : prev));
-      toast({ title: 'Pin atualizado', description: 'AlteraÃ§Ãµes salvas com sucesso.' });
+      toast({ title: 'Pin atualizado', description: 'Alterações salvas com sucesso.' });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel atualizar o pin.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível atualizar o pin.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -386,9 +389,9 @@ export default function HomePage() {
       await PinsController.deletePin(pinId);
       updatePinsCache((prev) => removeMarkerFromCache(prev, pinId));
       setSelectedPin(null);
-      toast({ title: 'Pin excluÃ­do', description: 'O alerta foi removido do mapa.' });
+      toast({ title: 'Pin excluído', description: 'O alerta foi removido do mapa.' });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel excluir o pin.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível excluir o pin.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -402,7 +405,7 @@ export default function HomePage() {
       setSelectedPin(hasValidPinLocation(marker) ? marker : null);
       toast({ title: 'Marcador criado', description: `Bairro ${data.neighborhood} configurado.` });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel criar o marcador.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível criar o marcador.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -414,9 +417,9 @@ export default function HomePage() {
       updatePinsCache((prev) => upsertMarkerInCache(prev, marker));
       invalidateDefaultLocations();
       setSelectedPin((prev) => (prev?.id === id ? mergePinUpdate(prev, marker) : prev));
-      toast({ title: 'Marcador atualizado', description: 'AlteraÃ§Ãµes salvas.' });
+      toast({ title: 'Marcador atualizado', description: 'Alterações salvas.' });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel atualizar o marcador.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível atualizar o marcador.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -432,9 +435,9 @@ export default function HomePage() {
       invalidateDefaultLocations();
       queryClient.invalidateQueries({ queryKey: ['default-location-entries', markerId] });
       setSelectedPin((prev) => (prev?.id === markerId ? mergePinUpdate(prev, marker) : prev));
-      toast({ title: 'OcorrÃªncia registrada', description: 'Adicionada ao histÃ³rico do bairro.' });
+      toast({ title: 'Ocorrência registrada', description: 'Adicionada ao histórico do bairro.' });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel registrar a ocorrÃªncia.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível registrar a ocorrência.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -453,11 +456,11 @@ export default function HomePage() {
       setSelectedPin((prev) => (prev?.id === markerId ? mergePinUpdate(prev, marker) : prev));
       const total = entries.reduce((sum, e) => sum + e.quantity, 0);
       toast({
-        title: 'EstatÃ­sticas substituÃ­das',
-        description: `${entries.length} tipo(s) Â· total ${total}.`,
+        title: 'Estatísticas substituídas',
+        description: `${entries.length} tipo(s) · total ${total}.`,
       });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel substituir as estatÃ­sticas.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível substituir as estatísticas.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -470,9 +473,9 @@ export default function HomePage() {
       invalidateDefaultLocations();
       queryClient.removeQueries({ queryKey: ['default-location-entries', markerId] });
       setSelectedPin(null);
-      toast({ title: 'Marcador removido', description: 'O marcador do bairro foi excluÃ­do.' });
+      toast({ title: 'Marcador removido', description: 'O marcador do bairro foi excluído.' });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel remover o marcador.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível remover o marcador.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
       throw err;
     }
@@ -494,9 +497,9 @@ export default function HomePage() {
       setSelectedPin((prev) => (prev?.id === pinId ? mergePinUpdate(prev, updated) : prev));
       setMapMode('normal');
       setMovePinId(null);
-      toast({ title: 'Pin movido', description: 'LocalizaÃ§Ã£o atualizada.' });
+      toast({ title: 'Pin movido', description: 'Localização atualizada.' });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'NÃ£o foi possÃ­vel mover o pin.';
+      const message = err instanceof ApiError ? err.message : 'Não foi possível mover o pin.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
     }
   }, [updatePinsCache, pins, defaultMarkers, invalidateDefaultLocations]);
@@ -504,7 +507,7 @@ export default function HomePage() {
   const handleStartMovePin = useCallback((pinId: string) => {
     setMovePinId(pinId);
     setMapMode('move-pin');
-    toast({ title: 'Mover pin', description: 'Clique no mapa na nova posiÃ§Ã£o.' });
+    toast({ title: 'Mover pin', description: 'Clique no mapa na nova posição.' });
   }, []);
 
   const handleEntriesChanged = useCallback(() => {
@@ -522,7 +525,7 @@ export default function HomePage() {
     if (defaultMarkers.length === 0) {
       toast({
         title: 'Nenhum bairro configurado',
-        description: 'Crie um marcador por bairro antes de registrar ocorrÃªncias.',
+        description: 'Crie um marcador por bairro antes de registrar ocorrências.',
         variant: 'destructive',
       });
       return;
@@ -559,35 +562,35 @@ export default function HomePage() {
 
   const confirmDeleteMarker = useCallback((marker: Pin) => {
     const name = marker.neighborhood ?? 'este bairro';
-    if (window.confirm(`Remover marcador de ${name}? Todas as entradas serÃ£o excluÃ­das.`)) {
+    if (window.confirm(`Remover marcador de ${name}? Todas as entradas serão excluídas.`)) {
       handleDeleteDefaultLocation(marker.id);
     }
   }, [handleDeleteDefaultLocation]);
 
   return (
     <div className="h-screen w-full overflow-hidden fixed inset-0">
-      {/* Filter chips â€” below the menu button on mobile, hidden while the menu is open */}
+      {/* Filter chips — below the menu button on mobile, hidden while the menu is open */}
       <div className={cn('absolute z-[390] left-4 right-[4.5rem] top-[4.5rem] md:top-4 md:left-[272px] md:right-20', panelOpen && 'hidden md:block')}>
         <FilterChips value={filters} onChange={setFilters} />
       </div>
 
       {/* Report at my GPS position */}
       {mapMode === 'normal' && !reportModalOpen && !selectedPin && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[420] flex items-center gap-2">
+        <div className="absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[420] flex items-center gap-2">
         <NearbyButton onClick={() => setNearbyOpen(true)} count={visiblePins.filter((p) => !isDefaultLocationPin(p)).length} />
         <button
           onClick={() => {
             if (!geo.pos) {
               toast({
-                title: geo.error === 'denied' ? 'LocalizaÃ§Ã£o bloqueada' : 'Buscando sua localizaÃ§Ã£o',
+                title: geo.error === 'denied' ? 'Localização bloqueada' : 'Buscando sua localização',
                 description: geo.error === 'denied'
-                  ? 'Ative a localizaÃ§Ã£o no navegador ou toque no mapa no local do problema.'
+                  ? 'Ative a localização no navegador ou toque no mapa no local do problema.'
                   : 'Aguarde alguns segundos ou toque no mapa no local do problema.',
               });
               return;
             }
             if ((geo.accuracy ?? 0) > 150) {
-              toast({ title: 'LocalizaÃ§Ã£o imprecisa', description: `PrecisÃ£o de ~${Math.round(geo.accuracy!)} m. Toque no mapa no local exato para mais precisÃ£o.` });
+              toast({ title: 'Localização imprecisa', description: `Precisão de ~${Math.round(geo.accuracy!)} m. Toque no mapa no local exato para mais precisão.` });
             }
             handleMapClick(geo.pos[0], geo.pos[1], Math.min(50, Math.max(20, geo.accuracy ?? 30)));
           }}
@@ -616,10 +619,13 @@ export default function HomePage() {
       {!online && <OfflineBanner />}
 
       {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
+      {!hint.show && installApp.showBanner && !reportModalOpen && !selectedPin && (
+        <InstallBanner onInstall={installApp.install} onDismiss={installApp.dismiss} />
+      )}
 
       {isFetchingPins && (
         <div className="absolute bottom-[5.5rem] left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
-          <Loader2 size={12} className="animate-spin" /> Carregando ocorrÃªncias...
+          <Loader2 size={12} className="animate-spin" /> Carregando ocorrências...
         </div>
       )}
       <MapView
@@ -655,7 +661,7 @@ export default function HomePage() {
           aria-label={panelOpen ? 'Fechar menu' : 'Abrir menu'}
         >
           {panelOpen ? <X size={18} /> : <Menu size={18} />}
-          <span className="text-sm"><span className="font-semibold">{visiblePins.length}</span> alertas{activeFilterCount > 0 && <span className="text-gray-400"> Â· filtro</span>}</span>
+          <span className="text-sm"><span className="font-semibold">{visiblePins.length}</span> alertas{activeFilterCount > 0 && <span className="text-gray-400"> · filtro</span>}</span>
           {isModerator && pendingCount > 0 && (
             <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
               {pendingCount > 99 ? '99+' : pendingCount}
@@ -685,18 +691,18 @@ export default function HomePage() {
               onChange={(e) => setFetchMode(e.target.value as PinFetchMode)}
               className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
             >
-              <option value="bounds">Ãrea visÃ­vel</option>
-              <option value="nearby">PrÃ³ximos (5 km)</option>
+              <option value="bounds">Área visível</option>
+              <option value="nearby">Próximos (5 km)</option>
             </select>
             <select
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value as DatePreset)}
               className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
             >
-              <option value="all">Todo perÃ­odo</option>
-              <option value="7d">Ãšltimos 7 dias</option>
-              <option value="30d">Ãšltimos 30 dias</option>
-              <option value="90d">Ãšltimos 90 dias</option>
+              <option value="all">Todo período</option>
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+              <option value="90d">Últimos 90 dias</option>
             </select>
           </div>
         </div>
@@ -715,7 +721,7 @@ export default function HomePage() {
                     className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full relative"
                   >
                     <ShieldCheck size={14} />
-                    ModeraÃ§Ã£o
+                    Moderação
                     {pendingCount > 0 && (
                       <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
                         {pendingCount > 99 ? '99+' : pendingCount}
@@ -727,7 +733,7 @@ export default function HomePage() {
                     className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
                   >
                     <BarChart3 size={14} />
-                    Painel analÃ­tico
+                    Painel analítico
                   </Link>
                 </>
               )}
@@ -738,21 +744,21 @@ export default function HomePage() {
                     className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full"
                   >
                     <UserPlus size={14} />
-                    UsuÃ¡rios
+                    Usuários
                   </Link>
                   <button
                     onClick={() => openEntryModal()}
                     className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <FilePlus size={14} />
-                    Registrar sem endereÃ§o
+                    Registrar sem endereço
                   </button>
                   <button
                     onClick={() => openBulkEntryModal()}
                     className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-violet-300 hover:bg-violet-500/10 transition-colors w-full"
                   >
                     <Layers size={14} />
-                    Substituir estatÃ­sticas
+                    Substituir estatísticas
                   </button>
                   <DefaultLocationsAdminSection
                     markers={defaultMarkers}

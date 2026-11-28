@@ -54,7 +54,7 @@ export function NearbySheet({
   );
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-end md:items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="w-full md:max-w-md max-h-[75dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[#161618] border border-white/10 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -91,7 +91,7 @@ export function NearbySheet({
                   />
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">{cfg.label}</span>
+                      <span className="text-sm font-medium text-white">{pin.crimeTypeLabel?.replace(/\s*\(Art\.[^)]*\)/, '') || cfg.label}</span>
                       {pending && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300">aguardando</span>}
                       {pin.status === 'resolved' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">resolvido</span>}
                     </span>

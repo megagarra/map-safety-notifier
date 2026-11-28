@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
+import * as CrimeTypesController from '@/controllers/crimeTypes';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,7 +35,7 @@ const MAX_PHOTOS = 6;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const DRAFT_KEY = 'map-safety:report-draft';
 
-type Draft = { type: PinType; description: string; images: string[] };
+type Draft = { type: PinType; description: string; images: string[]; crimeTypeId?: string | null };
 
 function loadDraft(): Draft | null {
   try {
@@ -69,6 +72,13 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   const [type, setType] = useState<PinType>(() => loadDraft()?.type ?? 'infraestrutura');
   const [description, setDescription] = useState(() => loadDraft()?.description ?? '');
   const [images, setImages] = useState<string[]>(() => loadDraft()?.images ?? []);
+  const [crimeTypeId, setCrimeTypeId] = useState<string | null>(() => loadDraft()?.crimeTypeId ?? null);
+  const { data: crimeTypes = [] } = useQuery({
+    queryKey: ['crime-types'],
+    queryFn: CrimeTypesController.fetchCrimeTypes,
+    enabled: isOpen,
+    staleTime: 60 * 60_000,
+  });
   const [previewImg, setPreviewImg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -81,10 +91,10 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   // Keep the draft on the device: closing by accident (backdrop/back button) never loses it.
   useEffect(() => {
     try {
-      if (hasDraft) localStorage.setItem(DRAFT_KEY, JSON.stringify({ type, description, images }));
+      if (hasDraft) localStorage.setItem(DRAFT_KEY, JSON.stringify({ type, description, images, crimeTypeId }));
       else localStorage.removeItem(DRAFT_KEY);
     } catch { /* ignore */ }
-  }, [type, description, images, hasDraft]);
+  }, [type, description, images, crimeTypeId, hasDraft]);
 
   useEffect(() => {
     if (!location) { setAddress(null); return; }
@@ -101,6 +111,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
 
   const resetForm = () => {
     setType('infraestrutura');
+    setCrimeTypeId(null);
     setDescription('');
     setImages([]);
     setPreviewImg(null);
@@ -138,6 +149,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
       description: description.trim(),
       images,
       ...(address && { address }),
+      ...(type === 'crime' && crimeTypeId && { crimeTypeId }),
     };
 
     try {
@@ -186,6 +198,8 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent
+        onEscapeKeyDown={(e) => { if (previewImg) { e.preventDefault(); setPreviewImg(null); } }}
+        onPointerDownOutside={(e) => { if (previewImg) e.preventDefault(); }}
         className={cn(
           'p-0 gap-0 overflow-hidden border-0 bg-[#121212] shadow-2xl flex flex-col',
           // Mobile: bottom sheet that fits above the keyboard
@@ -238,6 +252,34 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
               ))}
             </div>
           </div>
+
+          {type === 'crime' && crimeTypes.length > 0 && (
+            <div className="space-y-2">
+              <Label id="crime-type-label" className="text-sm font-medium text-white">
+                Qual ocorrência? <span className="text-gray-500 font-normal">(opcional)</span>
+              </Label>
+              <div role="radiogroup" aria-labelledby="crime-type-label" className="flex flex-wrap gap-2">
+                {crimeTypes.map((c) => {
+                  const active = crimeTypeId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setCrimeTypeId(active ? null : c.id)}
+                      className={cn(
+                        'h-10 px-3 rounded-full border text-sm transition-colors',
+                        active ? 'border-red-500 bg-red-500/20 text-white' : 'border-[#2a2a2a] bg-[#1e1e1e] text-gray-300',
+                      )}
+                    >
+                      {c.label.replace(/\s*\(Art\.[^)]*\)/, '')}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div className="space-y-2">
@@ -329,8 +371,8 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
           </Button>
         </div>
 
-        {previewImg && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/95 p-4" onClick={() => setPreviewImg(null)}>
+        {previewImg && createPortal(
+          <div className="fixed inset-0 z-[2000] pointer-events-auto flex items-center justify-center bg-black/95 p-4" onClick={() => setPreviewImg(null)}>
             <button
               type="button"
               onClick={() => setPreviewImg(null)}
@@ -340,7 +382,8 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
               <X size={24} />
             </button>
             <img src={resolveImageUrl(previewImg)} alt="Foto ampliada" className="max-w-full max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
-          </div>
+          </div>,
+          document.body,
         )}
       </DialogContent>
     </Dialog>

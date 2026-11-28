@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { HelpCircle, X, Hand } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { HelpCircle, X, Hand, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PinType } from '@/types';
 
@@ -120,6 +120,69 @@ export function FirstVisitHint({ onDismiss }: { onDismiss: () => void }) {
       <button onClick={onDismiss} className="text-gray-400 hover:text-white self-start" aria-label="Fechar dica">
         <X size={16} />
       </button>
+    </div>
+  );
+}
+
+// --- "Instalar app" (PWA) ---
+
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
+const installListeners = new Set<() => void>();
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e as BeforeInstallPromptEvent;
+    installListeners.forEach((l) => l());
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    installListeners.forEach((l) => l());
+  });
+}
+
+const VISITS_KEY = 'map-safety:visits';
+const INSTALL_DISMISSED_KEY = 'map-safety:install-dismissed';
+
+export function useInstallPrompt() {
+  const [canInstall, setCanInstall] = useState(() => !!deferredPrompt);
+  const [visits] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem(VISITS_KEY) || '0') + 1;
+      localStorage.setItem(VISITS_KEY, String(n));
+      return n;
+    } catch { return 1; }
+  });
+  const [dismissed, setDismissed] = useState(() => {
+    try { return !!localStorage.getItem(INSTALL_DISMISSED_KEY); } catch { return false; }
+  });
+  useEffect(() => {
+    const l = () => setCanInstall(!!deferredPrompt);
+    installListeners.add(l);
+    return () => { installListeners.delete(l); };
+  }, []);
+  const install = async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    await deferredPrompt.userChoice.catch(() => undefined);
+    deferredPrompt = null;
+    setCanInstall(false);
+  };
+  const dismiss = () => {
+    setDismissed(true);
+    try { localStorage.setItem(INSTALL_DISMISSED_KEY, '1'); } catch { /* ignore */ }
+  };
+  return { canInstall, install, dismiss, showBanner: canInstall && !dismissed && visits >= 2 };
+}
+
+export function InstallBanner({ onInstall, onDismiss }: { onInstall: () => void; onDismiss: () => void }) {
+  return (
+    <div className="absolute bottom-[11.5rem] left-4 right-[4.5rem] md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-96 z-[450] rounded-xl bg-[#1f1f23] border border-white/15 shadow-2xl p-3 flex items-center gap-3">
+      <Download size={20} className="text-blue-400 shrink-0" />
+      <p className="flex-1 text-xs text-gray-200">Instale o app para abrir mais rápido e receber alertas.</p>
+      <button onClick={onInstall} className="h-9 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold">Instalar</button>
+      <button onClick={onDismiss} className="w-8 h-8 flex items-center justify-center text-gray-400" aria-label="Agora não"><X size={16} /></button>
     </div>
   );
 }
