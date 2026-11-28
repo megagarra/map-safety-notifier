@@ -43,12 +43,20 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
+let sessionExpiredNotified = false;
+
 async function parseErrorBody(res: Response): Promise<string | undefined> {
   try {
     const body = await res.json();
     if (typeof body.detail === 'string') return body.detail;
     if (Array.isArray(body.detail)) {
-      return body.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join(', ');
+      return body.detail
+        .map((d: { msg?: string; type?: string; ctx?: { min_length?: number } }) => {
+          if (d.type === 'string_too_short' && d.ctx?.min_length) return `Mínimo de ${d.ctx.min_length} caracteres`;
+          return d.msg?.replace(/^Value error, /, '');
+        })
+        .filter(Boolean)
+        .join(', ');
     }
     return undefined;
   } catch {
@@ -119,7 +127,12 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
       res = await doFetch();
     } else {
       clearTokens();
-      onSessionExpired?.();
+      // Many requests can fail together: notify the app only once.
+      if (!sessionExpiredNotified) {
+        sessionExpiredNotified = true;
+        setTimeout(() => { sessionExpiredNotified = false; }, 3000);
+        onSessionExpired?.();
+      }
       const detail = await parseErrorBody(res);
       throw new ApiError(
         getFriendlyErrorMessage(401, detail),

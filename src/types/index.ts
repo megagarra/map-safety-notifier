@@ -33,6 +33,7 @@ export interface Pin {
   stillThereCount?: number;
   resolvedReports?: number;
   userFeedback?: 'still' | 'resolved' | null;
+  reporterKey?: string | null;
   status: PinStatus;
   persistenceDays?: number;
   votes?: number;

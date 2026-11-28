@@ -83,13 +83,17 @@ export function AdminUsersPage() {
 
   const handleSaveEdit = async () => {
     if (!editingUser) return;
+    if (editPassword && editPassword.length < 10) {
+      toast({ title: 'Senha muito curta', description: 'A nova senha precisa ter pelo menos 10 caracteres.', variant: 'destructive' });
+      return;
+    }
     setActionId(editingUser.id);
     try {
       await updateUser(editingUser.id, {
         name: editName.trim() || undefined,
         role: editRole,
         isActive: editActive,
-        ...(editPassword.length >= 8 && { password: editPassword }),
+        ...(editPassword && { password: editPassword }),
       });
       toast({ title: 'Usuário atualizado' });
       setEditingUser(null);

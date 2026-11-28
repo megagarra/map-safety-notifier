@@ -13,9 +13,13 @@ const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
 const ModerationPage = lazy(() => import("./pages/ModerationPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const AboutPage = lazy(() => import("./pages/AboutPage"));
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const PageFallback = () => (
-  <div className="flex h-screen items-center justify-center text-muted-foreground">Carregando…</div>
+  <div className="flex h-[100dvh] items-center justify-center bg-[#121212]" role="status" aria-label="Carregando">
+    <div className="w-10 h-10 border-4 border-t-blue-500 border-blue-300/30 rounded-full animate-spin" />
+  </div>
 );
 import "./App.css";
 
@@ -40,6 +44,7 @@ const App = () => (
       <div className="app-container">
         <HashRouter>
           <AuthProvider>
+            <ErrorBoundary>
             <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<HomePage />} />
@@ -47,9 +52,11 @@ const App = () => (
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/moderation" element={<ModerationPage />} />
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
+              <Route path="/sobre" element={<AboutPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
             </Suspense>
+            </ErrorBoundary>
           </AuthProvider>
         </HashRouter>
       </div>

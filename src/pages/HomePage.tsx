@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
+import { MyReportsSheet, rememberMyReport } from '@/components/MyReportsSheet';
 import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
 import { FilterChips, FirstVisitHint, InstallBanner, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
@@ -29,7 +30,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -99,6 +100,7 @@ export default function HomePage() {
   const dupeShownRef = useRef<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [nearbyOpen, setNearbyOpen] = useState(false);
+  const [myReportsOpen, setMyReportsOpen] = useState(false);
   const online = useOnline();
   const geo = useGeolocation();
   // Page size for "Carregar mais", scoped to the current area/mode/period (resets when they change, without an extra fetch).
@@ -337,7 +339,8 @@ export default function HomePage() {
 
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
-      await PinsController.createPin(data, isAuthenticated);
+      const created = await PinsController.createPin(data, isAuthenticated);
+      rememberMyReport(created.id, created.reporterKey);
       queryClient.invalidateQueries({ queryKey: ['pins'] });
       queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
@@ -629,6 +632,18 @@ export default function HomePage() {
         />
       )}
 
+      {myReportsOpen && (
+        <MyReportsSheet
+          onClose={() => setMyReportsOpen(false)}
+          onOpen={(r) => {
+            setMyReportsOpen(false);
+            setCenter([r.lat, r.lng]);
+            setZoom(17);
+            PinsController.fetchPinById(r.id, isStaff).then((p) => p && setSelectedPin(p));
+          }}
+        />
+      )}
+
       {!online && <OfflineBanner />}
 
       {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
@@ -726,6 +741,20 @@ export default function HomePage() {
         </div>
 
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 shadow-lg overflow-hidden">
+          <button
+            onClick={() => { setPanelOpen(false); setMyReportsOpen(true); }}
+            className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full border-b border-white/10"
+          >
+            <FileText size={14} />
+            Meus relatos
+          </button>
+          <Link
+            to="/sobre"
+            className="flex items-center gap-2 px-3 py-2.5 md:py-2 text-sm text-gray-300 hover:bg-white/5 transition-colors w-full border-b border-white/10"
+          >
+            <Info size={14} />
+            Como funciona
+          </Link>
           {isAuthenticated ? (
             <>
               <div className="px-3 py-2 border-b border-white/10">
