@@ -625,15 +625,15 @@ export default function HomePage() {
   }, [handleDeleteDefaultLocation]);
 
   return (
-    <div className="h-screen w-full overflow-hidden fixed inset-0">
+    <div className="h-[100dvh] w-full overflow-hidden fixed inset-0">
       {/* Filter chips — below the menu button on mobile, hidden while the menu is open */}
-      <div className={cn('map-chips absolute z-[390] left-4 right-4 top-[4.5rem] md:top-4 md:left-[272px] md:right-20')}>
+      <div className={cn('map-chips absolute z-[390] left-4 right-4 top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4 md:left-[272px] md:right-20')}>
         <FilterChips value={filters} onChange={setFilters} staff={isStaff} />
       </div>
 
       {/* Report at my GPS position */}
       {mapMode === 'normal' && !reportModalOpen && !selectedPin && (
-        <div className="absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[420] flex items-center gap-2">
+        <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[420] flex items-center gap-2">
         <NearbyButton onClick={() => setNearbyOpen(true)} count={visiblePins.filter((p) => !isDefaultLocationPin(p)).length} />
         <button
           onClick={() => {
@@ -695,7 +695,7 @@ export default function HomePage() {
       )}
 
       {isFetchingPins && (
-        <div className="absolute bottom-[5.5rem] left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+        <div className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
           <Loader2 size={12} className="animate-spin" /> Carregando ocorrências...
         </div>
       )}
@@ -725,7 +725,7 @@ export default function HomePage() {
         onBulkRegisterDefaultEntry={isAdmin ? openBulkEntryModal : undefined}
       />
 
-      <div className={cn('absolute top-4 left-4 flex flex-col gap-2 max-md:w-auto w-[240px] max-w-[calc(100vw-5.5rem)] max-h-[calc(100dvh-2rem)]', panelOpen ? 'z-[1600]' : 'z-[400]')}>
+      <div className={cn('absolute top-[calc(1rem+env(safe-area-inset-top))] md:top-4 left-4 flex flex-col gap-2 max-md:w-auto w-[240px] max-w-[calc(100vw-5.5rem)] max-h-[calc(100dvh-2rem)]', panelOpen ? 'z-[1600]' : 'z-[400]')}>
         {/* Phones: menu button opens a side menu, so nothing else sits on top of the map */}
         <button
           onClick={() => setPanelOpen(true)}
@@ -759,7 +759,7 @@ export default function HomePage() {
           aria-label="Menu"
           className={cn(
             'flex-col gap-2 overflow-y-auto overscroll-contain',
-            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85vw] max-md:max-w-[320px] max-md:bg-[#121212] max-md:border-r max-md:border-white/10 max-md:shadow-2xl max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85vw] max-md:max-w-[320px] max-md:bg-[#121212] max-md:border-r max-md:border-white/10 max-md:shadow-2xl max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
             panelOpen ? 'flex max-md:animate-in max-md:slide-in-from-left-full max-md:duration-200' : 'hidden md:flex',
           )}
         >

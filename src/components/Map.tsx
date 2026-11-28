@@ -1000,7 +1000,7 @@ const MapComponent = ({
 
       {/* Theme toggle */}
       {/* Phones: wide search bar next to the menu button (theme + legend live in the side menu). */}
-      <div className="absolute top-4 right-4 left-[4.25rem] md:left-auto z-[450] flex flex-col gap-2 items-stretch md:items-end">
+      <div className="absolute top-[calc(1rem+env(safe-area-inset-top))] md:top-4 right-4 left-[4.25rem] md:left-auto z-[450] flex flex-col gap-2 items-stretch md:items-end">
         <MapSearch map={mapInstance} />
         <div className="hidden md:flex flex-col gap-2 items-end">
         <button
@@ -1016,7 +1016,7 @@ const MapComponent = ({
       </div>
 
       {/* Location button — automatically adjusts for mobile and desktop zooms */}
-      <div className="absolute bottom-[130px] md:bottom-[196px] right-[16px] md:right-[24px] z-[400]">
+      <div className="absolute bottom-[calc(130px+env(safe-area-inset-bottom))] md:bottom-[196px] right-[16px] md:right-[24px] z-[400]">
         <LocateButton map={mapInstance} />
       </div>
     </div>
