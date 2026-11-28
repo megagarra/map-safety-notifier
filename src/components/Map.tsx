@@ -467,13 +467,13 @@ function PinDetailsModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
         <div
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-label={isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : `Ocorrência: ${cfg.label}`}
-          className={cn("relative w-[95vw] sm:w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-h-[80vh] mx-auto")}
+          className={cn("relative w-full sm:w-[92%] sm:max-w-[420px] max-h-[85dvh] overflow-y-auto overscroll-contain custom-scrollbar rounded-t-2xl sm:rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn pb-[env(safe-area-inset-bottom)]", isMobile && "mx-auto")}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

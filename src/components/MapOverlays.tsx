@@ -39,7 +39,7 @@ export function FilterChips({ value, onChange, staff }: { value: MapFilters; onC
   const toggleType = (t: PinType) =>
     onChange({ ...value, types: value.types.includes(t) ? value.types.filter((x) => x !== t) : [...value.types, t] });
   return (
-    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 pr-6 [mask-image:linear-gradient(to_right,black_85%,transparent)]">
       <Chip active={!!value.heat} onClick={() => onChange({ ...value, heat: !value.heat })} tone="bg-gradient-to-r from-yellow-600 to-red-600">
         <Flame size={13} /> Calor
       </Chip>

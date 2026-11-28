@@ -186,7 +186,7 @@ self.addEventListener('push', event => {
     icon: '/pwa-192x192.png',
     badge: '/favicon.ico',
     data: data, // Armazena os dados para uso no clique
-    tag: data.pin_id || 'general-alert',
+    tag: `${data.event || 'alert'}:${data.pin_id}` || 'general-alert',
     renotify: true,
     vibrate: [100, 50, 100],
     actions: [
@@ -206,9 +206,14 @@ self.addEventListener('notificationclick', event => {
   notification.close();
 
   // URL para abrir (pode incluir lat/lng se disponível)
+  // Open the alert itself; a rejected report opens "Meus relatos" (shows the reason).
   let urlToOpen = '/';
-  if (data && data.lat && data.lng) {
-    urlToOpen = `/?lat=${data.lat}&lng=${data.lng}&z=15`;
+  if (data && data.event === 'my_report_rejected') {
+    urlToOpen = '/#/?myreports=1';
+  } else if (data && data.pin_id) {
+    urlToOpen = `/#/?pin=${data.pin_id}` + (data.lat && data.lng ? `&lat=${data.lat}&lng=${data.lng}&z=17` : '');
+  } else if (data && data.lat && data.lng) {
+    urlToOpen = `/#/?lat=${data.lat}&lng=${data.lng}&z=15`;
   }
 
   event.waitUntil(

@@ -217,6 +217,7 @@ export default function HomePage() {
     if (authLoading || deepLinkDone.current) return;
     deepLinkDone.current = true;
     const qs = new URLSearchParams((window.location.hash.split('?')[1] ?? '') + '&' + window.location.search.slice(1));
+    if (qs.get('myreports')) setMyReportsOpen(true);
     const id = qs.get('pin');
     // A real ?query (push notification links) was consumed at init — drop it so reloads don't jump back.
     if (window.location.search) {

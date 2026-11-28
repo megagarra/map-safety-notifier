@@ -104,7 +104,9 @@ export function useNotifications(isStaff = false) {
     if ('serviceWorker' in navigator) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data && event.data.type === 'NAVIGATE') {
+          // Hash-only changes don't reload: force it so the deep link (pin / Meus relatos) is applied.
           window.location.href = event.data.url;
+          if (String(event.data.url).includes('#')) window.location.reload();
         }
       };
       navigator.serviceWorker.addEventListener('message', handleMessage);
@@ -159,7 +161,13 @@ export async function ensurePushSubscription(): Promise<PushSubscription | null>
 /** Notify this browser when the given report (proven by its reporterKey) is approved, rejected or resolved. */
 export async function watchMyReport(pinId: string, key: string, { ask = true } = {}): Promise<boolean> {
   try {
-    if (!ask && (!('Notification' in window) || Notification.permission !== 'granted')) return false;
+    if (!ask) {
+      // Silent mode: only if this browser is already subscribed (no prompts, no new subscription).
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
+      if (Notification.permission !== 'granted') return false;
+      const existing = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (!existing) return false;
+    }
     const sub = await ensurePushSubscription();
     if (!sub) return false;
     const res = await fetch(apiUrl(`/api/pins/${pinId}/watch`), {
@@ -167,8 +175,13 @@ export async function watchMyReport(pinId: string, key: string, { ask = true } =
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, endpoint: sub.endpoint }),
     });
-    return res.ok;
-  } catch {
+    if (!res.ok) throw new ApiError('Não foi possível ativar o aviso para este relato.', res.status);
+    return true;
+  } catch (err) {
+    if (ask) {
+      const message = err instanceof ApiError ? err.message : 'Não foi possível ativar o aviso.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    }
     return false;
   }
 }
