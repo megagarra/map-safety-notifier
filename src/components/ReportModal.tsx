@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { PinType, CreatePinInput } from '@/types';
 import { uploadImage } from '@/controllers/pins';
-import { resolveImageUrl } from '@/lib/media';
+import { resolveImageUrl, thumbUrl, fallbackToFull } from '@/lib/media';
 import { ApiError } from '@/lib/errors';
 import {
   Image as ImageIcon,
@@ -314,7 +314,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                     className="w-full h-full rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#252525]"
                     aria-label={`Ver foto ${i + 1}`}
                   >
-                    <img src={resolveImageUrl(img)} alt={`Foto ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    <img src={thumbUrl(img)} onError={fallbackToFull(img)} alt={`Foto ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </button>
                   <button
                     type="button"

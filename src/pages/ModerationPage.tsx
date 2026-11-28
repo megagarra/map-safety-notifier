@@ -20,7 +20,7 @@ import { ApiError } from '@/lib/errors';
 import { getPinConfig } from '@/lib/pinConfig';
 import { hasValidPinLocation } from '@/lib/pins';
 import { ArrowLeft, Check, Loader2, X, MapPin, Construction, AlertTriangle, Map as MapIcon, RotateCcw, RefreshCw } from 'lucide-react';
-import { resolveImageUrl } from '@/lib/media';
+import { resolveImageUrl, thumbUrl, fallbackToFull } from '@/lib/media';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -119,7 +119,7 @@ function PinModerationCard({
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
           {pin.images.map((img, i) => (
             <button key={img} type="button" onClick={() => onPreview(img)} className="shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-[#2a2a2a]" aria-label={`Ver foto ${i + 1}`}>
-              <img src={resolveImageUrl(img)} alt="" loading="lazy" className="w-full h-full object-cover" />
+              <img src={thumbUrl(img)} onError={fallbackToFull(img)} alt="" loading="lazy" className="w-full h-full object-cover" />
             </button>
           ))}
         </div>
@@ -171,7 +171,7 @@ function CitizenResolvedCard({
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
           {pin.images.map((img, i) => (
             <button key={img} type="button" onClick={() => onPreview(img)} className="shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-[#2a2a2a]" aria-label={`Ver foto ${i + 1}`}>
-              <img src={resolveImageUrl(img)} alt="" loading="lazy" className="w-full h-full object-cover" />
+              <img src={thumbUrl(img)} onError={fallbackToFull(img)} alt="" loading="lazy" className="w-full h-full object-cover" />
             </button>
           ))}
         </div>

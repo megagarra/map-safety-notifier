@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
 import { rememberMyReport } from '@/lib/myReports';
+import { watchMyReport } from '@/hooks/useNotifications';
+import { ToastAction } from '@/components/ui/toast';
 import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
 import { FilterChips, FirstVisitHint, InstallBanner, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
@@ -113,6 +115,7 @@ export default function HomePage() {
   }, []);
   const online = useOnline();
   const geo = useGeolocation();
+  const [filters, setFiltersState] = useState<MapFilters>(loadFilters);
   // Page size for "Carregar mais", scoped to the current area/mode/period (resets when they change, without an extra fetch).
   const [pageState, setPageState] = useState<{ scope: string; limit: number }>({ scope: '', limit: 200 });
   const boundsKeyStr = useMemo(() => boundsKey(bounds), [bounds]);
@@ -124,8 +127,8 @@ export default function HomePage() {
     () =>
       fetchMode === 'nearby'
         ? (['pins', 'nearby', center[0].toFixed(3), center[1].toFixed(3), datePreset, isStaff, pageLimit] as const)
-        : (['pins', 'bounds', boundsKeyStr, datePreset, isStaff, pageLimit] as const),
-    [fetchMode, center, boundsKeyStr, datePreset, isStaff, pageLimit],
+        : (['pins', 'bounds', boundsKeyStr, datePreset, isStaff, pageLimit, isStaff && !!filters.archived] as const),
+    [fetchMode, center, boundsKeyStr, datePreset, isStaff, pageLimit, filters.archived],
   );
 
   const { data: pinsPage, isFetching: isFetchingPins, isError, dataUpdatedAt: pinsUpdatedAt } = useQuery({
@@ -146,6 +149,7 @@ export default function HomePage() {
         ...bounds,
         limit: pageLimit,
         offset: 0,
+        include_archived: isStaff && !!filters.archived,
         auth: isStaff,
         ...dateFilter,
       });
@@ -192,7 +196,6 @@ export default function HomePage() {
   }, [pins, defaultLocations, isAdmin]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
-  const [filters, setFiltersState] = useState<MapFilters>(loadFilters);
   const setFilters = useCallback((f: MapFilters) => { setFiltersState(f); saveFilters(f); }, []);
   const hint = useFirstVisitHint();
   const installApp = useInstallPrompt();
@@ -355,9 +358,26 @@ export default function HomePage() {
       queryClient.invalidateQueries({ queryKey: ['pins'] });
       queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
+      const key = created.reporterKey;
+      // Notifications already allowed: follow this report silently. Otherwise offer it in the toast.
+      const watching = key ? await watchMyReport(created.id, key, { ask: false }) : false;
       toast({
         title: 'Ocorrência enviada',
-        description: 'Ela já aparece no mapa como "aguardando aprovação". Obrigado!',
+        description: watching
+          ? 'Ela já aparece no mapa como "aguardando aprovação". Avisaremos quando for revisada.'
+          : 'Ela já aparece no mapa como "aguardando aprovação". Obrigado!',
+        action: !watching && key && 'Notification' in window && Notification.permission !== 'denied' ? (
+          <ToastAction
+            altText="Avisar quando for revisada"
+            onClick={() => {
+              watchMyReport(created.id, key).then((ok) => {
+                if (ok) toast({ title: 'Combinado!', description: 'Você será avisado quando o relato for revisado.' });
+              });
+            }}
+          >
+            Avisar-me
+          </ToastAction>
+        ) : undefined,
       });
       return true;
     } catch (err) {
@@ -598,7 +618,7 @@ export default function HomePage() {
     <div className="h-screen w-full overflow-hidden fixed inset-0">
       {/* Filter chips — below the menu button on mobile, hidden while the menu is open */}
       <div className={cn('absolute z-[390] left-4 right-[4.5rem] top-[4.5rem] md:top-4 md:left-[272px] md:right-20', panelOpen && 'hidden md:block')}>
-        <FilterChips value={filters} onChange={setFilters} />
+        <FilterChips value={filters} onChange={setFilters} staff={isStaff} />
       </div>
 
       {/* Report at my GPS position */}

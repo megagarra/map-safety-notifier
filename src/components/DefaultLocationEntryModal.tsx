@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Pin, PinType, DefaultLocationEntryInput } from '@/types';
 import { uploadImage } from '@/controllers/pins';
-import { resolveImageUrl } from '@/lib/media';
+import { resolveImageUrl, thumbUrl, fallbackToFull } from '@/lib/media';
 import { ApiError } from '@/lib/errors';
 import { Construction, AlertTriangle, Loader2, Image as ImageIcon, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -204,7 +204,7 @@ export function DefaultLocationEntryModal({
             <div className="flex flex-wrap gap-2">
               {images.map((img, i) => (
                 <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-[#2a2a2a]">
-                  <img src={resolveImageUrl(img)} alt="" className="w-full h-full object-cover" />
+                  <img src={thumbUrl(img)} onError={fallbackToFull(img)} alt="" className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}

@@ -21,6 +21,7 @@ import { api, apiFormData, buildQuery } from '@/lib/api';
 import { unwrapApiList } from '@/lib/apiList';
 
 export interface FetchPinsParams extends Partial<MapBounds> {
+  include_archived?: boolean;
   limit?: number;
   offset?: number;
   auth?: boolean;
@@ -40,9 +41,9 @@ export interface FetchNearbyParams {
 }
 
 export const fetchPins = async (params: FetchPinsParams = {}): Promise<PaginatedResponse<Pin>> => {
-  const { limit = 200, offset = 0, auth = false, reported_after, reported_before, ...bounds } = params;
+  const { limit = 200, offset = 0, auth = false, reported_after, reported_before, include_archived, ...bounds } = params;
   return api<PaginatedResponse<Pin>>(
-    buildQuery('/api/pins', { limit, offset, reported_after, reported_before, ...bounds }),
+    buildQuery('/api/pins', { limit, offset, reported_after, reported_before, include_archived: include_archived ? 'true' : undefined, ...bounds }),
     { auth },
   );
 };

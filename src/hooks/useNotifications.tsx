@@ -128,32 +128,55 @@ export function loadAlertZone(): AlertZone {
 }
 
 /** Ensures push permission + subscription, then stores the zone on the server. Returns false if not possible. */
-export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
+/** Asks permission if needed, subscribes this browser and registers it on the server. Null if not possible. */
+export async function ensurePushSubscription(): Promise<PushSubscription | null> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     toast({ title: 'Não suportado', description: 'Este navegador não suporta notificações.', variant: 'destructive' });
-    return false;
+    return null;
   }
   if (Notification.permission !== 'granted') {
     const p = await Notification.requestPermission();
     if (p !== 'granted') {
-      toast({ title: 'Notificações bloqueadas', description: 'Permita notificações no navegador para receber alertas.' });
-      return false;
+      toast({ title: 'Notificações bloqueadas', description: 'Permita notificações no navegador para receber avisos.' });
+      return null;
     }
   }
+  const registration = await navigator.serviceWorker.ready;
+  let sub = await registration.pushManager.getSubscription();
+  if (!sub) {
+    const r = await fetch(apiUrl('/api/notifications/vapid-public-key'));
+    const { public_key } = await r.json();
+    sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(public_key) });
+  }
+  const token = getAccessToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const subRes = await fetch(apiUrl('/api/notifications/subscribe'), { method: 'POST', headers, body: JSON.stringify(sub.toJSON()) });
+  if (!subRes.ok) throw new ApiError('Este navegador não pôde ser registrado para notificações.', subRes.status);
+  return sub;
+}
+
+/** Notify this browser when the given report (proven by its reporterKey) is approved, rejected or resolved. */
+export async function watchMyReport(pinId: string, key: string, { ask = true } = {}): Promise<boolean> {
   try {
-    const registration = await navigator.serviceWorker.ready;
-    let sub = await registration.pushManager.getSubscription();
-    if (!sub) {
-      const r = await fetch(apiUrl('/api/notifications/vapid-public-key'));
-      const { public_key } = await r.json();
-      sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(public_key) });
-    }
-    // Make sure the server knows this subscription (no-op for existing rows; never downgrades staff).
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const subRes = await fetch(apiUrl('/api/notifications/subscribe'), { method: 'POST', headers, body: JSON.stringify(sub.toJSON()) });
-    if (!subRes.ok) throw new ApiError('Este navegador não pôde ser registrado para notificações.', subRes.status);
+    if (!ask && (!('Notification' in window) || Notification.permission !== 'granted')) return false;
+    const sub = await ensurePushSubscription();
+    if (!sub) return false;
+    const res = await fetch(apiUrl(`/api/pins/${pinId}/watch`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, endpoint: sub.endpoint }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
+  try {
+    const sub = await ensurePushSubscription();
+    if (!sub) return false;
     const res = await fetch(apiUrl('/api/notifications/zone'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

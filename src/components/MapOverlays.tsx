@@ -3,7 +3,7 @@ import { HelpCircle, X, Hand, Download, Flame } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PinType } from '@/types';
 
-export type MapFilters = { types: PinType[]; hideResolved: boolean; onlyPending: boolean; heat?: boolean };
+export type MapFilters = { types: PinType[]; hideResolved: boolean; onlyPending: boolean; heat?: boolean; archived?: boolean };
 
 const FILTER_KEY = 'map-safety:filters';
 const HINT_KEY = 'map-safety:hint-seen';
@@ -35,7 +35,7 @@ function Chip({ active, onClick, children, tone }: { active: boolean; onClick: (
   );
 }
 
-export function FilterChips({ value, onChange }: { value: MapFilters; onChange: (f: MapFilters) => void }) {
+export function FilterChips({ value, onChange, staff }: { value: MapFilters; onChange: (f: MapFilters) => void; staff?: boolean }) {
   const toggleType = (t: PinType) =>
     onChange({ ...value, types: value.types.includes(t) ? value.types.filter((x) => x !== t) : [...value.types, t] });
   return (
@@ -55,6 +55,11 @@ export function FilterChips({ value, onChange }: { value: MapFilters; onChange: 
       <Chip active={value.hideResolved} onClick={() => onChange({ ...value, hideResolved: !value.hideResolved })} tone="bg-emerald-700">
         Ocultar resolvidos
       </Chip>
+      {staff && (
+        <Chip active={!!value.archived} onClick={() => onChange({ ...value, archived: !value.archived })} tone="bg-slate-600">
+          Arquivados
+        </Chip>
+      )}
     </div>
   );
 }
