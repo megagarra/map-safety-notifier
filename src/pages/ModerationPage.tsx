@@ -25,7 +25,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
-type ModerationTab = 'pending' | 'rejected';
+type ModerationTab = 'pending' | 'rejected' | 'resolved';
 
 function getTypeIcon(type: string) {
   return type === 'crime' ? <AlertTriangle size={14} className="text-red-400" /> : <Construction size={14} className="text-orange-400" />;
@@ -111,6 +111,50 @@ function PinModerationCard({
   );
 }
 
+function CitizenResolvedCard({
+  pin, isActing, onDecide, onPreview,
+}: { pin: Pin; isActing: boolean; onDecide: (resolve: boolean) => void; onPreview: (url: string) => void }) {
+  const cfg = getPinConfig(pin.type);
+  return (
+    <div className="rounded-xl border border-emerald-500/20 bg-[#1a1a1a] p-4 space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        {getTypeIcon(pin.type)}
+        <span className={cn('text-sm font-medium', cfg.color)}>{cfg.label}</span>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
+          {pin.resolvedReports ?? 0} dizem resolvido · {pin.stillThereCount ?? 0} ainda está
+        </span>
+      </div>
+      <p className="text-sm text-gray-200">{pin.description}</p>
+      {pin.address && <p className="text-xs text-gray-400 flex items-center gap-1"><MapPin size={12} /> {pin.address}</p>}
+      {pin.images.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          {pin.images.map((img, i) => (
+            <button key={img} type="button" onClick={() => onPreview(img)} className="shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-[#2a2a2a]" aria-label={`Ver foto ${i + 1}`}>
+              <img src={resolveImageUrl(img)} alt="" loading="lazy" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+      {hasValidPinLocation(pin) && (
+        <Link
+          to={`/?pin=${pin.id}&lat=${pin.location.lat.toFixed(5)}&lng=${pin.location.lng.toFixed(5)}&z=17`}
+          className="h-11 w-full rounded-lg border border-[#2a2a2a] bg-[#121212] text-sm text-gray-200 flex items-center justify-center gap-2 hover:bg-[#222]"
+        >
+          <MapIcon size={15} /> Ver no mapa
+        </Link>
+      )}
+      <div className="flex gap-2">
+        <Button onClick={() => onDecide(true)} disabled={isActing} className="h-11 flex-1 bg-emerald-600 hover:bg-emerald-700">
+          {isActing ? <Loader2 size={16} className="animate-spin" /> : <><Check size={16} className="mr-1" /> Marcar resolvido</>}
+        </Button>
+        <Button onClick={() => onDecide(false)} disabled={isActing} variant="outline" className="h-11 flex-1 border-[#2a2a2a] bg-transparent text-gray-200">
+          Manter aberto
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ModerationPage() {
   const { isModerator, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -137,6 +181,13 @@ export function ModerationPage() {
     refetchInterval: 60_000,
   });
 
+  const { data: citizenResolved = [], isLoading: loadingResolved, isError: errorResolved, refetch: refetchResolved } = useQuery({
+    queryKey: ['moderation', 'citizen-resolved'],
+    queryFn: PinsController.fetchCitizenResolved,
+    enabled: isModerator,
+    refetchInterval: 120_000,
+  });
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center">
@@ -149,9 +200,9 @@ export function ModerationPage() {
     return <Navigate to="/login" replace />;
   }
 
-  const list = tab === 'pending' ? pending : rejected;
-  const isLoading = tab === 'pending' ? loadingPending : loadingRejected;
-  const isError = tab === 'pending' ? errorPending : errorRejected;
+  const list = tab === 'pending' ? pending : tab === 'rejected' ? rejected : citizenResolved;
+  const isLoading = tab === 'pending' ? loadingPending : tab === 'rejected' ? loadingRejected : loadingResolved;
+  const isError = tab === 'pending' ? errorPending : tab === 'rejected' ? errorRejected : errorResolved;
 
   // Optimistic: remove the card right away; put it back if the request fails.
   const removeFromLists = (id: string) => {
@@ -195,6 +246,26 @@ export function ModerationPage() {
       }
       rollback();
       const message = err instanceof ApiError ? err.message : 'Erro ao aprovar.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      endAct(pin.id);
+    }
+  };
+
+  const handleCitizenResolved = async (pin: Pin, resolve: boolean) => {
+    startAct(pin.id);
+    queryClient.setQueryData<Pin[]>(['moderation', 'citizen-resolved'], (l) => l?.filter((p) => p.id !== pin.id));
+    try {
+      if (resolve) {
+        await PinsController.updatePin(pin.id, { status: 'resolved', comment: `Confirmado como resolvido (${pin.resolvedReports ?? 0} cidadãos indicaram)` });
+      } else {
+        await PinsController.resetResolvedFeedback(pin.id);
+      }
+      toast({ title: resolve ? 'Marcado como resolvido' : 'Mantido em aberto' });
+      invalidateAll();
+    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: ['moderation', 'citizen-resolved'] });
+      const message = err instanceof ApiError ? err.message : 'Erro ao atualizar.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
     } finally {
       endAct(pin.id);
@@ -265,6 +336,15 @@ export function ModerationPage() {
           >
             Rejeitados ({rejected.length})
           </button>
+          <button
+            onClick={() => setTab('resolved')}
+            className={cn(
+              'flex-1 h-11 text-sm rounded-lg border transition-colors',
+              tab === 'resolved' ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300' : 'border-[#2a2a2a] text-gray-400',
+            )}
+          >
+            Resolvidos? ({citizenResolved.length})
+          </button>
         </div>
 
         {isLoading ? (
@@ -274,17 +354,25 @@ export function ModerationPage() {
         ) : isError ? (
           <div className="rounded-xl border border-red-900/50 bg-red-900/10 p-6 text-center space-y-3">
             <p className="text-sm text-red-300">Não foi possível carregar a fila.</p>
-            <Button onClick={() => (tab === 'pending' ? refetchPending() : refetchRejected())} variant="outline" className="h-11 border-[#2a2a2a] bg-transparent text-white">
+            <Button onClick={() => (tab === 'pending' ? refetchPending() : tab === 'rejected' ? refetchRejected() : refetchResolved())} variant="outline" className="h-11 border-[#2a2a2a] bg-transparent text-white">
               <RefreshCw size={15} className="mr-2" /> Tentar de novo
             </Button>
           </div>
         ) : list.length === 0 ? (
           <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-8 text-center text-gray-400">
-            {tab === 'pending' ? 'Nenhuma ocorrência aguardando revisão.' : 'Nenhuma ocorrência rejeitada.'}
+            {tab === 'pending' ? 'Nenhuma ocorrência aguardando revisão.' : tab === 'rejected' ? 'Nenhuma ocorrência rejeitada.' : 'Nenhuma ocorrência indicada como resolvida pelos cidadãos.'}
           </div>
         ) : (
           <div className="space-y-3">
-            {list.map((pin) => (
+            {list.map((pin) => tab === 'resolved' ? (
+              <CitizenResolvedCard
+                key={pin.id}
+                pin={pin}
+                isActing={acting.has(pin.id)}
+                onPreview={setPreview}
+                onDecide={(resolve) => handleCitizenResolved(pin, resolve)}
+              />
+            ) : (
               <PinModerationCard
                 key={pin.id}
                 pin={pin}

@@ -65,6 +65,15 @@ export const fetchRejectedModeration = async (): Promise<Pin[]> => {
   return unwrapApiList<Pin>(data);
 };
 
+export const resetResolvedFeedback = async (id: string): Promise<void> => {
+  await api<void>(`/api/pins/${id}/feedback/reset`, { method: 'POST', auth: true });
+};
+
+export const fetchCitizenResolved = async (): Promise<Pin[]> => {
+  const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/moderation/citizen-resolved', { auth: true });
+  return unwrapApiList<Pin>(data);
+};
+
 export const approvePin = async (id: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${id}/approve`, { method: 'POST', auth: true });
 };

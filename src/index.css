@@ -924,7 +924,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, [role="radio"]:focu
 
 /* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *:not(.animate-spin), *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

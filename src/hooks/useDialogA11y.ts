@@ -14,6 +14,9 @@ export function useDialogA11y<T extends HTMLElement>(onClose: () => void) {
     node?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
 
     const onKey = (e: KeyboardEvent) => {
+      // A nested dialog (e.g. Radix confirm) owns the key while focus is inside it.
+      const active = document.activeElement;
+      if (e.defaultPrevented || (active && node && !node.contains(active) && active.closest('[role="dialog"],[role="alertdialog"]'))) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         closeRef.current();

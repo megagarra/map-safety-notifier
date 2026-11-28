@@ -54,7 +54,7 @@ export function useNotifications(isStaff = false) {
         fetch(apiUrl('/api/notifications/zone'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ endpoint: subscription.endpoint, ...zone }),
+          body: JSON.stringify({ endpoint: subscription.endpoint, auth: subscription.toJSON().keys?.auth, ...zone }),
         }).catch(() => undefined);
       }
 
@@ -156,7 +156,7 @@ export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
     const res = await fetch(apiUrl('/api/notifications/zone'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: sub.endpoint, lat: zone?.lat ?? null, lng: zone?.lng ?? null, radiusM: zone?.radiusM ?? null }),
+      body: JSON.stringify({ endpoint: sub.endpoint, auth: sub.toJSON().keys?.auth, lat: zone?.lat ?? null, lng: zone?.lng ?? null, radiusM: zone?.radiusM ?? null }),
     });
     if (!res.ok) throw new ApiError('Falha ao salvar a área de alertas.', res.status);
     try {
