@@ -7,7 +7,7 @@ import { watchMyReport } from '@/hooks/useNotifications';
 import { ToastAction } from '@/components/ui/toast';
 import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
-import { FilterChips, FirstVisitHint, InstallBanner, LegendList, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
+import { FilterChips, CrimeTypeFilter, NoResultsHint, countActiveFilters, NO_FILTERS, FirstVisitHint, InstallBanner, LegendList, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 // Heavy, rarely-first-needed UI is code-split so the map paints sooner on slow phones.
@@ -225,17 +225,28 @@ export default function HomePage() {
   const setFilters = useCallback((f: MapFilters) => { setFiltersState(f); saveFilters(f); }, []);
   const hint = useFirstVisitHint();
   const installApp = useInstallPrompt();
-  const activeFilterCount = filters.types.length + (filters.hideResolved ? 1 : 0) + (filters.onlyPending ? 1 : 0); // heat is a view mode, not a filter
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!filters.recent) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [filters.recent]);
+  const activeFilterCount = countActiveFilters(filters); // heat is a view mode, not a filter
   const visiblePins = useMemo(() => {
     if (!activeFilterCount) return pins;
     return pins.filter((p) => {
-      if (isDefaultLocationPin(p)) return !filters.onlyPending;
+      // Neighbourhood statistics markers aren't single reports: hide them when filtering reports by detail.
+      if (isDefaultLocationPin(p)) return !filters.onlyPending && !filters.recent && !filters.confirmed && !filters.crimeTypeIds?.length;
       if (filters.types.length && !filters.types.includes(p.type)) return false;
       if (filters.hideResolved && p.status === 'resolved') return false;
       if (filters.onlyPending && p.approvalStatus !== 'pending') return false;
+      if (filters.recent && now - new Date(p.reportedAt).getTime() > 24 * 3600 * 1000) return false;
+      if (filters.confirmed && !((p.votes ?? 0) > 0 || (p.stillThereCount ?? 0) > 0)) return false;
+      if (filters.crimeTypeIds?.length && !(p.type === 'crime' && p.crimeTypeId && filters.crimeTypeIds.includes(p.crimeTypeId))) return false;
       return true;
     });
-  }, [pins, filters, activeFilterCount]);
+  }, [pins, filters, activeFilterCount, now]);
 
   // Deep link: #/?pin=<id> opens that report (shared via WhatsApp etc.). Waits for auth so staff can open pending pins.
   const deepLinkDone = useRef(false);
@@ -704,6 +715,10 @@ export default function HomePage() {
         </Suspense>
       )}
 
+      {activeFilterCount > 0 && pins.length > 0 && visiblePins.length === 0 && !panelOpen && (
+        <NoResultsHint onClear={() => setFilters({ ...NO_FILTERS, heat: filters.heat, archived: filters.archived })} />
+      )}
+
       {!online && <OfflineBanner dataTime={pinsUpdatedAt || undefined} />}
 
       {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
@@ -828,6 +843,8 @@ export default function HomePage() {
           </div>
           <div className="-mx-3 mt-2"><AlertZonePicker gps={geo.pos} mapCenter={center} /></div>
         </div>
+
+        <CrimeTypeFilter value={filters} onChange={setFilters} />
 
         <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 overflow-hidden">
           <button

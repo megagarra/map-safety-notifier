@@ -1,9 +1,30 @@
 import { useState, useEffect } from 'react';
-import { HelpCircle, X, Hand, Download, Flame } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { HelpCircle, X, Hand, Download, Flame, Clock, Users, FilterX } from 'lucide-react';
+import * as CrimeTypesController from '@/controllers/crimeTypes';
 import { cn } from '@/lib/utils';
 import type { PinType } from '@/types';
 
-export type MapFilters = { types: PinType[]; hideResolved: boolean; onlyPending: boolean; heat?: boolean; archived?: boolean };
+export type MapFilters = {
+  types: PinType[];
+  hideResolved: boolean;
+  onlyPending: boolean;
+  heat?: boolean;
+  archived?: boolean;
+  /** Only reports from the last 24 hours */
+  recent?: boolean;
+  /** Only reports neighbours confirmed ("Eu também vi" / still there) */
+  confirmed?: boolean;
+  /** Only these crime types (empty = all) */
+  crimeTypeIds?: string[];
+};
+
+/** Number of active filters (heat is a view mode, archived a staff view: not counted). */
+export function countActiveFilters(f: MapFilters): number {
+  return f.types.length + (f.hideResolved ? 1 : 0) + (f.onlyPending ? 1 : 0) + (f.recent ? 1 : 0) + (f.confirmed ? 1 : 0) + (f.crimeTypeIds?.length ? 1 : 0);
+}
+
+export const NO_FILTERS: MapFilters = { types: [], hideResolved: false, onlyPending: false };
 
 const FILTER_KEY = 'map-safety:filters';
 const HINT_KEY = 'map-safety:hint-seen';
@@ -11,7 +32,17 @@ const HINT_KEY = 'map-safety:hint-seen';
 export function loadFilters(): MapFilters {
   try {
     const f = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null');
-    if (f && Array.isArray(f.types)) return { types: f.types, hideResolved: !!f.hideResolved, onlyPending: !!f.onlyPending, heat: !!f.heat };
+    if (f && Array.isArray(f.types)) {
+      return {
+        types: f.types,
+        hideResolved: !!f.hideResolved,
+        onlyPending: !!f.onlyPending,
+        heat: !!f.heat,
+        recent: !!f.recent,
+        confirmed: !!f.confirmed,
+        crimeTypeIds: Array.isArray(f.crimeTypeIds) ? f.crimeTypeIds.filter((x: unknown) => typeof x === 'string') : [],
+      };
+    }
   } catch { /* ignore */ }
   return { types: [], hideResolved: false, onlyPending: false };
 }
@@ -40,6 +71,15 @@ export function FilterChips({ value, onChange, staff }: { value: MapFilters; onC
     onChange({ ...value, types: value.types.includes(t) ? value.types.filter((x) => x !== t) : [...value.types, t] });
   return (
     <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 pr-6 [mask-image:linear-gradient(to_right,black_85%,transparent)]">
+      {countActiveFilters(value) > 0 && (
+        <button
+          onClick={() => onChange({ ...NO_FILTERS, heat: value.heat, archived: value.archived })}
+          className="shrink-0 h-10 px-3 rounded-full text-xs font-semibold border border-white/20 bg-white text-[#1a1a1a] shadow-lg flex items-center gap-1.5"
+          aria-label={`Limpar ${countActiveFilters(value)} filtro(s)`}
+        >
+          <FilterX size={13} /> Limpar ({countActiveFilters(value)})
+        </button>
+      )}
       <Chip active={!!value.heat} onClick={() => onChange({ ...value, heat: !value.heat })} tone="bg-gradient-to-r from-yellow-600 to-red-600">
         <Flame size={13} /> Calor
       </Chip>
@@ -48,6 +88,12 @@ export function FilterChips({ value, onChange, staff }: { value: MapFilters; onC
       </Chip>
       <Chip active={value.types.includes('infraestrutura')} onClick={() => toggleType('infraestrutura')} tone="bg-orange-600">
         <span className="w-2 h-2 rounded-full bg-orange-400" /> Infraestrutura
+      </Chip>
+      <Chip active={!!value.recent} onClick={() => onChange({ ...value, recent: !value.recent })} tone="bg-blue-600">
+        <Clock size={13} /> Últimas 24h
+      </Chip>
+      <Chip active={!!value.confirmed} onClick={() => onChange({ ...value, confirmed: !value.confirmed })} tone="bg-violet-600">
+        <Users size={13} /> Confirmados
       </Chip>
       <Chip active={value.onlyPending} onClick={() => onChange({ ...value, onlyPending: !value.onlyPending })} tone="bg-yellow-600">
         Aguardando
@@ -60,6 +106,61 @@ export function FilterChips({ value, onChange, staff }: { value: MapFilters; onC
           Arquivados
         </Chip>
       )}
+    </div>
+  );
+}
+
+/** Pick crime types to show (side menu / desktop panel). */
+export function CrimeTypeFilter({ value, onChange }: { value: MapFilters; onChange: (f: MapFilters) => void }) {
+  const { data: crimeTypes = [] } = useQuery({
+    queryKey: ['crime-types'],
+    queryFn: CrimeTypesController.fetchCrimeTypes,
+    staleTime: 60 * 60 * 1000,
+  });
+  if (!crimeTypes.length) return null;
+  const selected = value.crimeTypeIds ?? [];
+  const toggle = (id: string) =>
+    onChange({ ...value, crimeTypeIds: selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id] });
+  return (
+    <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 px-3 py-2.5 shadow-lg">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-gray-400 uppercase tracking-wide">Tipo de crime</p>
+        {selected.length > 0 && (
+          <button onClick={() => onChange({ ...value, crimeTypeIds: [] })} className="text-xs text-blue-400 hover:text-blue-300 min-h-8 px-1">
+            Limpar
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {crimeTypes.map((t) => {
+          const on = selected.includes(t.id);
+          return (
+            <button
+              key={t.id}
+              onClick={() => toggle(t.id)}
+              aria-pressed={on}
+              className={cn(
+                'h-9 md:h-7 px-2.5 rounded-full text-xs border transition-colors',
+                on ? 'bg-red-600 text-white border-transparent' : 'bg-[#121212] text-gray-300 border-white/10 hover:bg-white/5',
+              )}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Shown when filters hide every report: explains why and clears them in one tap. */
+export function NoResultsHint({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-1/2 -translate-x-1/2 z-[395] w-max max-w-[calc(100vw-2rem)] flex items-center gap-2 rounded-full bg-[#1a1a1a]/95 border border-white/15 shadow-xl pl-4 pr-1.5 py-1.5 text-sm text-gray-200">
+      Nenhuma ocorrência com esses filtros
+      <button onClick={onClear} className="flex items-center gap-1 h-9 px-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold">
+        <FilterX size={14} /> Limpar
+      </button>
     </div>
   );
 }
