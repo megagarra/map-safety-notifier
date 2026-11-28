@@ -24,6 +24,12 @@ export default function MapSearch({ map, onReportAt }: { map: L.Map | null; onRe
   const ready = cep ? true : term.length >= 3;
 
   useEffect(() => {
+    const openSearch = () => setOpen(true);
+    window.addEventListener('map-search-open', openSearch);
+    return () => window.removeEventListener('map-search-open', openSearch);
+  }, []);
+
+  useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
 

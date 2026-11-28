@@ -8,7 +8,8 @@ import { ToastAction } from '@/components/ui/toast';
 import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
 import { FilterChips, CrimeTypeFilter, NoResultsHint, countActiveFilters, NO_FILTERS, FirstVisitHint, InstallBanner, LegendList, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
-import { useGeolocation } from '@/hooks/useGeolocation';
+import { retryGeolocation, useGeolocation } from '@/hooks/useGeolocation';
+import { inRegion } from '@/lib/placeSearch';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 // Heavy, rarely-first-needed UI is code-split so the map paints sooner on slow phones.
 const loadReportModal = () => import('@/components/ReportModal');
@@ -296,15 +297,6 @@ export default function HomePage() {
   const urlTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (urlTimeout.current) clearTimeout(urlTimeout.current); }, []);
 
-  // First GPS fix: center on the user only if they didn't open a link/saved view or move the map.
-  const centeredOnGpsRef = useRef(false);
-  useEffect(() => {
-    if (!geo.pos || centeredOnGpsRef.current) return;
-    centeredOnGpsRef.current = true;
-    if (initialView || userMovedRef.current) return;
-    setCenter(geo.pos);
-    setZoom(15);
-  }, [geo.pos, initialView]);
 
   const updatePinsCache = useCallback(
     (updater: (prev: PaginatedResponse<Pin> | undefined) => PaginatedResponse<Pin> | undefined) => {
@@ -367,6 +359,58 @@ export default function HomePage() {
     saveView(newCenter, newZoom);
     updateUrl(newCenter[0], newCenter[1], newZoom);
   }, [updateUrl]);
+
+  // --- Open where the person is right now ---
+  // Every new visit centers on the live GPS position (even if the map was left elsewhere last time).
+  // A reload inside the same visit keeps the view, and links to a report (?pin=) win over GPS.
+  const [freshVisit] = useState(() => {
+    try {
+      const seen = sessionStorage.getItem('map-safety:visit');
+      sessionStorage.setItem('map-safety:visit', '1');
+      return !seen;
+    } catch {
+      return true;
+    }
+  });
+  const deepLinked = useMemo(() => /[?&](pin|myreports)=/.test(window.location.hash + window.location.search), []);
+  // Only real touches/scrolls on the map count as "the person moved it" (our own centering doesn't).
+  const userInteractedRef = useRef(false);
+  useEffect(() => {
+    const onInteract = (e: Event) => {
+      if ((e.target as Element | null)?.closest?.('.leaflet-container')) userInteractedRef.current = true;
+    };
+    document.addEventListener('pointerdown', onInteract, true);
+    document.addEventListener('wheel', onInteract, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', onInteract, true);
+      document.removeEventListener('wheel', onInteract, true);
+    };
+  }, []);
+  const gpsFitAccuracyRef = useRef<number | null>(null);
+  const [outsideArea, setOutsideArea] = useState(false);
+  useEffect(() => {
+    if (!geo.pos || deepLinked || userInteractedRef.current) return;
+    const prev = gpsFitAccuracyRef.current;
+    // Same visit (reload) with a saved/linked view: keep it.
+    if (prev === null && !freshVisit && initialView) return;
+    const acc = geo.accuracy ?? 5000;
+    // The first fix is often coarse (Wi-Fi/cell); refine while GPS gets much more precise.
+    if (prev !== null && !(prev > 60 && acc < prev / 2)) return;
+    gpsFitAccuracyRef.current = acc;
+    if (!inRegion(geo.pos[0], geo.pos[1])) {
+      setOutsideArea(true);
+      return;
+    }
+    setOutsideArea(false);
+    const z = acc <= 60 ? 17 : acc <= 300 ? 16 : 15;
+    setCenter(geo.pos);
+    setZoom(z);
+    // Remember it, so a reload in this visit reopens here (not at an older spot).
+    saveView(geo.pos, z);
+    updateUrl(geo.pos[0], geo.pos[1], z);
+  }, [geo.pos, geo.accuracy, deepLinked, freshVisit, initialView, updateUrl]);
+  const [geoNoticeClosed, setGeoNoticeClosed] = useState(false);
+  const locating = freshVisit && !deepLinked && !geo.pos && !geo.error;
 
   const handleBoundsChange = useCallback((newBounds: MapBounds) => {
     // Snap outward to a ~2 km grid so small pans hit the cache instead of refetching.
@@ -719,6 +763,26 @@ export default function HomePage() {
         <NoResultsHint onClear={() => setFilters({ ...NO_FILTERS, heat: filters.heat, archived: filters.archived })} />
       )}
 
+      {locating && (
+        <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-1/2 -translate-x-1/2 z-[395] pointer-events-none flex items-center gap-2 rounded-full bg-[#1a1a1a]/95 border border-sky-500/30 shadow-xl px-4 py-2 text-sm text-sky-100" role="status">
+          <Loader2 size={14} className="animate-spin" /> Localizando você…
+        </div>
+      )}
+      {!geoNoticeClosed && !deepLinked && !geo.pos && (geo.error === 'denied' || geo.error === 'unavailable') && (
+        <LocationHelp
+          denied={geo.error === 'denied'}
+          onRetry={retryGeolocation}
+          onSearch={() => { setGeoNoticeClosed(true); window.dispatchEvent(new Event('map-search-open')); }}
+          onClose={() => setGeoNoticeClosed(true)}
+        />
+      )}
+      {outsideArea && !geoNoticeClosed && (
+        <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-96 z-[395] rounded-xl bg-[#1f1f23] border border-white/15 shadow-2xl p-3 text-sm text-gray-200 flex items-start gap-2">
+          <span className="flex-1">Você está fora da área coberta pelo mapa (Franco da Rocha e região). Mostrando a região mais próxima.</span>
+          <button onClick={() => setGeoNoticeClosed(true)} className="w-8 h-8 -m-1 flex items-center justify-center text-gray-400" aria-label="Fechar"><X size={16} /></button>
+        </div>
+      )}
+
       {!online && <OfflineBanner dataTime={pinsUpdatedAt || undefined} />}
 
       {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
@@ -1028,6 +1092,29 @@ export default function HomePage() {
       </>
       )}
       </Suspense>
+    </div>
+  );
+}
+
+/** Location blocked or unavailable: how to turn it on, or find the neighbourhood instead. */
+function LocationHelp({ denied, onRetry, onSearch, onClose }: { denied: boolean; onRetry: () => void; onSearch: () => void; onClose: () => void }) {
+  return (
+    <div className="absolute top-[calc(8rem+env(safe-area-inset-top))] md:top-20 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-[26rem] z-[395] rounded-xl bg-[#1f1f23] border border-sky-500/30 shadow-2xl p-3.5 space-y-2.5" role="alert">
+      <div className="flex items-start gap-2">
+        <p className="flex-1 text-sm font-semibold text-white">
+          {denied ? 'Permita sua localização para ver o que acontece perto de você' : 'Não conseguimos achar sua localização'}
+        </p>
+        <button onClick={onClose} className="w-8 h-8 -m-1 flex items-center justify-center text-gray-400 hover:text-white" aria-label="Fechar"><X size={16} /></button>
+      </div>
+      <p className="text-xs text-gray-300 leading-relaxed">
+        {denied
+          ? 'No celular: toque no cadeado (ou ⓘ) ao lado do endereço do site → Permissões → Localização → Permitir. Depois toque em "Tentar de novo".'
+          : 'Ative a localização (GPS) do celular e toque em "Tentar de novo".'}
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onRetry} className="h-10 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold">Tentar de novo</button>
+        <button onClick={onSearch} className="h-10 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">Buscar meu bairro</button>
+      </div>
     </div>
   );
 }
