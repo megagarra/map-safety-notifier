@@ -90,11 +90,12 @@ const TILE_LAYERS = {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxNativeZoom: 19,
   },
-  /** Escuro: Esri Dark Gray (CARTO passou a exigir chave de API) */
+  /** Escuro: o mesmo OpenStreetMap com cores invertidas (CSS), para mostrar o nome de todas as ruas.
+   *  (O Esri Dark Gray só nomeia vias principais; CARTO exige chave de API.) */
   dark: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri',
-    maxNativeZoom: 16,
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxNativeZoom: 19,
   },
 };
 
@@ -971,6 +972,7 @@ const MapComponent = ({
           keepBuffer={6}
           className="custom-tile-layer"
         />
+
         <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} onBoundsChange={onBoundsChange} />
         <UserLocationDot />
         {showHeat && <HeatLayer pins={filteredPins} />}
@@ -1001,7 +1003,7 @@ const MapComponent = ({
       {/* Theme toggle */}
       {/* Phones: wide search bar next to the menu button (theme + legend live in the side menu). */}
       <div className="absolute top-[calc(1rem+env(safe-area-inset-top))] md:top-4 right-4 left-[4.25rem] md:left-auto z-[450] flex flex-col gap-2 items-stretch md:items-end">
-        <MapSearch map={mapInstance} />
+        <MapSearch map={mapInstance} onReportAt={onMapClick} />
         <div className="hidden md:flex flex-col gap-2 items-end">
         <button
           onClick={cycleMapTheme}
