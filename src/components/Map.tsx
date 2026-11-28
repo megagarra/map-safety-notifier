@@ -3,7 +3,8 @@ import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
 import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
 import MapSearch from './MapSearch';
-import { toggleMapTheme, useMapTheme, type MapTheme } from '@/lib/mapTheme';
+import { useMapTheme, type MapTheme } from '@/lib/mapTheme';
+import { MapTypePicker, MAP_THEME_LABELS } from './MapTypePicker';
 import HeatLayer from './HeatLayer';
 import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { LegendButton } from './MapOverlays';
@@ -39,6 +40,7 @@ import {
   Trash2,
   Save,
   Flag,
+  Layers,
 } from 'lucide-react';
 import { ImageGallery } from './ImageGallery';
 import PinHistory from './PinHistory';
@@ -89,18 +91,31 @@ interface MapComponentProps {
   onEntriesChanged?: () => void;
 }
 
-const TILE_LAYERS = {
-  /** Claro: OpenStreetMap - boa visibilidade */
-  light: {
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxNativeZoom: 19,
-  },
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+
+type TileDef = { url: string; attribution: string; maxNativeZoom: number; overlays?: { url: string; maxNativeZoom: number }[] };
+
+const TILE_LAYERS: Record<MapTheme, TileDef> = {
+  /** Claro: OpenStreetMap (ruas mais completas da região, atualizado minutos após correções) */
+  light: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: OSM_ATTRIBUTION, maxNativeZoom: 19 },
   /** Escuro: o mesmo OpenStreetMap com cores invertidas (CSS), para mostrar o nome de todas as ruas.
    *  (O Esri Dark Gray só nomeia vias principais; CARTO exige chave de API.) */
-  dark: {
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  dark: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: OSM_ATTRIBUTION, maxNativeZoom: 19 },
+  /** Satélite: foto aérea recente + nomes de ruas e bairros por cima */
+  satellite: {
+    url: `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`,
+    attribution: 'Imagens &copy; Esri, Maxar, Earthstar Geographics',
+    maxNativeZoom: 19,
+    overlays: [
+      { url: `${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, maxNativeZoom: 19 },
+      { url: `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, maxNativeZoom: 19 },
+    ],
+  },
+  /** Ruas Esri: outra fonte de dados (HERE, Garmin…) para comparar quando uma rua do OSM parece errada */
+  esri: {
+    url: `${ESRI}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`,
+    attribution: 'Mapa &copy; Esri, HERE, Garmin, USGS',
     maxNativeZoom: 19,
   },
 };
@@ -867,11 +882,6 @@ function UserLocationDot() {
 // --- Main Map component ---
 
 
-const THEME_ORDER: MapTheme[] = ['light', 'dark'];
-const THEME_LABELS: Record<MapTheme, string> = {
-  light: 'Claro',
-  dark: 'Escuro',
-};
 
 const MapComponent = ({
   pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom,
@@ -886,7 +896,7 @@ const MapComponent = ({
   const mapRef = useRef(null);
   const tileLayer = TILE_LAYERS[mapTheme];
 
-  const cycleMapTheme = toggleMapTheme;
+  const [mapTypeOpen, setMapTypeOpen] = useState(false);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -982,6 +992,18 @@ const MapComponent = ({
           keepBuffer={6}
           className="custom-tile-layer"
         />
+        {tileLayer.overlays?.map((o) => (
+          <TileLayer
+            key={`${mapTheme}-${o.url}`}
+            url={o.url}
+            maxZoom={19}
+            maxNativeZoom={o.maxNativeZoom}
+            updateWhenIdle
+            updateWhenZooming={false}
+            keepBuffer={6}
+            pane="overlayPane"
+          />
+        ))}
 
         <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} onBoundsChange={onBoundsChange} />
         <UserLocationDot />
@@ -1033,14 +1055,23 @@ const MapComponent = ({
       <div className="absolute top-[calc(1rem+env(safe-area-inset-top))] md:top-4 right-4 left-[4.25rem] md:left-auto z-[450] flex flex-col gap-2 items-stretch md:items-end">
         <MapSearch map={mapInstance} onReportAt={onMapClick} />
         <div className="hidden md:flex flex-col gap-2 items-end">
-        <button
-          onClick={cycleMapTheme}
-          aria-label={`Tema do mapa: ${THEME_LABELS[mapTheme]}`}
-          className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
-          title={`Tema do mapa: ${THEME_LABELS[mapTheme]}. Clique para alternar.`}
-        >
-          {mapTheme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setMapTypeOpen((o) => !o)}
+            aria-label={`Tipo de mapa: ${MAP_THEME_LABELS[mapTheme]}`}
+            aria-expanded={mapTypeOpen}
+            className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
+            title={`Tipo de mapa: ${MAP_THEME_LABELS[mapTheme]}`}
+          >
+            {mapTheme === 'light' ? <Sun size={18} /> : mapTheme === 'dark' ? <Moon size={18} /> : <Layers size={18} />}
+          </button>
+          {mapTypeOpen && (
+            <div className="absolute right-full mr-2 top-0 w-72 rounded-lg bg-[#1a1a1a] border border-white/15 shadow-2xl p-3">
+              <p className="text-xs font-semibold text-white mb-2">Tipo de mapa</p>
+              <MapTypePicker compact center={() => (mapInstance ? { lat: mapInstance.getCenter().lat, lng: mapInstance.getCenter().lng } : null)} />
+            </div>
+          )}
+        </div>
         <LegendButton />
         </div>
       </div>

@@ -1,13 +1,15 @@
 import { useSyncExternalStore } from 'react';
 
-export type MapTheme = 'light' | 'dark';
+/** Map background: OpenStreetMap light/dark (most complete streets in the region), satellite photo, or Esri streets (other data source). */
+export type MapTheme = 'light' | 'dark' | 'satellite' | 'esri';
+export const MAP_THEMES: MapTheme[] = ['light', 'dark', 'satellite', 'esri'];
 const KEY = 'map-safety-theme';
 const listeners = new Set<() => void>();
 
 function read(): MapTheme {
   try {
-    const saved = localStorage.getItem(KEY);
-    return saved === 'light' || saved === 'dark' ? saved : 'dark';
+    const saved = localStorage.getItem(KEY) as MapTheme | null;
+    return saved && MAP_THEMES.includes(saved) ? saved : 'dark';
   } catch {
     return 'dark';
   }
@@ -25,8 +27,9 @@ export function setMapTheme(next: MapTheme) {
   listeners.forEach((l) => l());
 }
 
+/** Next type in the list (desktop button). */
 export function toggleMapTheme() {
-  setMapTheme(current === 'dark' ? 'light' : 'dark');
+  setMapTheme(MAP_THEMES[(MAP_THEMES.indexOf(current) + 1) % MAP_THEMES.length]);
 }
 
 function subscribe(cb: () => void) {
@@ -36,4 +39,9 @@ function subscribe(cb: () => void) {
 
 export function useMapTheme(): MapTheme {
   return useSyncExternalStore(subscribe, () => current, () => 'dark' as MapTheme);
+}
+
+/** OpenStreetMap note at this spot: anyone can report a wrong/missing street, no account needed. */
+export function osmNoteUrl(lat: number, lng: number) {
+  return `https://www.openstreetmap.org/note/new#map=18/${lat.toFixed(5)}/${lng.toFixed(5)}`;
 }

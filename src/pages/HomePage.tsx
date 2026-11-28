@@ -36,8 +36,8 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, Moon, Sun, ChevronDown, BadgeCheck } from 'lucide-react';
-import { toggleMapTheme, useMapTheme } from '@/lib/mapTheme';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, ChevronDown, BadgeCheck } from 'lucide-react';
+import { MapTypePicker } from '@/components/MapTypePicker';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -106,7 +106,6 @@ export default function HomePage() {
   const userMovedRef = useRef(false);
   const dupeShownRef = useRef<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const mapTheme = useMapTheme();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuMore, setMenuMore] = useState(false);
   const updateMenuMore = useCallback(() => {
@@ -910,15 +909,9 @@ export default function HomePage() {
 
         <CrimeTypeFilter value={filters} onChange={setFilters} />
 
-        <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 overflow-hidden">
-          <button
-            onClick={toggleMapTheme}
-            className="flex items-center gap-2 px-3 py-3 text-sm text-gray-300 hover:bg-white/5 w-full"
-          >
-            {mapTheme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
-            Tema do mapa
-            <span className="ml-auto text-xs text-gray-400">{mapTheme === 'dark' ? 'Escuro' : 'Claro'}</span>
-          </button>
+        <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 px-3 py-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Tipo de mapa</p>
+          <MapTypePicker center={{ lat: center[0], lng: center[1] }} />
         </div>
 
         <div className="md:hidden rounded-lg bg-[#1a1a1a] border border-white/10 px-3 py-3">
