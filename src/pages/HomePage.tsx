@@ -9,6 +9,7 @@ import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
 import { FilterChips, CrimeTypeFilter, NoResultsHint, countActiveFilters, NO_FILTERS, FirstVisitHint, InstallBanner, LegendList, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
 import { retryGeolocation, useGeolocation } from '@/hooks/useGeolocation';
+import { useSwipeMenu } from '@/hooks/useSwipeMenu';
 import { inRegion } from '@/lib/placeSearch';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 // Heavy, rarely-first-needed UI is code-split so the map paints sooner on slow phones.
@@ -107,6 +108,7 @@ export default function HomePage() {
   const dupeShownRef = useRef<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const swipe = useSwipeMenu(panelOpen, setPanelOpen, menuRef);
   const [menuMore, setMenuMore] = useState(false);
   const updateMenuMore = useCallback(() => {
     const el = menuRef.current;
@@ -838,9 +840,16 @@ export default function HomePage() {
             <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-[#1a1a1a]" aria-label="Filtro ativo" />
           ) : null}
         </button>
+        {/* Phones: swipe right from the left edge to open the menu */}
+        <div
+          className="md:hidden fixed left-0 top-[calc(7.5rem+env(safe-area-inset-top))] bottom-[calc(6rem+env(safe-area-inset-bottom))] w-4 z-[405]"
+          {...swipe.edgeHandlers}
+          aria-hidden="true"
+        />
         {panelOpen && (
           <div
             className="md:hidden fixed inset-0 bg-black/60 animate-in fade-in"
+            style={swipe.backdropStyle}
             onClick={() => setPanelOpen(false)}
             // Touch: stop the follow-up "ghost" click from reaching the map (it would start a report).
             onTouchEnd={(e) => { e.preventDefault(); setPanelOpen(false); }}
@@ -854,14 +863,18 @@ export default function HomePage() {
           role={panelOpen ? 'dialog' : undefined}
           aria-modal={panelOpen ? true : undefined}
           aria-label="Menu"
+          style={swipe.panelStyle}
           className={cn(
             'flex-col gap-2 overflow-y-auto overscroll-contain [&>*]:shrink-0 max-md:touch-pan-y max-md:[-webkit-overflow-scrolling:touch] side-menu-scroll',
             'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85vw] max-md:max-w-[320px] max-md:bg-[#121212] max-md:border-r max-md:border-white/10 max-md:shadow-2xl max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
-            panelOpen ? 'flex max-md:animate-in max-md:slide-in-from-left-full max-md:duration-200' : 'hidden md:flex',
+            panelOpen ? cn('flex', swipe.animateIn && 'max-md:animate-in max-md:slide-in-from-left-full max-md:duration-200') : 'hidden md:flex',
           )}
         >
         <div className="md:hidden flex items-center justify-between pb-1">
-          <p className="text-base font-semibold text-white">Map Safety</p>
+          <div>
+            <p className="text-base font-semibold text-white">Map Safety</p>
+            <p className="text-[11px] text-gray-500">Arraste para a esquerda para fechar</p>
+          </div>
           <button onClick={() => setPanelOpen(false)} className="w-11 h-11 -mr-2 flex items-center justify-center text-gray-300 hover:text-white" aria-label="Fechar menu">
             <X size={20} />
           </button>
