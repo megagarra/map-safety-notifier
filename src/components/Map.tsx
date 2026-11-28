@@ -1108,7 +1108,7 @@ function LocateButton({ map }: { map: L.Map | null }) {
 function ShareButton({ pin }: { pin: Pin }) {
   const [copied, setCopied] = useState(false);
   const share = async () => {
-    const url = apiUrl(`/share/pin/${pin.id}`);
+    const url = new URL(apiUrl(`/share/pin/${pin.id}`), window.location.origin).href;
     const label = pin.crimeTypeLabel?.replace(/\s*\(Art\.[^)]*\)/, '') || getPinConfig(pin.type).label;
     const text = `⚠️ Alerta de ${label.toLowerCase()} no Map Safety${pin.address ? `: ${pin.address}` : ''}`;
     if (navigator.share) {

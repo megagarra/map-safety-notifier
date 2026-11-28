@@ -152,7 +152,8 @@ export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
     const token = getAccessToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
-    await fetch(apiUrl('/api/notifications/subscribe'), { method: 'POST', headers, body: JSON.stringify(sub.toJSON()) });
+    const subRes = await fetch(apiUrl('/api/notifications/subscribe'), { method: 'POST', headers, body: JSON.stringify(sub.toJSON()) });
+    if (!subRes.ok) throw new ApiError('Este navegador não pôde ser registrado para notificações.', subRes.status);
     const res = await fetch(apiUrl('/api/notifications/zone'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

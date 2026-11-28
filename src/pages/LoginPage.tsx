@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/components/ui/use-toast';
 import { ApiError } from '@/lib/errors';
-import { ArrowLeft, Loader2, Shield } from 'lucide-react';
+import { ArrowLeft, Loader2, Shield, Eye, EyeOff } from 'lucide-react';
 
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth();
@@ -14,6 +14,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
@@ -60,6 +61,8 @@ export function LoginPage() {
               id="email"
               type="email"
               autoComplete="email"
+              autoCapitalize="none"
+              inputMode="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="bg-[#121212] border-[#2a2a2a] text-white"
@@ -68,16 +71,27 @@ export function LoginPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password" className="text-gray-300">Senha</Label>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="bg-[#121212] border-[#2a2a2a] text-white"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-[#121212] border-[#2a2a2a] text-white pr-12 h-11 text-[16px] sm:text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-0 top-0 h-11 w-11 flex items-center justify-center text-gray-400 hover:text-white"
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="w-full h-11" disabled={isSubmitting}>
             {isSubmitting ? <><Loader2 size={16} className="animate-spin mr-2" /> Entrando...</> : 'Entrar'}
           </Button>
         </form>

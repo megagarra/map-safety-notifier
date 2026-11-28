@@ -55,8 +55,8 @@ export function AdminUsersPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || password.length < 8) {
-      toast({ title: 'Dados inválidos', description: 'Email e senha (mín. 8 caracteres) são obrigatórios.', variant: 'destructive' });
+    if (!email.trim() || password.length < 10) {
+      toast({ title: 'Dados inválidos', description: 'Email e senha (mín. 10 caracteres, não óbvia) são obrigatórios.', variant: 'destructive' });
       return;
     }
     setIsSubmitting(true);
@@ -130,7 +130,7 @@ export function AdminUsersPage() {
           <form onSubmit={handleCreate} className="space-y-3">
             <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
             <Input placeholder="Nome (opcional)" value={name} onChange={(e) => setName(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
-            <Input placeholder="Senha (mín. 8)" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <Input placeholder="Senha (mín. 10)" autoComplete="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
             <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="w-full h-10 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm">
               <option value="user">Usuário</option>
               <option value="moderator">Moderador</option>
@@ -170,7 +170,7 @@ export function AdminUsersPage() {
                         <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
                         Conta ativa
                       </label>
-                      <Input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Nova senha (opcional)" type="password" className="h-8 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
+                      <Input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Nova senha (opcional, mín. 10)" type="password" autoComplete="new-password" className="h-8 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
                       <div className="flex gap-2">
                         <Button size="sm" onClick={handleSaveEdit} disabled={actionId === u.id} className="flex-1 h-7 text-xs">
                           {actionId === u.id ? <Loader2 size={12} className="animate-spin" /> : <><Check size={12} className="mr-1" /> Salvar</>}
