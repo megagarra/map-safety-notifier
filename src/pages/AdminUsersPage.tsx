@@ -11,12 +11,15 @@ import { toast } from '@/components/ui/use-toast';
 import { ApiError } from '@/lib/errors';
 import { ArrowLeft, Loader2, UserPlus, Pencil, Trash2, X, Check, BadgeCheck, MapPin } from 'lucide-react';
 import { AGENCY_KIND_LABELS } from '@/components/OfficialResponse';
+import { uploadImage } from '@/controllers/pins';
+import { resolveImageUrl } from '@/lib/media';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Administrador',
   moderator: 'Moderador',
   agency: 'Órgão público',
+  partner: 'Parceiro',
   user: 'Usuário',
 };
 
@@ -24,6 +27,7 @@ const ROLE_HELP: Record<UserRole, string> = {
   admin: 'Acesso total: moderação, usuários, órgãos e configurações.',
   moderator: 'Aprova ou rejeita relatos, bloqueia autores, vê o painel analítico.',
   agency: 'Prefeitura, Guarda ou Polícia: marca ocorrências como recebidas, em andamento ou resolvidas, com resposta pública assinada. Não modera.',
+  partner: 'Envia quantas denúncias quiser; elas entram direto no mapa com o nome e a foto do parceiro. Não pode editar nem apagar nada.',
   user: 'Conta comum, sem limites de envio. Não modera.',
 };
 
@@ -179,6 +183,41 @@ function cityFrom(subtitle?: string): string | undefined {
   return m?.[1].trim();
 }
 
+/** Partner photo: upload through the app (same pipeline as report photos), shown on their reports. */
+function AvatarPicker({ value, onChange, name }: { value: string | null; onChange: (url: string | null) => void; name: string }) {
+  const [uploading, setUploading] = useState(false);
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      onChange(await uploadImage(file));
+    } catch (err) {
+      toast({ title: 'Erro na foto', description: err instanceof ApiError ? err.message : 'Não foi possível enviar a foto.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
+  };
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3">
+      {value ? (
+        <img src={resolveImageUrl(value)} alt="Foto do parceiro" className="w-14 h-14 rounded-full object-cover border-2 border-violet-400/60" />
+      ) : (
+        <span className="w-14 h-14 rounded-full bg-violet-600/60 text-white font-semibold flex items-center justify-center">{initials || '?'}</span>
+      )}
+      <div className="space-y-1">
+        <label className="inline-flex items-center gap-2 h-9 px-3 rounded-md bg-white/10 hover:bg-white/20 text-sm text-white cursor-pointer">
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : null}
+          {value ? 'Trocar foto' : 'Enviar foto'}
+          <input type="file" accept="image/*" className="sr-only" disabled={uploading} onChange={(e) => pick(e.target.files?.[0])} />
+        </label>
+        {value && <button type="button" onClick={() => onChange(null)} className="block text-xs text-gray-400 hover:text-white">Remover foto</button>}
+        <p className="text-[11px] text-gray-500">Aparece nas denúncias do parceiro.</p>
+      </div>
+    </div>
+  );
+}
+
 const emptyAgency = (): AgencyFields => ({ organization: '', agencyKind: 'prefeitura', answerTypes: DEFAULT_TYPES.prefeitura, hq: null, radiusKm: 5, city: '' });
 
 const agencyPayload = (a: AgencyFields) => ({
@@ -199,6 +238,7 @@ export function AdminUsersPage() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>('agency');
   const [agency, setAgency] = useState<AgencyFields>(emptyAgency);
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingUser, setEditingUser] = useState<AuthUser | null>(null);
   const [editName, setEditName] = useState('');
@@ -206,6 +246,7 @@ export function AdminUsersPage() {
   const [editActive, setEditActive] = useState(true);
   const [editPassword, setEditPassword] = useState('');
   const [editAgency, setEditAgency] = useState<AgencyFields>(emptyAgency);
+  const [editAvatar, setEditAvatar] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
 
   const { data: users = [], isLoading, refetch } = useQuery({
@@ -235,6 +276,10 @@ export function AdminUsersPage() {
       toast({ title: 'Dados inválidos', description: 'Email e senha (mín. 10 caracteres, não óbvia) são obrigatórios.', variant: 'destructive' });
       return;
     }
+    if (role === 'partner' && !name.trim()) {
+      toast({ title: 'Nome do parceiro', description: 'Informe o nome que vai aparecer nas denúncias.', variant: 'destructive' });
+      return;
+    }
     if (role === 'agency' && agencyInvalid(agency)) {
       toast({ title: 'Dados do órgão', description: agencyInvalid(agency)!, variant: 'destructive' });
       return;
@@ -247,10 +292,11 @@ export function AdminUsersPage() {
         role,
         ...(name.trim() && { name: name.trim() }),
         ...(role === 'agency' && agencyPayload(agency)),
+        ...(role === 'partner' && avatar && { avatarUrl: avatar }),
       };
       await registerUser(input);
       toast({ title: 'Conta criada', description: `${email} cadastrado como ${ROLE_LABELS[role].toLowerCase()}.` });
-      setEmail(''); setPassword(''); setName(''); setAgency(emptyAgency());
+      setEmail(''); setPassword(''); setName(''); setAgency(emptyAgency()); setAvatar(null);
       refetch();
     } catch (err) {
       toast({ title: 'Erro', description: err instanceof ApiError ? err.message : 'Falha ao criar.', variant: 'destructive' });
@@ -265,6 +311,7 @@ export function AdminUsersPage() {
     setEditRole(u.role);
     setEditActive(u.isActive);
     setEditPassword('');
+    setEditAvatar(u.avatarUrl ?? null);
     setEditAgency({
       organization: u.organization ?? '',
       agencyKind: u.agencyKind ?? 'prefeitura',
@@ -293,6 +340,7 @@ export function AdminUsersPage() {
         isActive: editActive,
         ...(editPassword && { password: editPassword }),
         ...(editRole === 'agency' && agencyPayload(editAgency)),
+        ...(editRole === 'partner' && { avatarUrl: editAvatar ?? '' }),
       });
       toast({ title: 'Conta atualizada' });
       setEditingUser(null);
@@ -318,7 +366,7 @@ export function AdminUsersPage() {
     }
   };
 
-  const roleOptions = (['agency', 'moderator', 'admin', 'user'] as UserRole[]).map((r) => (
+  const roleOptions = (['agency', 'partner', 'moderator', 'admin', 'user'] as UserRole[]).map((r) => (
     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
   ));
 
@@ -341,8 +389,9 @@ export function AdminUsersPage() {
             </select>
             <p className="text-xs text-gray-400 -mt-1">{ROLE_HELP[role]}</p>
             {role === 'agency' && <AgencyFieldsEditor value={agency} onChange={setAgency} />}
+            {role === 'partner' && <AvatarPicker value={avatar} onChange={setAvatar} name={name} />}
             <Input placeholder="Email de acesso" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
-            <Input placeholder={role === 'agency' ? 'Responsável (opcional, não aparece ao público)' : 'Nome (opcional)'} value={name} onChange={(e) => setName(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
+            <Input placeholder={role === 'agency' ? 'Responsável (opcional, não aparece ao público)' : role === 'partner' ? 'Nome público (aparece nas denúncias)' : 'Nome (opcional)'} value={name} onChange={(e) => setName(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
             <Input placeholder="Senha (mín. 10)" autoComplete="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-[#121212] border-[#2a2a2a] text-white" />
             <Button type="submit" disabled={isSubmitting} className="w-full">
               {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Criar conta'}
@@ -356,6 +405,7 @@ export function AdminUsersPage() {
             <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-8 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-2 text-xs" aria-label="Filtrar por tipo">
               <option value="">Todas</option>
               <option value="agency">Órgãos públicos</option>
+              <option value="partner">Parceiros</option>
               <option value="moderator">Moderadores</option>
               <option value="admin">Admins</option>
               <option value="user">Usuários</option>
@@ -373,6 +423,7 @@ export function AdminUsersPage() {
                         {roleOptions}
                       </select>
                       {editRole === 'agency' && <AgencyFieldsEditor value={editAgency} onChange={setEditAgency} compact />}
+                      {editRole === 'partner' && <AvatarPicker value={editAvatar} onChange={setEditAvatar} name={editName} />}
                       <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nome" className="h-9 text-sm bg-[#1a1a1a] border-[#2a2a2a] text-white" />
                       <label className="flex items-center gap-2 text-sm text-gray-300">
                         <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
@@ -389,7 +440,12 @@ export function AdminUsersPage() {
                   ) : (
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        {u.role === 'agency' && u.organization ? (
+                        {u.role === 'partner' ? (
+                          <p className="text-sm font-medium flex items-center gap-2">
+                            {u.avatarUrl ? <img src={resolveImageUrl(u.avatarUrl)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" /> : null}
+                            {u.name || u.email}
+                          </p>
+                        ) : u.role === 'agency' && u.organization ? (
                           <p className="text-sm font-medium flex items-center gap-1.5"><BadgeCheck size={14} className="text-emerald-400 shrink-0" /> {u.organization}</p>
                         ) : (
                           <p className="text-sm font-medium">{u.name || u.email}</p>

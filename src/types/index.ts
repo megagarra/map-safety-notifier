@@ -53,6 +53,8 @@ export interface Pin {
   moderationHints?: string[] | null;
   /** Public answer from a city hall / guard / police account */
   officialResponse?: OfficialResponse | null;
+  /** Partner who sent it (shown publicly with name and photo) */
+  author?: { name: string; avatarUrl?: string | null; partner: boolean } | null;
 }
 
 export interface CrimeType {
@@ -180,7 +182,7 @@ export interface MapBounds {
   lng_max: number;
 }
 
-export type UserRole = 'admin' | 'moderator' | 'user' | 'agency';
+export type UserRole = 'admin' | 'moderator' | 'user' | 'agency' | 'partner';
 
 export type AgencyKind = 'prefeitura' | 'guarda' | 'policia' | 'outro';
 
@@ -207,6 +209,7 @@ export interface AuthUser {
   hqAddress?: string | null;
   serviceRadiusKm?: number | null;
   city?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface AuthTokens {
@@ -253,6 +256,7 @@ export interface UpdateUserInput {
   hqAddress?: string | null;
   serviceRadiusKm?: number | null;
   city?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface RegisterInput {
@@ -268,6 +272,7 @@ export interface RegisterInput {
   hqAddress?: string | null;
   serviceRadiusKm?: number | null;
   city?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface ReportCounts {

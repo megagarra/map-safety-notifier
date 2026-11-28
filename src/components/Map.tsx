@@ -20,6 +20,7 @@ import { apiUrl } from '@/lib/api';
 import { toast } from '@/components/ui/use-toast';
 import { flagPin, unarchivePin } from '@/controllers/pins';
 import { OfficialSection } from './OfficialResponse';
+import { ReportAuthor } from './ReportAuthor';
 import { AgencyLayer, AgencyScoreSheet, FitAgencyArea } from './AgencyLayer';
 import type { CityScore } from '@/types';
 import type { FlagReason } from '@/types';
@@ -760,6 +761,7 @@ function PinDetailsModal({
               </div>
             )}
 
+            {!isDefault && pin.author && <ReportAuthor author={pin.author} />}
             {!isDefault && <OfficialSection key={pin.id} pin={pin} />}
             {!isDefault && <ShareButton pin={pin} />}
             {!isDefault && !isModerator && <ReportAbuse pinId={pin.id} />}

@@ -192,9 +192,11 @@ export async function apiFormData<T>(
   formData: FormData,
   options: { errorContext?: string } = {},
 ): Promise<T> {
+  const token = getAccessToken();
   const res = await fetch(apiUrl(path), {
     method: 'POST',
     body: formData,
+    ...(token && { headers: { Authorization: `Bearer ${token}` } }),
   });
 
   if (!res.ok) {

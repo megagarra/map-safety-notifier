@@ -445,8 +445,10 @@ export default function HomePage() {
       // Notifications already allowed: follow this report silently. Otherwise offer it in the toast.
       const watching = key ? await watchMyReport(created.id, key, { ask: false }) : false;
       toast({
-        title: 'Ocorrência enviada',
-        description: watching
+        title: created.approvalStatus === 'approved' ? 'Ocorrência publicada' : 'Ocorrência enviada',
+        description: created.approvalStatus === 'approved'
+          ? 'Ela já está no mapa com seu nome e foto.'
+          : watching
           ? 'Ela já aparece no mapa como "aguardando aprovação". Avisaremos quando for revisada.'
           : 'Ela já aparece no mapa como "aguardando aprovação". Obrigado!',
         action: !watching && key && 'Notification' in window && Notification.permission !== 'denied' ? (
