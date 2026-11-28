@@ -15,6 +15,8 @@ import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { reverseGeocode } from '@/lib/geocode';
 import { apiUrl } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
+import { unarchivePin } from '@/controllers/pins';
 import {
   Clock,
   Share2,
@@ -536,6 +538,30 @@ function PinDetailsModal({
                 </p>
               )}
             </div>
+            )}
+
+            {pin.archived && (
+              <div className="p-3 rounded-lg bg-white/5 border border-white/15 text-xs text-gray-200 leading-relaxed space-y-2">
+                <p>Arquivado: ninguém confirmou esta ocorrência há muito tempo, por isso ela saiu do mapa. Se ainda acontece, toque em "Ainda está aí".</p>
+                {isModerator && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await unarchivePin(pin.id);
+                        toast({ title: 'Restaurado ao mapa' });
+                        onEntriesChanged?.();
+                        onClose();
+                      } catch {
+                        toast({ title: 'Não foi possível restaurar', variant: 'destructive' });
+                      }
+                    }}
+                    className="h-9 px-3 rounded-lg bg-white/10 text-white text-xs font-medium"
+                  >
+                    Restaurar ao mapa
+                  </button>
+                )}
+              </div>
             )}
 
             {isPending && (

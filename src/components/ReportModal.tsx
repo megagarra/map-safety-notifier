@@ -348,7 +348,10 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
 
           <p className="flex gap-2 text-xs text-gray-400 leading-relaxed">
             <Info size={14} className="shrink-0 mt-0.5" />
-            O relato aparece no mapa na hora como "aguardando aprovação". Texto e fotos ficam visíveis para todos depois da revisão da moderação.
+            <span>
+              O relato aparece no mapa na hora como "aguardando aprovação". Texto e fotos ficam visíveis para todos depois da revisão da moderação.{' '}
+              <a href="#/privacidade" className="text-blue-300 underline underline-offset-2">Privacidade</a>
+            </span>
           </p>
         </div>
 

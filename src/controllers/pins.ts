@@ -82,6 +82,10 @@ export const bulkModerate = async (
   return api('/api/pins/moderation/bulk', { method: 'POST', auth: true, body: JSON.stringify({ ids, action, reason }) });
 };
 
+export const unarchivePin = async (id: string): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${id}/unarchive`, { method: 'POST', auth: true });
+};
+
 export const approvePin = async (id: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${id}/approve`, { method: 'POST', auth: true });
 };

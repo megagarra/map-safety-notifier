@@ -262,11 +262,21 @@ export function ModerationPage() {
     return () => document.removeEventListener('keydown', onKey);
   }, [tab]);
 
+  const focusedId = pending[Math.min(focusIdx, pending.length - 1)]?.id;
   useEffect(() => {
-    if (tab !== 'pending') return;
-    const id = pending[Math.min(focusIdx, pending.length - 1)]?.id;
-    if (id) document.querySelector(`[data-pin-card="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [focusIdx, tab, pending]);
+    if (tab !== 'pending' || !focusedId) return;
+    document.querySelector(`[data-pin-card="${focusedId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [focusedId, tab]);
+
+  // Drop selections that left the queue (approved elsewhere, refetch, single actions).
+  useEffect(() => {
+    setSelected((s) => {
+      if (!s.size) return s;
+      const ids = new Set(pending.map((p) => p.id));
+      const next = new Set([...s].filter((id) => ids.has(id)));
+      return next.size === s.size ? s : next;
+    });
+  }, [pending]);
 
   if (authLoading) {
     return (
@@ -338,6 +348,7 @@ export function ModerationPage() {
     const ids = pending.filter((p) => selected.has(p.id)).map((p) => p.id);
     if (!ids.length || bulkBusy) return;
     setBulkBusy(true);
+    await queryClient.cancelQueries({ queryKey: ['moderation'] });
     queryClient.setQueryData<Pin[]>(['moderation', 'pending'], (l) => l?.filter((p) => !selected.has(p.id)));
     try {
       const r = await PinsController.bulkModerate(ids, 'approve');

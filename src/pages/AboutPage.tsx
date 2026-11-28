@@ -73,6 +73,9 @@ export default function AboutPage() {
             <li>A localização é usada apenas para mostrar o mapa e posicionar o relato; não guardamos seu trajeto.</li>
             <li>Não publique rostos, placas ou dados de outras pessoas nas fotos.</li>
           </ul>
+          <button onClick={() => navigate('/privacidade')} className="text-sm text-blue-300 underline underline-offset-2">
+            Ler a política de privacidade completa
+          </button>
         </section>
 
         <button

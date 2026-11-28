@@ -1,194 +1,42 @@
-# Map Safety Notifier
+# Map Safety — web app
 
-Mapa comunitário de segurança urbana para reportar e acompanhar problemas como alagamentos, buracos, assaltos e áreas de risco na cidade de São Paulo.
+Mapa colaborativo de segurança e infraestrutura urbana, pensado para celular (PWA).
+Qualquer pessoa vê o mapa e relata problemas sem criar conta; a moderação revisa antes de publicar o texto e as fotos.
 
 ## Funcionalidades
 
-### Mapa Interativo
-- Visualização de ocorrências em mapa escuro (CARTO dark tiles) com Leaflet
-- Geolocalização automática do usuário
-- Clique no mapa para reportar um novo problema
-- Coordenadas na URL para compartilhar localizações específicas
+- **Mapa**: agrupamento de pins, mapa de calor, filtros (tipo, aguardando, resolvidos), legenda, busca de endereço, tema claro/escuro, localização com círculo de precisão, posição salva e links diretos (`#/?pin=<id>`).
+- **Relatar**: tocar no mapa ou "Reportar aqui" (GPS), formulário em folha inferior com rascunho salvo, câmera/galeria (fotos reduzidas no aparelho), tipo de crime, aviso de duplicado.
+- **Comunidade**: pins pendentes visíveis (sem texto/fotos) com "Eu também vi", "Ainda está aí / Já foi resolvido", lista "Perto de mim" com resumo da área, compartilhar (prévia no WhatsApp) e "Como chegar".
+- **Acompanhamento**: "Meus relatos" (status e motivo de recusa, sem conta), alertas por push com área (500 m / 1 km / 3 km).
+- **Offline**: últimos dados ficam no aparelho; aviso mostra a hora dos dados.
+- **Moderação** (`/admin/moderation`): fila com fotos, "Ver no mapa", indício de duplicado, aprovação em lote, atalhos de teclado (J/K/A/R/X/Shift+A), abas Rejeitados e "Resolvidos?".
+- **Painel** (`/admin/analytics`): período, fila, horário, tipos, pontos quentes, CSV.
+- **Páginas**: `/sobre` (como funciona), `/privacidade` (LGPD).
 
-### Reportar Problemas
-- **Alagamento** — áreas com acúmulo de água
-- **Buraco** — danos na via, risco de acidente
-- **Assalto** — pontos com histórico de crimes
-- **Transitável** — vias com obras ou restrições parciais
-
-### Sistema de Votos
-- Confirme problemas reportados por outros usuários
-- Quanto mais votos, maior a relevância do report
-
-### Heatmap
-- Visualização em mapa de calor das áreas mais problemáticas
-
-### Persistência
-- Acompanhe há quantos dias um problema continua sem solução
-- Estatísticas de persistência no dashboard
-- Filtros por faixa de tempo (0-7, 8-14, 15-30, 30+ dias)
-
-### Dashboard de Segurança
-- Painel com solicitações de escolta/segurança
-- Perfis de cliente e segurança
-- Histórico de serviços
-- Botão de emergência
-
-### Autenticação
-- Login com email/senha (mock)
-- Login com Google (em breve)
-- Cadastro de novos usuários
-
-## Tech Stack
-
-| Categoria | Tecnologia |
-|-----------|-----------|
-| Framework | React 18 + TypeScript |
-| Build | Vite 5 (SWC) |
-| UI | shadcn/ui (Radix UI) |
-| Estilização | Tailwind CSS 3 |
-| Mapas | Leaflet + react-leaflet |
-| Estado | TanStack React Query v5 |
-| Roteamento | React Router DOM v6 |
-| Formulários | React Hook Form + Zod |
-| Gráficos | Recharts |
-| Ícones | Lucide React |
-| Datas | date-fns (ptBR) |
-| IDs | uuid |
-
-## Pré-requisitos
-
-- [Node.js](https://nodejs.org/) 18 ou superior
-- npm 9 ou superior
-
-## Instalação
+## Rodar localmente
 
 ```bash
-git clone https://github.com/seu-usuario/map-safety-notifier.git
-cd map-safety-notifier
 npm install
+cp .env.example .env   # aponte VITE_API_URL para a API
+npm run dev            # http://localhost:8080
 ```
 
-## Uso
-
-### Desenvolvimento
-
-```bash
-npm run dev
-```
-
-O servidor inicia em `http://localhost:8080`.
-
-### Build de produção
+## Build e verificação
 
 ```bash
 npm run build
-npm run preview
+npx vite preview --port 4173   # confira se o site abre sem erros antes de publicar
 ```
 
-### Lint
+## Deploy (Railway)
 
-```bash
-npm run lint
-```
+Serviço `web` a partir desta pasta (`railway up -s web`). A variável `VITE_API_URL` é lida **no build**.
+Na API, inclua a URL do web app em `CORS_ORIGINS` e defina `FRONTEND_URL`.
 
-## Estrutura do Projeto
+## Estrutura
 
-```
-src/
-├── components/          # Componentes de feature
-│   ├── ui/              # Primitivos shadcn/ui (não editar manualmente)
-│   ├── Map.tsx          # Mapa principal com Leaflet
-│   ├── NavBar.tsx       # Barra de navegação lateral
-│   ├── ReportModal.tsx  # Modal de novo report
-│   ├── PinDetails.tsx   # Detalhes de um pin
-│   ├── PinList.tsx      # Lista de pins
-│   ├── PinHistory.tsx   # Histórico de um pin
-│   ├── FilterBar.tsx    # Filtro por tipo de pin
-│   ├── HeatmapControl.tsx
-│   ├── PersistenceStats.tsx
-│   ├── PersistenceFilter.tsx
-│   ├── PersistenceTable.tsx
-│   ├── PersistenceTimeline.tsx
-│   ├── GoogleSignIn.tsx
-│   ├── SecurityProfileCard.tsx
-│   ├── ServiceRequestForm.tsx
-│   ├── ServiceDetailCard.tsx
-│   └── ServiceHistoryList.tsx
-├── controllers/         # Lógica de negócio e acesso a dados
-│   └── pins.ts          # CRUD de pins (localStorage)
-├── hooks/               # Custom React hooks
-│   ├── useNotifications.tsx  # Push notifications
-│   ├── useAuth.ts         # Hook de autenticação
-│   ├── useMapCache.ts   # Cache de tiles do mapa
-│   └── use-mobile.tsx   # Detecção de dispositivo móvel
-├── lib/                 # Utilitários
-│   ├── utils.ts         # cn() para classes condicionais
-│   └── helpers.ts       # Geolocalização, heatmap, DMS
-├── pages/               # Páginas (rotas)
-│   ├── HomePage.tsx     # Mapa principal (/)
-│   ├── DashboardPage.tsx # Dashboard de segurança (/dashboard)
-│   ├── LoginPage.tsx    # Login (/login)
-│   ├── SignupPage.tsx   # Cadastro (/signup)
-│   └── NotFound.tsx     # 404
-├── types/               # Tipos TypeScript compartilhados
-│   └── index.ts
-├── App.tsx              # Rotas e providers
-├── main.tsx             # Entry point
-└── index.css            # Estilos globais e Tailwind
-```
-
-## Rotas
-
-| Rota | Página | Descrição |
-|------|--------|-----------|
-| `/` | HomePage | Mapa interativo com pins |
-| `/login` | LoginPage | Login (admin, moderador, usuário) |
-| `/admin/moderation` | ModerationPage | Fila de aprovação (staff) |
-| `/admin/users` | AdminUsersPage | Gestão de usuários (admin) |
-
-## API e autenticação
-
-O frontend consome a API REST configurada em `VITE_API_URL` (`.env`).
-
-### Setup inicial (backend)
-
-Antes do primeiro login, crie o admin no backend:
-
-```bash
-python scripts/create_admin.py --email admin@example.com --password senha12345
-```
-
-Use esse email e senha em `#/login`.
-
-### Funcionalidades integradas
-
-- Listagem paginada de pins (`GET /api/pins` → `{ items, total, limit, offset }`)
-- **Moderação**: ocorrências públicas ficam `pending` até aprovação; fila em `#/admin/moderation`
-- Staff logado vê todos os pins no mapa (incl. pendentes); visitantes só `approved` + marcador padrão
-- Filtro por área visível do mapa (bbox: `lat_min`, `lat_max`, `lng_min`, `lng_max`)
-- Upload de imagens via `POST /api/images/upload` (paths `/uploads/...` no create)
-- JWT com refresh automático em rotas protegidas (PATCH/DELETE)
-- Moderação: alterar status e comentário no modal do pin
-- Exclusão de pin (somente `role: admin`, exceto marcador padrão)
-- **Marcador padrão** (`kind: "default_location"`): ponto único para ocorrências sem endereço — renderização violeta no mapa, histórico como feed, sem voto/exclusão
-- Admin: `PUT /api/pins/default-location` (configurar/mover) e `POST /api/pins/default-location/entries` (registrar ocorrência)
-- Push notifications (novos alertas e atualizações de status)
-
-## Dados
-
-Pins e estatísticas vêm da API. Tokens JWT ficam no `localStorage` (`map-safety-access-token`, `map-safety-refresh-token`).
-
-## Scripts Disponíveis
-
-| Comando | Descrição |
-|---------|-----------|
-| `npm run dev` | Servidor de desenvolvimento (porta 8080) |
-| `npm run build` | Build de produção |
-| `npm run build:dev` | Build em modo development |
-| `npm run preview` | Preview do build de produção |
-| `npm run lint` | Executar ESLint |
-
-## Licença
-
-Este projeto é privado.
+- `src/pages` — Home (mapa), Moderação, Painel, Usuários, Login, Sobre, Privacidade
+- `src/components` — Map, ReportModal, NearbySheet, MyReportsSheet, MapOverlays, HeatLayer…
+- `src/sw.js` — service worker (cache de tiles e dados, push)
+- `src/hooks` — geolocalização compartilhada, notificações, acessibilidade de diálogos

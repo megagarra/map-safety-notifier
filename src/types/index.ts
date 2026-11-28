@@ -34,6 +34,7 @@ export interface Pin {
   resolvedReports?: number;
   userFeedback?: 'still' | 'resolved' | null;
   reporterKey?: string | null;
+  archived?: boolean;
   possibleDuplicates?: { id: string; distanceM: number; approvalStatus: string; reportedAt: string }[] | null;
   status: PinStatus;
   persistenceDays?: number;
