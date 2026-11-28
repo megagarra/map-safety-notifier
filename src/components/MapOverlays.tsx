@@ -74,7 +74,7 @@ export function FilterChips({ value, onChange, staff }: { value: MapFilters; onC
       {countActiveFilters(value) > 0 && (
         <button
           onClick={() => onChange({ ...NO_FILTERS, heat: value.heat, archived: value.archived })}
-          className="shrink-0 h-10 px-3 rounded-full text-xs font-semibold border border-white/20 bg-white text-[#1a1a1a] shadow-lg flex items-center gap-1.5"
+          className="sticky left-0 z-10 shrink-0 h-10 px-3 rounded-full text-xs font-semibold border border-white/20 bg-white text-[#1a1a1a] shadow-lg flex items-center gap-1.5"
           aria-label={`Limpar ${countActiveFilters(value)} filtro(s)`}
         >
           <FilterX size={13} /> Limpar ({countActiveFilters(value)})
