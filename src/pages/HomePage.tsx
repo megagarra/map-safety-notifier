@@ -35,7 +35,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, Moon, Sun } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, FileText, Info, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3, Moon, Sun, ChevronDown } from 'lucide-react';
 import { toggleMapTheme, useMapTheme } from '@/lib/mapTheme';
 import { cn } from '@/lib/utils';
 
@@ -106,6 +106,23 @@ export default function HomePage() {
   const dupeShownRef = useRef<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const mapTheme = useMapTheme();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuMore, setMenuMore] = useState(false);
+  const updateMenuMore = useCallback(() => {
+    const el = menuRef.current;
+    if (el) setMenuMore(el.scrollHeight - el.scrollTop - el.clientHeight > 24);
+  }, []);
+  // Re-check when the menu opens or its content changes size.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const el = menuRef.current;
+    if (!el) return;
+    updateMenuMore();
+    const ro = new ResizeObserver(updateMenuMore);
+    ro.observe(el);
+    Array.from(el.children).forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+  }, [panelOpen, updateMenuMore]);
   // Side menu: Escape closes it.
   useEffect(() => {
     if (!panelOpen) return;
@@ -754,11 +771,13 @@ export default function HomePage() {
         )}
         <div
           id="side-menu"
+          ref={menuRef}
+          onScroll={updateMenuMore}
           role={panelOpen ? 'dialog' : undefined}
           aria-modal={panelOpen ? true : undefined}
           aria-label="Menu"
           className={cn(
-            'flex-col gap-2 overflow-y-auto overscroll-contain',
+            'flex-col gap-2 overflow-y-auto overscroll-contain [&>*]:shrink-0 max-md:touch-pan-y max-md:[-webkit-overflow-scrolling:touch] side-menu-scroll',
             'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85vw] max-md:max-w-[320px] max-md:bg-[#121212] max-md:border-r max-md:border-white/10 max-md:shadow-2xl max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
             panelOpen ? 'flex max-md:animate-in max-md:slide-in-from-left-full max-md:duration-200' : 'hidden md:flex',
           )}
@@ -921,6 +940,17 @@ export default function HomePage() {
             </Link>
           )}
         </div>
+        {/* Phones: shows there is more below; tapping scrolls down */}
+        {panelOpen && menuMore && (
+          <button
+            onClick={() => menuRef.current?.scrollBy({ top: menuRef.current.clientHeight * 0.7, behavior: 'smooth' })}
+            className="md:hidden fixed bottom-0 left-0 w-[85vw] max-w-[320px] pt-6 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-0.5 bg-gradient-to-t from-[#121212] via-[#121212]/95 to-transparent text-xs text-gray-300"
+            aria-label="Rolar para ver mais opções"
+          >
+            Mais opções abaixo
+            <ChevronDown size={18} className="animate-bounce" />
+          </button>
+        )}
         </div>
 
         {(mapMode === 'place-default-marker' || mapMode === 'move-pin') && (
