@@ -206,6 +206,7 @@ export interface AuthUser {
   hqLng?: number | null;
   hqAddress?: string | null;
   serviceRadiusKm?: number | null;
+  city?: string | null;
 }
 
 export interface AuthTokens {
@@ -251,6 +252,7 @@ export interface UpdateUserInput {
   hqLng?: number | null;
   hqAddress?: string | null;
   serviceRadiusKm?: number | null;
+  city?: string | null;
 }
 
 export interface RegisterInput {
@@ -265,30 +267,36 @@ export interface RegisterInput {
   hqLng?: number | null;
   hqAddress?: string | null;
   serviceRadiusKm?: number | null;
+  city?: string | null;
 }
 
-/** Public agency on the map with its scoreboard (computed by the server from published reports). */
+export interface ReportCounts {
+  total: number;
+  resolved: number;
+  inProgress: number;
+  unanswered: number;
+}
+
+/** A public agency inside a city's building, with what it answered itself. */
 export interface Agency {
   id: string;
   organization: string;
   kind: AgencyKind;
   answerTypes: PinType[];
-  lat: number;
-  lng: number;
   address?: string | null;
   radiusKm: number;
-  stats: {
-    total: number;
-    resolved: number;
-    inProgress: number;
-    acknowledged: number;
-    unanswered: number;
-    answeredByAgency: number;
-    resolvedByAgency: number;
-    resolvedRate: number;
-    medianResponseHours?: number | null;
-    last30Total: number;
-    last30Resolved: number;
-    lastAnswerAt?: string | null;
-  };
+  stats: { answered: number; resolved: number; medianResponseHours?: number | null; lastAnswerAt?: string | null };
+}
+
+/** One building per city: published reports in the area of its agencies (computed by the server). */
+export interface CityScore {
+  city: string;
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  stats: ReportCounts;
+  resolvedRate: number;
+  last30: ReportCounts;
+  byType: Partial<Record<PinType, ReportCounts>>;
+  agencies: Agency[];
 }

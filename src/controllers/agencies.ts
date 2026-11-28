@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import type { Agency } from '@/types';
+import type { CityScore } from '@/types';
 
-/** Public: agencies with a headquarters on the map and their scoreboard. */
-export const fetchAgencies = async (): Promise<Agency[]> => api<Agency[]>('/api/agencies');
+/** Public: one entry per city with its agencies and scoreboard. */
+export const fetchCityScores = async (): Promise<CityScore[]> => api<CityScore[]>('/api/agencies');

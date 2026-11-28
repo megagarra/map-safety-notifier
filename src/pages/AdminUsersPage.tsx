@@ -43,6 +43,7 @@ type AgencyFields = {
   answerTypes: PinType[];
   hq: { lat: number; lng: number; address: string } | null;
   radiusKm: number;
+  city: string;
 };
 
 function AgencyFieldsEditor({ value, onChange, compact }: { value: AgencyFields; onChange: (v: AgencyFields) => void; compact?: boolean }) {
@@ -80,7 +81,19 @@ function AgencyFieldsEditor({ value, onChange, compact }: { value: AgencyFields;
           ))}
         </div>
       </div>
-      <HqPicker value={value.hq} onChange={(hq) => onChange({ ...value, hq })} />
+      <HqPicker
+        value={value.hq}
+        onChange={(hq, city) => onChange({ ...value, hq, ...(city && !value.city.trim() ? { city } : {}) })}
+      />
+      <div>
+        <Input
+          placeholder="Cidade (ex.: Franco da Rocha)"
+          value={value.city}
+          onChange={(e) => onChange({ ...value, city: e.target.value })}
+          className="bg-[#121212] border-[#2a2a2a] text-white"
+        />
+        <p className="text-[11px] text-gray-500 mt-1">Órgãos da mesma cidade aparecem juntos em um único prédio no mapa.</p>
+      </div>
       <div>
         <p className="text-xs text-gray-400 mb-1.5">Área atendida (raio a partir da sede)</p>
         <select
@@ -97,7 +110,7 @@ function AgencyFieldsEditor({ value, onChange, compact }: { value: AgencyFields;
 }
 
 /** Headquarters address: search a street/place/CEP and pick it (shown on the map as a building). */
-function HqPicker({ value, onChange }: { value: AgencyFields['hq']; onChange: (v: AgencyFields['hq']) => void }) {
+function HqPicker({ value, onChange }: { value: AgencyFields['hq']; onChange: (v: AgencyFields['hq'], city?: string) => void }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<Place[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,7 +158,7 @@ function HqPicker({ value, onChange }: { value: AgencyFields['hq']; onChange: (v
             <li key={r.id}>
               <button
                 type="button"
-                onClick={() => { onChange({ lat: r.lat, lng: r.lng, address: [r.title, r.subtitle].filter(Boolean).join(' — ') }); setQ(''); setResults([]); }}
+                onClick={() => { onChange({ lat: r.lat, lng: r.lng, address: [r.title, r.subtitle].filter(Boolean).join(' — ') }, cityFrom(r.subtitle)); setQ(''); setResults([]); }}
                 className="w-full text-left px-3 py-2 min-h-11 hover:bg-white/5"
               >
                 <span className="block text-sm text-gray-100 truncate">{r.title}</span>
@@ -160,7 +173,13 @@ function HqPicker({ value, onChange }: { value: AgencyFields['hq']; onChange: (v
   );
 }
 
-const emptyAgency = (): AgencyFields => ({ organization: '', agencyKind: 'prefeitura', answerTypes: DEFAULT_TYPES.prefeitura, hq: null, radiusKm: 5 });
+/** "Centro — Franco da Rocha/SP — CEP ..." -> "Franco da Rocha" */
+function cityFrom(subtitle?: string): string | undefined {
+  const m = subtitle?.match(/([^—]+?)\s*\/\s*[A-Z]{2}/);
+  return m?.[1].trim();
+}
+
+const emptyAgency = (): AgencyFields => ({ organization: '', agencyKind: 'prefeitura', answerTypes: DEFAULT_TYPES.prefeitura, hq: null, radiusKm: 5, city: '' });
 
 const agencyPayload = (a: AgencyFields) => ({
   organization: a.organization.trim(),
@@ -168,6 +187,7 @@ const agencyPayload = (a: AgencyFields) => ({
   answerTypes: a.answerTypes,
   ...(a.hq && { hqLat: a.hq.lat, hqLng: a.hq.lng, hqAddress: a.hq.address }),
   serviceRadiusKm: a.radiusKm,
+  ...(a.city.trim() && { city: a.city.trim() }),
 });
 
 export function AdminUsersPage() {
@@ -251,6 +271,7 @@ export function AdminUsersPage() {
       answerTypes: u.answerTypes?.length ? u.answerTypes : DEFAULT_TYPES[u.agencyKind ?? 'prefeitura'],
       hq: u.hqLat != null && u.hqLng != null ? { lat: u.hqLat, lng: u.hqLng, address: u.hqAddress ?? '' } : null,
       radiusKm: u.serviceRadiusKm ?? 5,
+      city: u.city ?? '',
     });
   };
 
@@ -381,6 +402,8 @@ export function AdminUsersPage() {
                           {u.role === 'agency' && !!u.answerTypes?.length && (
                             <span className="text-xs text-gray-400">responde: {u.answerTypes.map((t) => TYPE_LABELS[t]).join(', ')}</span>
                           )}
+                          {u.role === 'agency' && u.city && <span className="text-xs text-gray-400">{u.city}</span>}
+                          {u.role === 'agency' && u.hqLat == null && <span className="text-xs text-amber-400">sem sede no mapa</span>}
                           {!u.isActive && <span className="text-xs text-red-400">Inativa</span>}
                         </div>
                       </div>

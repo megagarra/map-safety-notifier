@@ -20,7 +20,7 @@ import { toast } from '@/components/ui/use-toast';
 import { flagPin, unarchivePin } from '@/controllers/pins';
 import { OfficialSection } from './OfficialResponse';
 import { AgencyLayer, AgencyScoreSheet, FitAgencyArea } from './AgencyLayer';
-import type { Agency } from '@/types';
+import type { CityScore } from '@/types';
 import type { FlagReason } from '@/types';
 import { ApiError } from '@/lib/errors';
 import {
@@ -880,7 +880,7 @@ const MapComponent = ({
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
-  const [selectedAgency, setSelectedAgency] = useState<Agency | null>(null);
+  const [selectedAgency, setSelectedAgency] = useState<CityScore | null>(null);
   const [agencyAreaNonce, setAgencyAreaNonce] = useState(0);
   const mapTheme = useMapTheme();
   const mapRef = useRef(null);
@@ -989,13 +989,13 @@ const MapComponent = ({
         <PinMarkers pins={showHeat ? heatOverlayPins : filteredPins} onPinClick={onPinClick} />
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
         <AgencyLayer selected={selectedAgency} onSelect={setSelectedAgency} />
-        <FitAgencyArea agency={selectedAgency} nonce={agencyAreaNonce} />
+        <FitAgencyArea city={selectedAgency} nonce={agencyAreaNonce} />
         {!isMobile && <ZoomControl position="bottomright" />}
       </MapContainer>
 
       {selectedAgency && !agencyAreaNonce && (
         <AgencyScoreSheet
-          agency={selectedAgency}
+          city={selectedAgency}
           onClose={() => setSelectedAgency(null)}
           onShowArea={() => setAgencyAreaNonce(Date.now())}
         />
@@ -1005,7 +1005,7 @@ const MapComponent = ({
           onClick={() => { setSelectedAgency(null); setAgencyAreaNonce(0); }}
           className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[460] h-10 px-4 rounded-full bg-[#1a1a1a]/95 border border-emerald-500/40 text-emerald-200 text-sm shadow-xl flex items-center gap-2"
         >
-          Área de {selectedAgency.organization} · fechar
+          Área de {selectedAgency.city} · fechar
         </button>
       )}
 
