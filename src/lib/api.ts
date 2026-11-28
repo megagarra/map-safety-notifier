@@ -98,6 +98,33 @@ export interface ApiOptions extends RequestInit {
   skipAuthRefresh?: boolean;
 }
 
+// --- Age of the oldest data currently shown from the offline copy (null = all fresh) ---
+let cachedDataTime: number | null = null;
+const cachedListeners = new Set<() => void>();
+
+function noteCacheState(res: Response) {
+  let next: number | null = null;
+  if (res.headers.get('X-From-Cache') === '1') {
+    const at = Number(res.headers.get('X-Cached-At'));
+    next = Number.isFinite(at) && at > 0 ? at : cachedDataTime ?? 0;
+  }
+  if (next === null && cachedDataTime === null) return;
+  // Keep the oldest offline timestamp until a fresh response arrives.
+  const value = next === null ? null : cachedDataTime ? Math.min(cachedDataTime, next || cachedDataTime) : next;
+  if (value === cachedDataTime) return;
+  cachedDataTime = value;
+  cachedListeners.forEach((l) => l());
+}
+
+export function subscribeCachedDataTime(cb: () => void) {
+  cachedListeners.add(cb);
+  return () => { cachedListeners.delete(cb); };
+}
+
+export function getCachedDataTime(): number | null {
+  return cachedDataTime;
+}
+
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const { auth = false, errorContext, skipAuthRefresh = false, headers, ...rest } = options;
 
@@ -145,6 +172,8 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   if (res.status === 204) {
     return undefined as T;
   }
+
+  if (res.ok && (!rest.method || rest.method === 'GET')) noteCacheState(res);
 
   if (!res.ok) {
     const detail = await parseErrorBody(res);

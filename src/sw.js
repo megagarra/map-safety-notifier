@@ -257,8 +257,12 @@ async function handleApiRequest(request) {
     const response = await fetch(request, { signal: controller.signal });
     if (timer) clearTimeout(timer);
     if (response.ok) {
-      const copy = response.clone();
-      cache.put(request, copy).then(() => trimCache(API_CACHE_NAME, API_CACHE_MAX));
+      // Re-wrap the copy with the time it was saved, so offline users see how old the data is.
+      response.clone().blob().then((body) => {
+        const headers = new Headers(response.headers);
+        headers.set('X-Cached-At', String(Date.now()));
+        return cache.put(request, new Response(body, { status: 200, headers }));
+      }).then(() => trimCache(API_CACHE_NAME, API_CACHE_MAX)).catch(() => {});
     }
     return response;
   } catch (err) {
@@ -266,6 +270,7 @@ async function handleApiRequest(request) {
     if (cached) {
       const headers = new Headers(cached.headers);
       headers.set('X-From-Cache', '1');
+      headers.set('Access-Control-Expose-Headers', 'X-From-Cache, X-Cached-At');
       return new Response(await cached.blob(), { status: 200, headers });
     }
     throw err;

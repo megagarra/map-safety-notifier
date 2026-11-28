@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { getCachedDataTime, subscribeCachedDataTime } from '@/lib/api';
 import { X, List, WifiOff } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -136,8 +137,10 @@ export function useOnline() {
 }
 
 export function OfflineBanner({ dataTime }: { dataTime?: number }) {
-  const when = dataTime
-    ? new Date(dataTime).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+  const cachedAt = useSyncExternalStore(subscribeCachedDataTime, getCachedDataTime, () => null);
+  const time = cachedAt || dataTime;
+  const when = time
+    ? new Date(time).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
     : null;
   return (
     <div className="absolute top-0 inset-x-0 z-[1500] flex justify-center pt-[max(0.5rem,env(safe-area-inset-top))] pointer-events-none">
