@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
+import { FilterChips, FirstVisitHint, loadFilters, saveFilters, useFirstVisitHint, type MapFilters } from '@/components/MapOverlays';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
 import ReportModal from '@/components/ReportModal';
@@ -26,7 +27,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAuth } from '@/hooks/useAuth';
 import { isDefaultLocationPin, mergePinUpdate, hasValidPinLocation } from '@/lib/pins';
 import { ApiError } from '@/lib/errors';
-import { LogIn, LogOut, Loader2, Menu, X, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Loader2, Menu, X, MapPinPlus, UserPlus, FilePlus, ShieldCheck, Layers, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const FALLBACK_CENTER: [number, number] = [-23.3343, -46.6953];
@@ -91,7 +92,7 @@ export default function HomePage() {
   const [fetchMode, setFetchMode] = useState<PinFetchMode>('bounds');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   // Initial view: shared link (?lat&lng&z) > last saved view > fallback. Never block on GPS.
-  const [initialView] = useState(() => (readUrlView(window.location.search) ?? readUrlView(window.location.hash.split('?')[1] ?? '')) ?? readSavedView());
+  const [initialView] = useState(() => (readUrlView(window.location.hash.split('?')[1] ?? '') ?? readUrlView(window.location.search)) ?? readSavedView());
   const [center, setCenter] = useState<[number, number]>(initialView?.center ?? FALLBACK_CENTER);
   const [zoom, setZoom] = useState(initialView?.zoom ?? 13);
   const userMovedRef = useRef(false);
@@ -172,6 +173,41 @@ export default function HomePage() {
   }, [pins, defaultLocations, isAdmin]);
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
+  const [filters, setFiltersState] = useState<MapFilters>(loadFilters);
+  const setFilters = useCallback((f: MapFilters) => { setFiltersState(f); saveFilters(f); }, []);
+  const hint = useFirstVisitHint();
+  const activeFilterCount = filters.types.length + (filters.hideResolved ? 1 : 0) + (filters.onlyPending ? 1 : 0);
+  const visiblePins = useMemo(() => {
+    if (!activeFilterCount) return pins;
+    return pins.filter((p) => {
+      if (isDefaultLocationPin(p)) return !filters.onlyPending;
+      if (filters.types.length && !filters.types.includes(p.type)) return false;
+      if (filters.hideResolved && p.status === 'resolved') return false;
+      if (filters.onlyPending && p.approvalStatus !== 'pending') return false;
+      return true;
+    });
+  }, [pins, filters, activeFilterCount]);
+
+  // Deep link: #/?pin=<id> opens that report (shared via WhatsApp etc.)
+  useEffect(() => {
+    const qs = new URLSearchParams((window.location.hash.split('?')[1] ?? '') + '&' + window.location.search.slice(1));
+    const id = qs.get('pin');
+    // A real ?query (push notification links) was consumed at init — drop it so reloads don't jump back.
+    if (window.location.search) {
+      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+    }
+    if (!id) return;
+    PinsController.fetchPinById(id, isStaff).then((p) => {
+      if (p && hasValidPinLocation(p)) {
+        setSelectedPin(p);
+        setCenter([p.location.lat, p.location.lng]);
+        setZoom(17);
+      } else {
+        toast({ title: 'Alerta não encontrado', description: 'Ele pode ter sido removido.' });
+      }
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -193,6 +229,7 @@ export default function HomePage() {
   }, [isError]);
 
   const urlTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (urlTimeout.current) clearTimeout(urlTimeout.current); }, []);
 
   // First GPS fix: center on the user only if they didn't open a link/saved view or move the map.
   const centeredOnGpsRef = useRef(false);
@@ -206,9 +243,9 @@ export default function HomePage() {
 
   const updatePinsCache = useCallback(
     (updater: (prev: PaginatedResponse<Pin> | undefined) => PaginatedResponse<Pin> | undefined) => {
-      queryClient.setQueryData<PaginatedResponse<Pin>>(pinsQueryKey, updater);
+      queryClient.setQueriesData<PaginatedResponse<Pin>>({ queryKey: ['pins'] }, (prev) => (prev ? updater(prev) : prev));
     },
-    [queryClient, pinsQueryKey],
+    [queryClient],
   );
 
   const invalidateDefaultLocations = useCallback(() => {
@@ -228,6 +265,7 @@ export default function HomePage() {
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     setPanelOpen(false);
+    if (hint.show) hint.dismiss();
     if (mapMode === 'move-pin' && movePinId) return;
     if (mapMode === 'place-default-marker') {
       setSetupLocation({ lat, lng });
@@ -255,7 +293,7 @@ export default function HomePage() {
     dupeShownRef.current = null;
     setNewPinLocation({ lat, lng });
     setReportModalOpen(true);
-  }, [mapMode, movePinId, pins, zoom]);
+  }, [mapMode, movePinId, pins, zoom, hint]);
 
   const handleMapMove = useCallback((newCenter: [number, number], newZoom: number) => {
     userMovedRef.current = true;
@@ -316,11 +354,12 @@ export default function HomePage() {
   const handleReportSubmit = useCallback(async (data: CreatePinInput) => {
     try {
       await PinsController.createPin(data, isAuthenticated);
+      queryClient.invalidateQueries({ queryKey: ['pins'] });
       queryClient.invalidateQueries({ queryKey: ['moderation', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['pin-stats'] });
       toast({
-        title: 'Enviado para revisão',
-        description: 'Aparecerá no mapa após aprovação.',
+        title: 'Ocorrência enviada',
+        description: 'Ela já aparece no mapa como "aguardando aprovação". Obrigado!',
       });
       return true;
     } catch (err) {
@@ -554,13 +593,44 @@ export default function HomePage() {
 
   return (
     <div className="h-screen w-full overflow-hidden fixed inset-0">
+      {/* Filter chips — below the menu button on mobile, hidden while the menu is open */}
+      <div className={cn('absolute z-[390] left-4 right-[4.5rem] top-[4.5rem] md:top-4 md:left-[272px] md:right-20', panelOpen && 'hidden md:block')}>
+        <FilterChips value={filters} onChange={setFilters} />
+      </div>
+
+      {/* Report at my GPS position */}
+      {mapMode === 'normal' && !reportModalOpen && !selectedPin && (
+        <button
+          onClick={() => {
+            if (!geo.pos) {
+              toast({
+                title: geo.error === 'denied' ? 'Localização bloqueada' : 'Buscando sua localização',
+                description: geo.error === 'denied'
+                  ? 'Ative a localização no navegador ou toque no mapa no local do problema.'
+                  : 'Aguarde alguns segundos ou toque no mapa no local do problema.',
+              });
+              return;
+            }
+            if ((geo.accuracy ?? 0) > 150) {
+              toast({ title: 'Localização imprecisa', description: `Precisão de ~${Math.round(geo.accuracy!)} m. Toque no mapa no local exato para mais precisão.` });
+            }
+            handleMapClick(geo.pos[0], geo.pos[1]);
+          }}
+          className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[420] h-12 px-5 rounded-full bg-red-600 hover:bg-red-500 text-white font-semibold text-sm shadow-xl shadow-black/40 flex items-center gap-2"
+        >
+          <MapPinPlus size={18} /> Reportar aqui
+        </button>
+      )}
+
+      {hint.show && !reportModalOpen && !selectedPin && <FirstVisitHint onDismiss={hint.dismiss} />}
+
       {isFetchingPins && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+        <div className="absolute bottom-[5.5rem] left-1/2 -translate-x-1/2 z-[900] pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
           <Loader2 size={12} className="animate-spin" /> Carregando ocorrências...
         </div>
       )}
       <MapView
-        pins={pins}
+        pins={visiblePins}
         onPinClick={handlePinClick}
         onMapClick={handleMapClick}
         onMapMove={handleMapMove}
@@ -592,7 +662,7 @@ export default function HomePage() {
           aria-label={panelOpen ? 'Fechar menu' : 'Abrir menu'}
         >
           {panelOpen ? <X size={18} /> : <Menu size={18} />}
-          <span className="text-sm"><span className="font-semibold">{pins.length}</span> alertas</span>
+          <span className="text-sm"><span className="font-semibold">{visiblePins.length}</span> alertas{activeFilterCount > 0 && <span className="text-gray-400"> · filtro</span>}</span>
           {isModerator && pendingCount > 0 && (
             <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-500 text-[#1a1a1a] text-xs font-bold flex items-center justify-center">
               {pendingCount > 99 ? '99+' : pendingCount}
@@ -602,7 +672,7 @@ export default function HomePage() {
         <div className={cn('flex-col gap-2 overflow-y-auto overscroll-contain', panelOpen ? 'flex' : 'hidden md:flex')}>
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 px-3 py-2 shadow-lg">
           <p className="text-xs text-gray-400">
-            Mostrando <span className="text-white font-medium">{pins.length}</span> de{' '}
+            Mostrando <span className="text-white font-medium">{visiblePins.length}</span> de{' '}
             <span className="text-white font-medium">{total}</span> alertas
           </p>
           {hasMore && (

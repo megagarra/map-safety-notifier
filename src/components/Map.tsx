@@ -3,6 +3,7 @@ import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
 import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
 import MapSearch from './MapSearch';
+import { LegendButton } from './MapOverlays';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,6 +14,8 @@ import { cn } from '@/lib/utils';
 import { reverseGeocode } from '@/lib/geocode';
 import {
   Clock,
+  Share2,
+  Route,
   X,
   ThumbsUp,
   Users,
@@ -253,7 +256,7 @@ function getOrCreateIcon(pin: Pin, currentZoom: number): L.DivIcon {
   const key = `${pin.kind ?? 'normal'}-${pin.approvalStatus ?? 'approved'}-${pin.type}-${pin.votes || 0}-${pin.entryCount ?? 0}-${pin.neighborhood ?? ''}-${Math.floor(currentZoom)}`;
   let icon = iconCache.get(key);
   if (!icon) {
-    const { html, size } = createPinHTML(pin, currentZoom);
+    const { html, size } = createPinHTML(pin, Math.floor(currentZoom));
     icon = L.divIcon({ className: 'custom-div-icon', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
     iconCache.set(key, icon);
   }
@@ -398,10 +401,13 @@ function PinDetailsModal({
       return;
     }
     setIsLoadingAddress(true);
+    let cancelled = false;
     reverseGeocode(pin.location.lat, pin.location.lng).then((result) => {
+      if (cancelled) return;
       setAddress(result);
       setIsLoadingAddress(false);
     });
+    return () => { cancelled = true; };
   }, [pin.id, pin.address, pin.location?.lat, pin.location?.lng, isDefault]);
 
   const handleSave = async () => {
@@ -660,6 +666,8 @@ function PinDetailsModal({
                 </div>
               </div>
             )}
+
+            {!isDefault && <ShareButton pin={pin} />}
 
             {/* Admin: mover pin no mapa */}
             {isAdmin && !isDefault && onStartMovePin && (
@@ -932,7 +940,7 @@ const MapComponent = ({
       )}
 
       {/* Theme toggle */}
-      <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2 items-end">
+      <div className="absolute top-4 right-4 z-[450] flex flex-col gap-2 items-end">
         <MapSearch map={mapInstance} />
         <button
           onClick={cycleMapTheme}
@@ -941,6 +949,7 @@ const MapComponent = ({
         >
           {mapTheme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
+        <LegendButton />
       </div>
 
       {/* Location button — automatically adjusts for mobile and desktop zooms */}
@@ -976,6 +985,7 @@ function LocateButton({ map }: { map: L.Map | null }) {
       flyTo(geo.pos, geo.accuracy);
     } else if (geo.error) {
       setWaiting(false);
+      if (geo.error === 'unavailable') setMessage('Não foi possível obter sua localização. Verifique se o GPS está ligado.');
     }
   }, [waiting, geo.pos, geo.error]);
 
@@ -1038,6 +1048,49 @@ function LocateButton({ map }: { map: L.Map | null }) {
       >
         {waiting ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} />}
       </button>
+    </div>
+  );
+}
+
+// --- Share an alert (native share sheet → WhatsApp → copy link) ---
+
+function ShareButton({ pin }: { pin: Pin }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    const url = `${window.location.origin}/#/?pin=${pin.id}&lat=${pin.location.lat.toFixed(5)}&lng=${pin.location.lng.toFixed(5)}&z=17`;
+    const label = getPinConfig(pin.type).label;
+    const text = `⚠️ Alerta de ${label.toLowerCase()} no Map Safety${pin.address ? `: ${pin.address}` : ''}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Map Safety', text, url }); return; } catch (e) {
+        if ((e as Error).name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}
+${url}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${text}
+${url}`)}`, '_blank', 'noopener');
+    }
+  };
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <button
+        onClick={share}
+        className="h-11 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium flex items-center justify-center gap-2"
+      >
+        <Share2 size={15} /> {copied ? 'Link copiado!' : 'Compartilhar'}
+      </button>
+      <a
+        href={`https://www.google.com/maps/dir/?api=1&destination=${pin.location.lat},${pin.location.lng}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="h-11 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium flex items-center justify-center gap-2"
+      >
+        <Route size={15} /> Como chegar
+      </a>
     </div>
   );
 }

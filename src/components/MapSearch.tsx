@@ -28,6 +28,7 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
     }
     const key = term.toLowerCase();
     if (cache.has(key)) {
+      setError(false);
       setResults(cache.get(key)!);
       return;
     }
@@ -36,7 +37,7 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
       setLoading(true);
       setError(false);
       try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=br&accept-language=pt-BR&q=${encodeURIComponent(term)}`;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=br&viewbox=-46.82,-23.18,-46.48,-23.45&bounded=1&accept-language=pt-BR&q=${encodeURIComponent(term)}`;
         const res = await fetch(url, { signal: ctrl.signal });
         if (!res.ok) throw new Error(String(res.status));
         const data: Result[] = await res.json();
@@ -92,7 +93,7 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
             if (e.key === 'Escape') setOpen(false);
             if (e.key === 'Enter' && results[0]) go(results[0]);
           }}
-          placeholder="Buscar rua, bairro ou cidade"
+          placeholder="Buscar rua ou bairro"
           className="flex-1 bg-transparent text-sm text-white placeholder:text-gray-500 outline-none"
         />
         {loading && <Loader2 size={14} className="animate-spin text-gray-400" />}

@@ -913,3 +913,5 @@
     opacity: 0;
   }
 }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
