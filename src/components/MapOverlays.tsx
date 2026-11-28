@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { HelpCircle, X, Hand, Download } from 'lucide-react';
+import { HelpCircle, X, Hand, Download, Flame } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PinType } from '@/types';
 
-export type MapFilters = { types: PinType[]; hideResolved: boolean; onlyPending: boolean };
+export type MapFilters = { types: PinType[]; hideResolved: boolean; onlyPending: boolean; heat?: boolean };
 
 const FILTER_KEY = 'map-safety:filters';
 const HINT_KEY = 'map-safety:hint-seen';
@@ -11,7 +11,7 @@ const HINT_KEY = 'map-safety:hint-seen';
 export function loadFilters(): MapFilters {
   try {
     const f = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null');
-    if (f && Array.isArray(f.types)) return { types: f.types, hideResolved: !!f.hideResolved, onlyPending: !!f.onlyPending };
+    if (f && Array.isArray(f.types)) return { types: f.types, hideResolved: !!f.hideResolved, onlyPending: !!f.onlyPending, heat: !!f.heat };
   } catch { /* ignore */ }
   return { types: [], hideResolved: false, onlyPending: false };
 }
@@ -26,7 +26,7 @@ function Chip({ active, onClick, children, tone }: { active: boolean; onClick: (
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'shrink-0 h-9 px-3 rounded-full text-xs font-medium border shadow-lg backdrop-blur transition-colors flex items-center gap-1.5',
+        'shrink-0 h-10 px-3 rounded-full text-xs font-medium border shadow-lg backdrop-blur transition-colors flex items-center gap-1.5',
         active ? `${tone} text-white border-transparent` : 'bg-[#1a1a1a]/90 text-gray-300 border-white/10',
       )}
     >
@@ -40,6 +40,9 @@ export function FilterChips({ value, onChange }: { value: MapFilters; onChange: 
     onChange({ ...value, types: value.types.includes(t) ? value.types.filter((x) => x !== t) : [...value.types, t] });
   return (
     <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+      <Chip active={!!value.heat} onClick={() => onChange({ ...value, heat: !value.heat })} tone="bg-gradient-to-r from-yellow-600 to-red-600">
+        <Flame size={13} /> Calor
+      </Chip>
       <Chip active={value.types.includes('crime')} onClick={() => toggleType('crime')} tone="bg-red-600">
         <span className="w-2 h-2 rounded-full bg-red-400" /> Crime
       </Chip>
@@ -117,7 +120,7 @@ export function FirstVisitHint({ onDismiss }: { onDismiss: () => void }) {
           Toque no mapa no local exato, ou use <b>Reportar aqui</b> para usar sua localização. Pins amarelos já estão aguardando aprovação.
         </p>
       </div>
-      <button onClick={onDismiss} className="text-gray-400 hover:text-white self-start" aria-label="Fechar dica">
+      <button onClick={onDismiss} className="w-11 h-11 -m-2 flex items-center justify-center text-gray-400 hover:text-white self-start" aria-label="Fechar dica">
         <X size={16} />
       </button>
     </div>
@@ -186,7 +189,7 @@ export function InstallBanner({ onInstall, onDismiss }: { onInstall: () => void;
       <Download size={20} className="text-blue-400 shrink-0" />
       <p className="flex-1 text-xs text-gray-200">Instale o app para abrir mais rápido e receber alertas.</p>
       <button onClick={onInstall} className="h-9 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold">Instalar</button>
-      <button onClick={onDismiss} className="w-8 h-8 flex items-center justify-center text-gray-400" aria-label="Agora não"><X size={16} /></button>
+      <button onClick={onDismiss} className="w-11 h-11 -mr-2 flex items-center justify-center text-gray-400" aria-label="Agora não"><X size={16} /></button>
     </div>
   );
 }

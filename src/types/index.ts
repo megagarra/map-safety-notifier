@@ -30,6 +30,9 @@ export interface Pin {
   history: PinHistoryEntry[];
   crimeTypeId?: string | null;
   crimeTypeLabel?: string | null;
+  stillThereCount?: number;
+  resolvedReports?: number;
+  userFeedback?: 'still' | 'resolved' | null;
   status: PinStatus;
   persistenceDays?: number;
   votes?: number;

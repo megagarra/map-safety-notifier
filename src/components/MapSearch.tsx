@@ -83,7 +83,7 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
 
   return (
     <div className="absolute top-0 right-0 w-[calc(100vw-2rem)] max-w-sm rounded-lg bg-[#1a1a1a]/95 backdrop-blur border border-white/10 shadow-xl overflow-hidden">
-      <div className="flex items-center gap-2 px-3 h-11">
+      <div className="flex items-center gap-2 px-3 h-12 focus-within:ring-2 focus-within:ring-blue-500 rounded-lg">
         <Search size={16} className="text-gray-400 shrink-0" />
         <input
           ref={inputRef}
@@ -94,10 +94,11 @@ export default function MapSearch({ map }: { map: L.Map | null }) {
             if (e.key === 'Enter' && results[0]) go(results[0]);
           }}
           placeholder="Buscar rua ou bairro"
+          aria-label="Buscar rua ou bairro"
           className="flex-1 bg-transparent text-sm text-white placeholder:text-gray-500 outline-none"
         />
         {loading && <Loader2 size={14} className="animate-spin text-gray-400" />}
-        <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-white" aria-label="Fechar busca">
+        <button onClick={() => setOpen(false)} className="w-11 h-11 -mr-2 flex items-center justify-center text-gray-400 hover:text-white" aria-label="Fechar busca">
           <X size={16} />
         </button>
       </div>

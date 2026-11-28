@@ -3,6 +3,8 @@ import { Pin, PinType, PinStatus, UpdatePinInput, MapBounds } from '@/types';
 import { MapContainer, TileLayer, Marker, CircleMarker, Circle, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useGeolocation, retryGeolocation, getGeoState } from '@/hooks/useGeolocation';
 import MapSearch from './MapSearch';
+import HeatLayer from './HeatLayer';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { LegendButton } from './MapOverlays';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
@@ -62,6 +64,8 @@ interface MapComponentProps {
   center: [number, number];
   zoom: number;
   onVote: (pinId: string) => void;
+  onFeedback?: (pinId: string, kind: 'still' | 'resolved') => void;
+  showHeat?: boolean;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
   mapMode?: 'normal' | 'place-default-marker' | 'move-pin';
@@ -284,6 +288,9 @@ const PinMarker = React.memo(function PinMarker({
     <Marker
       position={[pin.location.lat, pin.location.lng]}
       icon={getOrCreateIcon(pin, zoom)}
+      title={isDefaultLocationPin(pin) ? (pin.neighborhood ?? 'Bairro') : `${getPinConfig(pin.type).label}${isPendingPin(pin) ? ' (aguardando aprovação)' : ''}`}
+      alt={getPinConfig(pin.type).label}
+      keyboard
       zIndexOffset={isDefaultLocationPin(pin) ? 1000 : 0}
       eventHandlers={handlers}
     />
@@ -347,6 +354,7 @@ function PinDetailsModal({
   pin,
   onClose,
   onVote,
+  onFeedback,
   onUpdatePin,
   onDeletePin,
   onRegisterDefaultEntry,
@@ -360,6 +368,7 @@ function PinDetailsModal({
   pin: Pin;
   onClose: () => void;
   onVote: (id: string) => void;
+  onFeedback?: (id: string, kind: 'still' | 'resolved') => void;
   onUpdatePin?: (pinId: string, updates: UpdatePinInput) => Promise<void>;
   onDeletePin?: (pinId: string) => Promise<void>;
   onRegisterDefaultEntry?: (markerId: string) => void;
@@ -451,10 +460,16 @@ function PinDetailsModal({
     }
   };
 
+  const dialogRef = useDialogA11y<HTMLDivElement>(onClose);
+
   return (
     <>
       <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
         <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={isDefault ? (pin.neighborhood ?? 'Marcador por bairro') : `Ocorrência: ${cfg.label}`}
           className={cn("relative w-[95vw] sm:w-[92%] max-w-[420px] max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl bg-[#121212] shadow-2xl border border-[#2a2a2a] animate-fadeIn", isMobile && "max-h-[80vh] mx-auto")}
           onClick={(e) => e.stopPropagation()}
         >
@@ -490,7 +505,7 @@ function PinDetailsModal({
                 )}
               </div>
             </div>
-            <button onClick={onClose} className="h-8 w-8 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
+            <button onClick={onClose} aria-label="Fechar" className="h-11 w-11 shrink-0 rounded-full bg-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#3a3a3a] transition-colors">
               <X size={16} />
             </button>
           </div>
@@ -611,8 +626,9 @@ function PinDetailsModal({
               <div className="p-3 bg-[#1a1a1a] rounded-lg border border-blue-500/20 space-y-3">
                 <h4 className="text-sm font-medium text-blue-400">Moderação</h4>
                 <div className="space-y-2">
-                  <label className="text-xs text-gray-400">Status</label>
+                  <label htmlFor="pin-status" className="text-xs text-gray-400">Status</label>
                   <select
+                    id="pin-status"
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as PinStatus)}
                     className="w-full h-9 rounded-md bg-[#121212] border border-[#2a2a2a] text-white px-3 text-sm"
@@ -656,7 +672,7 @@ function PinDetailsModal({
                     onClick={() => onVote(pin.id)}
                     disabled={pin.userVoted}
                     className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                      "flex items-center gap-1.5 px-3 h-11 rounded-lg text-sm font-medium transition-colors",
                       pin.userVoted ? "bg-green-500/15 text-green-400" : "bg-white/10 text-white hover:bg-white/20"
                     )}
                   >
@@ -664,6 +680,34 @@ function PinDetailsModal({
                     {pin.userVoted ? 'Confirmado' : isPending ? 'Eu também vi' : 'Confirmar'}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Citizens keep reports fresh: still there / already fixed */}
+            {!isDefault && !isPending && pin.status !== 'resolved' && onFeedback && (
+              <div className="p-3 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] space-y-2">
+                <p className="text-sm text-gray-200 font-medium">Ainda está assim?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onFeedback(pin.id, 'still')}
+                    aria-pressed={pin.userFeedback === 'still'}
+                    className={cn('h-11 rounded-lg text-sm font-medium border', pin.userFeedback === 'still' ? 'bg-orange-500/20 border-orange-500 text-white' : 'bg-white/5 border-white/10 text-gray-200')}
+                  >
+                    Ainda está aí{pin.stillThereCount ? ` · ${pin.stillThereCount}` : ''}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onFeedback(pin.id, 'resolved')}
+                    aria-pressed={pin.userFeedback === 'resolved'}
+                    className={cn('h-11 rounded-lg text-sm font-medium border', pin.userFeedback === 'resolved' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-white/5 border-white/10 text-gray-200')}
+                  >
+                    Já foi resolvido{pin.resolvedReports ? ` · ${pin.resolvedReports}` : ''}
+                  </button>
+                </div>
+                {(pin.resolvedReports ?? 0) >= 3 && (
+                  <p className="text-xs text-emerald-300">Várias pessoas indicaram que foi resolvido — a moderação foi avisada.</p>
+                )}
               </div>
             )}
 
@@ -796,7 +840,7 @@ const THEME_LABELS: Record<MapTheme, string> = {
 
 const MapComponent = ({
   pins, onPinClick, onMapClick, onMapMove, onBoundsChange, selectedPinTypes, selectedPin, center, zoom,
-  onVote, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onBulkRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
+  onVote, onFeedback, showHeat, onUpdatePin, onDeletePin, mapMode, onRegisterDefaultEntry, onBulkRegisterDefaultEntry, onDeleteDefaultLocation, onEditDefaultMarker, onAdminMovePin, onStartMovePin, movePinId, onEntriesChanged,
 }: MapComponentProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -835,6 +879,9 @@ const MapComponent = ({
     if (!selectedPinTypes?.length) return withLocation;
     return withLocation.filter((p) => selectedPinTypes.includes(p.type));
   }, [pins, selectedPinTypes]);
+
+  // In heat mode only neighborhood markers stay as pins; reports become the density layer.
+  const heatOverlayPins = useMemo(() => filteredPins.filter(isDefaultLocationPin), [filteredPins]);
 
   const effectiveCenter = center || MAP_CENTER;
   const effectiveZoom = zoom || 13;
@@ -916,7 +963,8 @@ const MapComponent = ({
         />
         <MapEvents onMapClick={handleMapClick} onMapMove={onMapMove} onBoundsChange={onBoundsChange} />
         <UserLocationDot />
-        <PinMarkers pins={filteredPins} onPinClick={onPinClick} />
+        {showHeat && <HeatLayer pins={filteredPins} />}
+        <PinMarkers pins={showHeat ? heatOverlayPins : filteredPins} onPinClick={onPinClick} />
         <MapCenterUpdater center={effectiveCenter} zoom={effectiveZoom} />
         {!isMobile && <ZoomControl position="bottomright" />}
       </MapContainer>
@@ -927,6 +975,7 @@ const MapComponent = ({
           pin={selectedPin}
           onClose={() => onPinClick(null)}
           onVote={onVote}
+          onFeedback={onFeedback}
           onUpdatePin={onUpdatePin}
           onDeletePin={onDeletePin}
           onRegisterDefaultEntry={onRegisterDefaultEntry}
@@ -944,6 +993,7 @@ const MapComponent = ({
         <MapSearch map={mapInstance} />
         <button
           onClick={cycleMapTheme}
+          aria-label={`Tema do mapa: ${THEME_LABELS[mapTheme]}`}
           className="w-[44px] h-[44px] md:w-10 md:h-10 rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#2a2a2a] transition-colors shadow-lg"
           title={`Tema do mapa: ${THEME_LABELS[mapTheme]}. Clique para alternar.`}
         >

@@ -319,7 +319,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
                   <button
                     type="button"
                     onClick={() => setImages((prev) => prev.filter((u) => u !== img))}
-                    className="absolute -top-1 -right-1 w-9 h-9 rounded-full bg-black/80 border border-white/20 text-white flex items-center justify-center"
+                    className="absolute -top-1 -right-1 w-11 h-11 rounded-full bg-black/80 border border-white/20 text-white flex items-center justify-center"
                     aria-label={`Remover foto ${i + 1}`}
                   >
                     <X size={16} />
@@ -372,10 +372,11 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
         </div>
 
         {previewImg && createPortal(
-          <div className="fixed inset-0 z-[2000] pointer-events-auto flex items-center justify-center bg-black/95 p-4" onClick={() => setPreviewImg(null)}>
+          <div role="dialog" aria-modal="true" aria-label="Foto ampliada" className="fixed inset-0 z-[2000] pointer-events-auto flex items-center justify-center bg-black/95 p-4" onClick={() => setPreviewImg(null)}>
             <button
               type="button"
               onClick={() => setPreviewImg(null)}
+              autoFocus
               className="absolute top-4 right-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
               aria-label="Fechar"
             >

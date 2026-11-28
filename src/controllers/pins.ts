@@ -124,6 +124,10 @@ export const voteOnPin = async (pinId: string): Promise<Pin> => {
   return api<Pin>(`/api/pins/${pinId}/vote`, { method: 'POST' });
 };
 
+export const sendPinFeedback = async (pinId: string, kind: 'still' | 'resolved'): Promise<Pin> => {
+  return api<Pin>(`/api/pins/${pinId}/feedback`, { method: 'POST', body: JSON.stringify({ kind }) });
+};
+
 export const fetchDefaultLocations = async (): Promise<Pin[]> => {
   const data = await api<Pin[] | PaginatedResponse<Pin>>('/api/pins/default-locations');
   return unwrapApiList<Pin>(data);

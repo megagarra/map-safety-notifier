@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useSyncExternalStore } from 'react';
 import type { Pin } from '@/types';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { getPinConfig } from '@/lib/pinConfig';
 import { isDefaultLocationPin, isPendingPin, hasValidPinLocation } from '@/lib/pins';
 import { cn } from '@/lib/utils';
@@ -26,7 +27,7 @@ export function NearbyButton({ onClick, count }: { onClick: () => void; count: n
     <button
       onClick={onClick}
       className="h-12 px-4 rounded-full bg-[#1a1a1a]/95 backdrop-blur border border-white/10 text-white text-sm font-medium shadow-xl flex items-center gap-2"
-      aria-label="Lista de alertas próximos"
+      aria-label={`Lista de alertas próximos (${count})`}
     >
       <List size={16} /> Lista
       {count > 0 && <span className="text-xs text-gray-400">{count}</span>}
@@ -43,6 +44,7 @@ export function NearbySheet({
   onSelect: (pin: Pin) => void;
   onClose: () => void;
 }) {
+  const dialogRef = useDialogA11y<HTMLDivElement>(onClose);
   const items = useMemo(
     () =>
       pins
@@ -57,8 +59,10 @@ export function NearbySheet({
     <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="w-full md:max-w-md max-h-[75dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[#161618] border border-white/10 shadow-2xl"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Alertas próximos"
       >
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-white/10">
@@ -72,6 +76,7 @@ export function NearbySheet({
             <X size={18} />
           </button>
         </div>
+        <AreaInsights pins={items.map((i) => i.pin)} />
         <ul className="overflow-y-auto overscroll-contain">
           {items.length === 0 && (
             <li className="px-4 py-8 text-center text-sm text-gray-400">Nenhum alerta nesta área. 🎉</li>
@@ -101,7 +106,7 @@ export function NearbySheet({
                   </span>
                   <span className="text-right shrink-0">
                     <span className="block text-sm font-semibold text-white">{fmtDist(d)}</span>
-                    <span className="block text-[11px] text-gray-500">
+                    <span className="block text-xs text-gray-400">
                       {formatDistanceToNow(new Date(pin.reportedAt), { locale: ptBR, addSuffix: false })}
                     </span>
                   </span>
@@ -136,6 +141,62 @@ export function OfflineBanner() {
       <div className="flex items-center gap-2 rounded-full bg-amber-500 text-[#1a1a1a] text-xs font-semibold px-3 py-1.5 shadow-lg">
         <WifiOff size={14} /> Sem conexão — mostrando dados salvos
       </div>
+    </div>
+  );
+}
+
+// --- Area insights: what, when, how much ---
+
+const PERIODS = [
+  { key: 'madrugada', label: 'Madrugada', from: 0, to: 6 },
+  { key: 'manha', label: 'Manhã', from: 6, to: 12 },
+  { key: 'tarde', label: 'Tarde', from: 12, to: 18 },
+  { key: 'noite', label: 'Noite', from: 18, to: 24 },
+] as const;
+
+function AreaInsights({ pins }: { pins: Pin[] }) {
+  const stats = useMemo(() => {
+    if (pins.length < 3) return null;
+    const byPeriod = PERIODS.map((p) => ({
+      ...p,
+      n: pins.filter((pin) => {
+        const h = new Date(pin.reportedAt).getHours();
+        return h >= p.from && h < p.to;
+      }).length,
+    }));
+    const crimes = pins.filter((p) => p.type === 'crime').length;
+    const labels = new Map<string, number>();
+    pins.forEach((p) => {
+      const l = p.crimeTypeLabel?.replace(/\s*\(Art\.[^)]*\)/, '');
+      if (l) labels.set(l, (labels.get(l) ?? 0) + 1);
+    });
+    const top = [...labels.entries()].sort((a, b) => b[1] - a[1])[0];
+    const peak = [...byPeriod].sort((a, b) => b.n - a.n)[0];
+    return { byPeriod, crimes, infra: pins.length - crimes, top, peak, max: Math.max(...byPeriod.map((p) => p.n), 1) };
+  }, [pins]);
+
+  if (!stats) return null;
+  return (
+    <div className="px-4 py-3 border-b border-white/10 space-y-2">
+      <p className="text-xs text-gray-300">
+        <span className="text-red-300 font-semibold">{stats.crimes}</span> crime{stats.crimes === 1 ? '' : 's'} ·{' '}
+        <span className="text-orange-300 font-semibold">{stats.infra}</span> infraestrutura
+        {stats.top && <> · mais comum: <span className="text-white">{stats.top[0]}</span></>}
+      </p>
+      <div className="grid grid-cols-4 gap-2" role="img" aria-label={`Horário com mais registros: ${stats.peak.label}`}>
+        {stats.byPeriod.map((p) => (
+          <div key={p.key} className="flex flex-col items-center gap-1">
+            <div className="w-full h-10 flex items-end rounded bg-white/5 overflow-hidden">
+              <div
+                className={p.key === stats.peak.key ? 'w-full bg-red-500' : 'w-full bg-white/25'}
+                style={{ height: `${Math.max(6, (p.n / stats.max) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[11px] text-gray-300">{p.label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400">Mais registros à <span className="text-white">{stats.peak.label.toLowerCase()}</span> nesta área.</p>
     </div>
   );
 }

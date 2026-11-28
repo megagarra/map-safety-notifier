@@ -48,6 +48,15 @@ export function useNotifications(isStaff = false) {
       if (!subRes.ok) {
         throw new ApiError('Falha ao registrar inscrição.', subRes.status);
       }
+      // Keep the saved alert zone attached even if the browser rotated the subscription.
+      const zone = loadAlertZone();
+      if (zone) {
+        fetch(apiUrl('/api/notifications/zone'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: subscription.endpoint, ...zone }),
+        }).catch(() => undefined);
+      }
 
       if (silent) return;
 
@@ -139,6 +148,7 @@ export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
       const { public_key } = await r.json();
       sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(public_key) });
     }
+    // Make sure the server knows this subscription (no-op for existing rows; never downgrades staff).
     const token = getAccessToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;

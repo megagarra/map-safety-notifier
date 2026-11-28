@@ -184,7 +184,7 @@ export default function HomePage() {
   const setFilters = useCallback((f: MapFilters) => { setFiltersState(f); saveFilters(f); }, []);
   const hint = useFirstVisitHint();
   const installApp = useInstallPrompt();
-  const activeFilterCount = filters.types.length + (filters.hideResolved ? 1 : 0) + (filters.onlyPending ? 1 : 0);
+  const activeFilterCount = filters.types.length + (filters.hideResolved ? 1 : 0) + (filters.onlyPending ? 1 : 0); // heat is a view mode, not a filter
   const visiblePins = useMemo(() => {
     if (!activeFilterCount) return pins;
     return pins.filter((p) => {
@@ -352,6 +352,18 @@ export default function HomePage() {
       return false;
     }
   }, [queryClient, isAuthenticated]);
+
+  const handleFeedback = useCallback(async (pinId: string, kind: 'still' | 'resolved') => {
+    try {
+      const updated = await PinsController.sendPinFeedback(pinId, kind);
+      updatePinsCache((prev) => (prev ? { ...prev, items: prev.items.map((p) => (p.id === pinId ? updated : p)) } : prev));
+      setSelectedPin((prev) => (prev?.id === pinId ? updated : prev));
+      toast({ title: 'Obrigado!', description: kind === 'resolved' ? 'Sua indicação ajuda a manter o mapa atualizado.' : 'Confirmado que o problema continua.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Tente novamente.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    }
+  }, [updatePinsCache]);
 
   const handleVote = useCallback(async (pinId: string) => {
     const pin = pins.find((p) => p.id === pinId);
@@ -640,6 +652,8 @@ export default function HomePage() {
         center={center}
         zoom={zoom}
         onVote={handleVote}
+        onFeedback={handleFeedback}
+        showHeat={!!filters.heat}
         onUpdatePin={handleUpdatePin}
         onDeletePin={isAdmin ? handleDeletePin : undefined}
         mapMode={mapMode}
@@ -686,8 +700,9 @@ export default function HomePage() {
             </button>
           )}
           <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Carregar pins</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Carregar pins</p>
             <select
+              aria-label="Carregar pins"
               value={fetchMode}
               onChange={(e) => setFetchMode(e.target.value as PinFetchMode)}
               className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
@@ -696,6 +711,7 @@ export default function HomePage() {
               <option value="nearby">Próximos (5 km)</option>
             </select>
             <select
+              aria-label="Período"
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value as DatePreset)}
               className="w-full h-10 md:h-7 rounded text-sm md:text-[11px] bg-[#121212] border border-[#2a2a2a] text-gray-300 px-1"
