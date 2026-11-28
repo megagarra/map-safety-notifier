@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
+import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
 import { FilterChips, FirstVisitHint, InstallBanner, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
 import { useGeolocation } from '@/hooks/useGeolocation';
@@ -705,6 +706,7 @@ export default function HomePage() {
               <option value="90d">Últimos 90 dias</option>
             </select>
           </div>
+          <div className="-mx-3 mt-2"><AlertZonePicker gps={geo.pos} mapCenter={center} /></div>
         </div>
 
         <div className="rounded-lg bg-[#1a1a1a]/90 backdrop-blur border border-white/10 shadow-lg overflow-hidden">

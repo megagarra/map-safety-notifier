@@ -55,6 +55,19 @@ export default defineConfig(({ mode }) => {
         }
       })
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          // Long-lived vendor chunks: app updates don't force users to re-download the map libs.
+          manualChunks: {
+            leaflet: ['leaflet', 'react-leaflet', 'react-leaflet-cluster'],
+            react: ['react', 'react-dom', 'react-router-dom'],
+            query: ['@tanstack/react-query'],
+            date: ['date-fns'],
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

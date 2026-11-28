@@ -149,7 +149,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, lo
       description: description.trim(),
       images,
       ...(address && { address }),
-      ...(type === 'crime' && crimeTypeId && { crimeTypeId }),
+      ...(type === 'crime' && crimeTypeId && crimeTypes.some((c) => c.id === crimeTypeId) && { crimeTypeId }),
     };
 
     try {

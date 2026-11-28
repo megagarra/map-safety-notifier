@@ -103,3 +103,66 @@ export function useNotifications(isStaff = false) {
     }
   }, []);
 }
+
+// --- Alert zone (receive push only near a point) ---
+
+export type AlertZone = { lat: number; lng: number; radiusM: number } | null;
+const ZONE_KEY = 'map-safety:alert-zone';
+
+export function loadAlertZone(): AlertZone {
+  try {
+    const z = JSON.parse(localStorage.getItem(ZONE_KEY) || 'null');
+    return z && Number.isFinite(z.lat) && Number.isFinite(z.radiusM) ? z : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ensures push permission + subscription, then stores the zone on the server. Returns false if not possible. */
+export async function saveAlertZone(zone: AlertZone): Promise<boolean> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    toast({ title: 'Não suportado', description: 'Este navegador não suporta notificações.', variant: 'destructive' });
+    return false;
+  }
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') {
+      toast({ title: 'Notificações bloqueadas', description: 'Permita notificações no navegador para receber alertas.' });
+      return false;
+    }
+  }
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let sub = await registration.pushManager.getSubscription();
+    if (!sub) {
+      const r = await fetch(apiUrl('/api/notifications/vapid-public-key'));
+      const { public_key } = await r.json();
+      sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(public_key) });
+    }
+    const token = getAccessToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    await fetch(apiUrl('/api/notifications/subscribe'), { method: 'POST', headers, body: JSON.stringify(sub.toJSON()) });
+    const res = await fetch(apiUrl('/api/notifications/zone'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, lat: zone?.lat ?? null, lng: zone?.lng ?? null, radiusM: zone?.radiusM ?? null }),
+    });
+    if (!res.ok) throw new ApiError('Falha ao salvar a área de alertas.', res.status);
+    try {
+      if (zone) localStorage.setItem(ZONE_KEY, JSON.stringify(zone));
+      else localStorage.removeItem(ZONE_KEY);
+    } catch { /* ignore */ }
+    toast({
+      title: 'Alertas atualizados',
+      description: zone
+        ? `Você receberá alertas num raio de ${zone.radiusM >= 1000 ? `${zone.radiusM / 1000} km` : `${zone.radiusM} m`} deste ponto.`
+        : 'Você receberá alertas de toda a cidade.',
+    });
+    return true;
+  } catch (err) {
+    const message = err instanceof ApiError ? err.message : 'Não foi possível salvar.';
+    toast({ title: 'Erro', description: message, variant: 'destructive' });
+    return false;
+  }
+}

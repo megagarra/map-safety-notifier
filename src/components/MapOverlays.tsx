@@ -143,17 +143,21 @@ if (typeof window !== 'undefined') {
 }
 
 const VISITS_KEY = 'map-safety:visits';
+let visitCount: number | null = null;
+/** Counts one visit per page load (not per HomePage mount). */
+function countVisitOnce(): number {
+  if (visitCount !== null) return visitCount;
+  try {
+    visitCount = Number(localStorage.getItem(VISITS_KEY) || '0') + 1;
+    localStorage.setItem(VISITS_KEY, String(visitCount));
+  } catch { visitCount = 1; }
+  return visitCount;
+}
 const INSTALL_DISMISSED_KEY = 'map-safety:install-dismissed';
 
 export function useInstallPrompt() {
   const [canInstall, setCanInstall] = useState(() => !!deferredPrompt);
-  const [visits] = useState(() => {
-    try {
-      const n = Number(localStorage.getItem(VISITS_KEY) || '0') + 1;
-      localStorage.setItem(VISITS_KEY, String(n));
-      return n;
-    } catch { return 1; }
-  });
+  const [visits] = useState(countVisitOnce);
   const [dismissed, setDismissed] = useState(() => {
     try { return !!localStorage.getItem(INSTALL_DISMISSED_KEY); } catch { return false; }
   });

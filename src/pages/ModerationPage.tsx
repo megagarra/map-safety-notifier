@@ -117,7 +117,9 @@ export function ModerationPage() {
   const [tab, setTab] = useState<ModerationTab>('pending');
   const [rejectPin, setRejectPin] = useState<Pin | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [actionId, setActionId] = useState<string | null>(null);
+  const [acting, setActing] = useState<Set<string>>(new Set());
+  const startAct = (id: string) => setActing((s) => new Set(s).add(id));
+  const endAct = (id: string) => setActing((s) => { const n = new Set(s); n.delete(id); return n; });
   const [preview, setPreview] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -153,17 +155,24 @@ export function ModerationPage() {
 
   // Optimistic: remove the card right away; put it back if the request fails.
   const removeFromLists = (id: string) => {
-    const snapshot = {
-      pending: queryClient.getQueryData<Pin[]>(['moderation', 'pending']),
-      rejected: queryClient.getQueryData<Pin[]>(['moderation', 'rejected']),
-    };
+    // Stop in-flight refetches from undoing the optimistic removal.
+    queryClient.cancelQueries({ queryKey: ['moderation'] });
+    const card = [
+      ...(queryClient.getQueryData<Pin[]>(['moderation', 'pending']) ?? []),
+      ...(queryClient.getQueryData<Pin[]>(['moderation', 'rejected']) ?? []),
+    ].find((p) => p.id === id);
     queryClient.setQueryData<Pin[]>(['moderation', 'pending'], (l) => l?.filter((p) => p.id !== id));
     queryClient.setQueryData<Pin[]>(['moderation', 'rejected'], (l) => l?.filter((p) => p.id !== id));
+    // Roll back only this card, then resync from the server.
     return () => {
-      queryClient.setQueryData(['moderation', 'pending'], snapshot.pending);
-      queryClient.setQueryData(['moderation', 'rejected'], snapshot.rejected);
+      if (card) {
+        const key = card.approvalStatus === 'rejected' ? 'rejected' : 'pending';
+        queryClient.setQueryData<Pin[]>(['moderation', key], (l) => (l && !l.some((p) => p.id === id) ? [card, ...l] : l));
+      }
+      queryClient.invalidateQueries({ queryKey: ['moderation'] });
     };
   };
+
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['pins'] });
@@ -172,7 +181,7 @@ export function ModerationPage() {
   };
 
   const handleApprove = async (pin: Pin) => {
-    setActionId(pin.id);
+    startAct(pin.id);
     const rollback = removeFromLists(pin.id);
     try {
       await PinsController.approvePin(pin.id);
@@ -188,13 +197,14 @@ export function ModerationPage() {
       const message = err instanceof ApiError ? err.message : 'Erro ao aprovar.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
     } finally {
-      setActionId(null);
+      endAct(pin.id);
     }
   };
 
   const handleReject = async () => {
     if (!rejectPin || !rejectReason.trim()) return;
-    setActionId(rejectPin.id);
+    const rejectingId = rejectPin.id;
+    startAct(rejectingId);
     const rollback = removeFromLists(rejectPin.id);
     try {
       await PinsController.rejectPin(rejectPin.id, { reason: rejectReason.trim() });
@@ -203,11 +213,17 @@ export function ModerationPage() {
       setRejectReason('');
       invalidateAll();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        toast({ title: 'Já revisada', description: 'Outro moderador já tratou esta ocorrência.' });
+        setRejectPin(null);
+        invalidateAll();
+        return;
+      }
       rollback();
       const message = err instanceof ApiError ? err.message : 'Erro ao rejeitar.';
       toast({ title: 'Erro', description: message, variant: 'destructive' });
     } finally {
-      setActionId(null);
+      endAct(rejectingId);
     }
   };
 
@@ -274,7 +290,7 @@ export function ModerationPage() {
                 pin={pin}
                 badge={tab === 'pending' ? 'Pendente' : 'Rejeitado'}
                 badgeClass={tab === 'pending' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}
-                isActing={actionId === pin.id}
+                isActing={acting.has(pin.id)}
                 onApprove={() => handleApprove(pin)}
                 onReject={tab === 'pending' ? () => { setRejectPin(pin); setRejectReason(''); } : undefined}
                 showRejectionReason={tab === 'rejected'}
@@ -312,8 +328,8 @@ export function ModerationPage() {
             <Button variant="outline" onClick={() => setRejectPin(null)} className="border-[#2a2a2a] text-white">
               Cancelar
             </Button>
-            <Button onClick={handleReject} disabled={!rejectReason.trim() || !!actionId} className="bg-red-600 hover:bg-red-700">
-              {actionId === rejectPin?.id ? <Loader2 size={14} className="animate-spin" /> : 'Confirmar rejeição'}
+            <Button onClick={handleReject} disabled={!rejectReason.trim() || (!!rejectPin && acting.has(rejectPin.id))} className="bg-red-600 hover:bg-red-700">
+              {rejectPin && acting.has(rejectPin.id) ? <Loader2 size={14} className="animate-spin" /> : 'Confirmar rejeição'}
             </Button>
           </DialogFooter>
         </DialogContent>
