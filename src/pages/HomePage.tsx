@@ -1,17 +1,20 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import MapView from '@/components/Map';
-import { MyReportsSheet, rememberMyReport } from '@/components/MyReportsSheet';
+import { rememberMyReport } from '@/lib/myReports';
 import { AlertZonePicker } from '@/components/AlertZonePicker';
 import { NearbyButton, NearbySheet, OfflineBanner, useOnline } from '@/components/NearbySheet';
 import { FilterChips, FirstVisitHint, InstallBanner, loadFilters, saveFilters, useFirstVisitHint, useInstallPrompt, type MapFilters } from '@/components/MapOverlays';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { readUrlView, readSavedView, saveView } from '@/lib/mapView';
-import ReportModal from '@/components/ReportModal';
-import { DefaultLocationSetupModal } from '@/components/DefaultLocationSetupModal';
-import { DefaultLocationEntryModal } from '@/components/DefaultLocationEntryModal';
-import { DefaultLocationBulkEntryModal } from '@/components/DefaultLocationBulkEntryModal';
+// Heavy, rarely-first-needed UI is code-split so the map paints sooner on slow phones.
+const loadReportModal = () => import('@/components/ReportModal');
+const ReportModal = lazy(loadReportModal);
+const DefaultLocationSetupModal = lazy(() => import('@/components/DefaultLocationSetupModal').then((m) => ({ default: m.DefaultLocationSetupModal })));
+const DefaultLocationEntryModal = lazy(() => import('@/components/DefaultLocationEntryModal').then((m) => ({ default: m.DefaultLocationEntryModal })));
+const DefaultLocationBulkEntryModal = lazy(() => import('@/components/DefaultLocationBulkEntryModal').then((m) => ({ default: m.DefaultLocationBulkEntryModal })));
+const MyReportsSheet = lazy(() => import('@/components/MyReportsSheet').then((m) => ({ default: m.MyReportsSheet })));
 import { DefaultLocationsAdminSection } from '@/components/DefaultLocationsAdminSection';
 import {
   Pin,
@@ -101,6 +104,13 @@ export default function HomePage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [nearbyOpen, setNearbyOpen] = useState(false);
   const [myReportsOpen, setMyReportsOpen] = useState(false);
+  // Mount the report form on first use (keeps its own draft), and prefetch its code when the browser is idle.
+  const [reportModalUsed, setReportModalUsed] = useState(false);
+  useEffect(() => {
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    const t = idle ? idle(() => { loadReportModal(); }) : window.setTimeout(() => { loadReportModal(); }, 3000);
+    return () => { if (!idle) window.clearTimeout(t as number); };
+  }, []);
   const online = useOnline();
   const geo = useGeolocation();
   // Page size for "Carregar mais", scoped to the current area/mode/period (resets when they change, without an extra fetch).
@@ -222,6 +232,7 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  useEffect(() => { if (reportModalOpen) setReportModalUsed(true); }, [reportModalOpen]);
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const [mapMode, setMapMode] = useState<'normal' | 'place-default-marker' | 'move-pin'>('normal');
@@ -633,6 +644,7 @@ export default function HomePage() {
       )}
 
       {myReportsOpen && (
+        <Suspense fallback={null}>
         <MyReportsSheet
           onClose={() => setMyReportsOpen(false)}
           onOpen={(r) => {
@@ -642,6 +654,7 @@ export default function HomePage() {
             PinsController.fetchPinById(r.id, isStaff).then((p) => p && setSelectedPin(p));
           }}
         />
+        </Suspense>
       )}
 
       {!online && <OfflineBanner />}
@@ -847,13 +860,18 @@ export default function HomePage() {
         )}
       </div>
 
-      <ReportModal
-        isOpen={reportModalOpen}
-        onClose={() => { setReportModalOpen(false); setNewPinLocation(null); }}
-        onSubmit={handleReportSubmit}
-        location={newPinLocation}
-      />
+      <Suspense fallback={null}>
+      {reportModalUsed && (
+        <ReportModal
+          isOpen={reportModalOpen}
+          onClose={() => { setReportModalOpen(false); setNewPinLocation(null); }}
+          onSubmit={handleReportSubmit}
+          location={newPinLocation}
+        />
+      )}
 
+      {isAdmin && (
+      <>
       <DefaultLocationSetupModal
         isOpen={setupModalOpen}
         onClose={() => { setSetupModalOpen(false); setSetupLocation(null); setEditingMarker(null); }}
@@ -878,6 +896,9 @@ export default function HomePage() {
         initialMarkerId={entryMarkerId}
         onReplace={handleReplaceDefaultLocationEntries}
       />
+      </>
+      )}
+      </Suspense>
     </div>
   );
 }

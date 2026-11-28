@@ -2,7 +2,7 @@ import { precacheAndRoute } from 'workbox-precaching';
 
 const CACHE_NAME = 'map-safety-notifier-v1';
 const TILE_CACHE_NAME = 'map-tiles-v2';
-const STATIC_CACHE_NAME = 'static-v1';
+const STATIC_CACHE_NAME = 'static-v2';
 
 // Workbox manifest injection point
 precacheAndRoute(self.__WB_MANIFEST);
@@ -22,39 +22,8 @@ const TILE_URL_PATTERN = /^https?:\/\/([a-z]\.)?(tile\.openstreetmap\.org|basema
 // Lista de URLs de tiles que devem ser pré-carregados para melhorar a experiência inicial
 // Estes valores devem corresponder ao centro inicial do mapa e zoom
 // Formato: {s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png
-const PRELOAD_TILES = [
-  // Tiles centrais ao redor de São Paulo para zoom 12 (ajuste conforme necessário)
-  'https://a.basemaps.cartocdn.com/dark_all/12/1491/2270.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1492/2270.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1493/2270.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1491/2271.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1492/2271.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1493/2271.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1491/2272.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1492/2272.png',
-  'https://a.basemaps.cartocdn.com/dark_all/12/1493/2272.png',
-
-  // Adicione variações para b. e c. subdomains
-  'https://b.basemaps.cartocdn.com/dark_all/12/1491/2270.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1492/2270.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1493/2270.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1491/2271.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1492/2271.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1493/2271.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1491/2272.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1492/2272.png',
-  'https://b.basemaps.cartocdn.com/dark_all/12/1493/2272.png',
-
-  'https://c.basemaps.cartocdn.com/dark_all/12/1491/2270.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1492/2270.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1493/2270.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1491/2271.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1492/2271.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1493/2271.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1491/2272.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1492/2272.png',
-  'https://c.basemaps.cartocdn.com/dark_all/12/1493/2272.png',
-];
+// Tiles are cached as the user browses (CARTO preloading removed: it now requires an API key).
+const PRELOAD_TILES = [];
 
 // Função para limitar o tamanho do cache de tiles
 const limitCacheSize = async (cacheName, maxItems) => {
@@ -119,7 +88,8 @@ self.addEventListener('activate', event => {
     caches.keys()
       .then(keyList => {
         return Promise.all(keyList.map(key => {
-          if (![CACHE_NAME, TILE_CACHE_NAME, STATIC_CACHE_NAME].includes(key)) {
+          // Keep current caches and Workbox's own precache; drop old versions (e.g. a stale index.html).
+          if (![CACHE_NAME, TILE_CACHE_NAME, STATIC_CACHE_NAME, 'api-v1'].includes(key) && !key.startsWith('workbox-')) {
             console.log('[Service Worker] Removing old cache:', key);
             return caches.delete(key);
           }
@@ -259,28 +229,82 @@ self.addEventListener('notificationclick', event => {
 });
 
 // Interceptar requisições
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
+// --- API data cache: the map keeps working offline with the last pins it saw ---
+const API_CACHE_NAME = 'api-v1';
+const API_CACHE_MAX = 60;
+const API_CACHEABLE = /\/api\/(pins(\/nearby|\/stats)?|crime-types|pins\/default-locations)(\?|$)/;
 
-  // Estratégia para tiles do mapa: Cache primeiro com atualização em background
-  if (isTileUrl(event.request.url)) {
-    event.respondWith(handleTileRequest(event.request));
+async function trimCache(name, max) {
+  const cache = await caches.open(name);
+  const keys = await cache.keys();
+  for (let i = 0; i < keys.length - max; i++) await cache.delete(keys[i]);
+}
+
+async function handleApiRequest(request) {
+  const cache = await caches.open(API_CACHE_NAME);
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(request, { signal: controller.signal });
+    clearTimeout(timer);
+    if (response.ok) {
+      cache.put(request, response.clone()).then(() => trimCache(API_CACHE_NAME, API_CACHE_MAX));
+    }
+    return response;
+  } catch (err) {
+    const cached = await cache.match(request);
+    if (cached) {
+      const headers = new Headers(cached.headers);
+      headers.set('X-From-Cache', '1');
+      return new Response(await cached.blob(), { status: 200, headers });
+    }
+    throw err;
   }
-  // Estratégia para recursos estáticos: Cache First
-  else if (url.origin === self.location.origin) {
+}
+
+self.addEventListener('fetch', event => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+
+  // Map tiles: cache first, refresh in background
+  if (isTileUrl(request.url)) {
+    event.respondWith(handleTileRequest(request));
+    return;
+  }
+
+  // Public API reads (never staff data): network first with timeout, fall back to last copy
+  if (url.origin !== self.location.origin && API_CACHEABLE.test(url.pathname + url.search) && !request.headers.has('Authorization')) {
+    event.respondWith(handleApiRequest(request));
+    return;
+  }
+
+  if (url.origin !== self.location.origin) return;
+
+  // Page navigations: always try the network so a new deploy is picked up; offline -> cached shell
+  if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match(event.request)
-        .then(cachedResponse => {
-          return cachedResponse || fetch(event.request)
-            .then(response => {
-              return caches.open(STATIC_CACHE_NAME)
-                .then(cache => {
-                  // Cachear apenas recursos locais
-                  cache.put(event.request.url, response.clone());
-                  return response;
-                });
-            });
+      fetch(request)
+        .then(response => {
+          if (response.ok) caches.open(STATIC_CACHE_NAME).then(c => c.put('/index.html', response.clone()));
+          return response;
         })
+        .catch(async () => (await caches.match('/index.html')) || (await caches.match(request)) || Response.error()),
     );
+    return;
   }
-}); 
+
+  // Other same-origin GETs (icons, manifest): stale-while-revalidate, only successful responses
+  event.respondWith(
+    caches.open(STATIC_CACHE_NAME).then(async cache => {
+      const cached = await cache.match(request);
+      const network = fetch(request)
+        .then(response => {
+          if (response.ok && response.type === 'basic') cache.put(request, response.clone());
+          return response;
+        })
+        .catch(() => cached);
+      return cached || network;
+    }),
+  );
+});

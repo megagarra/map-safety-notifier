@@ -6,7 +6,7 @@ type State = { error: Error | null };
 const RETRY_KEY = 'map-safety:chunk-retry';
 
 function isChunkError(e: Error) {
-  return /Loading chunk|dynamically imported module|Importing a module script failed|Failed to fetch/i.test(e.message);
+  return /Loading chunk|dynamically imported module|Importing a module script failed/i.test(e.message);
 }
 
 /** Catches render errors so users never get a blank white screen. */
@@ -20,8 +20,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   componentDidCatch(error: Error) {
     console.error('App error:', error);
     // A deploy replaced the old chunks (or a flaky connection): reload once automatically.
-    if (isChunkError(error) && navigator.onLine && !sessionStorage.getItem(RETRY_KEY)) {
-      sessionStorage.setItem(RETRY_KEY, '1');
+    // One automatic reload per 30 s (a later deploy in the same tab can reload again).
+    const last = Number(sessionStorage.getItem(RETRY_KEY) || 0);
+    if (isChunkError(error) && navigator.onLine && Date.now() - last > 30_000) {
+      sessionStorage.setItem(RETRY_KEY, String(Date.now()));
       window.location.reload();
     }
   }

@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, BarChart3, Download, RefreshCw, MapPin } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { api, apiUrl, getAccessToken } from '@/lib/api';
+import { api, apiUrl, getAccessToken, tryRefreshToken } from '@/lib/api';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -85,9 +85,10 @@ export function AnalyticsPage() {
   const downloadCsv = async () => {
     setDownloading(true);
     try {
-      const res = await fetch(apiUrl(`/api/analytics/export.csv${days ? `?days=${days}` : ''}`), {
-        headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
-      });
+      const url = apiUrl(`/api/analytics/export.csv${days ? `?days=${days}` : ''}`);
+      const get = () => fetch(url, { headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` } });
+      let res = await get();
+      if (res.status === 401 && (await tryRefreshToken())) res = await get();
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
       const a = document.createElement('a');

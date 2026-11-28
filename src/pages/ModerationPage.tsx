@@ -38,6 +38,7 @@ function PinModerationCard({
   isActing,
   onApprove,
   onReject,
+  onRejectDuplicate,
   showRejectionReason,
   onPreview,
 }: {
@@ -47,6 +48,7 @@ function PinModerationCard({
   isActing: boolean;
   onApprove: () => void;
   onReject?: () => void;
+  onRejectDuplicate?: () => void;
   showRejectionReason?: boolean;
   onPreview: (url: string) => void;
 }) {
@@ -66,6 +68,28 @@ function PinModerationCard({
         </span>
       </div>
       <p className="text-sm text-gray-200">{pin.description}</p>
+      {!!pin.possibleDuplicates?.length && onReject && (
+        <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 p-2.5 space-y-2">
+          <p className="text-xs text-orange-200">
+            Possível duplicado: {pin.possibleDuplicates.map((d) => `${d.distanceM} m (${d.approvalStatus === 'approved' ? 'publicado' : 'pendente'})`).join(' · ')}
+          </p>
+          <div className="flex gap-2">
+            <Link
+              to={`/?pin=${pin.possibleDuplicates[0].id}`}
+              className="h-9 px-3 rounded-lg border border-white/15 text-xs text-gray-200 flex items-center"
+            >
+              Ver o outro
+            </Link>
+            <button
+              type="button"
+              onClick={() => onRejectDuplicate?.()}
+              className="h-9 px-3 rounded-lg bg-orange-600/80 text-xs text-white"
+            >
+              Rejeitar como duplicado
+            </button>
+          </div>
+        </div>
+      )}
       {showRejectionReason && pin.rejectionReason && (
         <p className="text-xs text-red-400 border-t border-[#2a2a2a] pt-2">Motivo: {pin.rejectionReason}</p>
       )}
@@ -381,6 +405,7 @@ export function ModerationPage() {
                 isActing={acting.has(pin.id)}
                 onApprove={() => handleApprove(pin)}
                 onReject={tab === 'pending' ? () => { setRejectPin(pin); setRejectReason(''); } : undefined}
+                onRejectDuplicate={() => { setRejectPin(pin); setRejectReason('Duplicada'); }}
                 showRejectionReason={tab === 'rejected'}
                 onPreview={setPreview}
               />
